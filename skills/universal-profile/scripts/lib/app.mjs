@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint db4f4ecb0fd0 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 9caab51a7db9 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -6464,7 +6464,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "db4f4ecb0fd0" : "source";
+var SOURCE = true ? "9caab51a7db9" : "source";
 
 // src/core/assets.ts
 import { existsSync as existsSync2, readFileSync } from "node:fs";

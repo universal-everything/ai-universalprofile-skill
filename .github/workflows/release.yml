@@ -1,9 +1,10 @@
 name: release
 
-# On a version tag: rebuild, verify, then publish the shipped skill folder
-#  - as branch `skill` with SKILL.md at the repository root, so
-#    `openclaw skills install git:universal-everything/ai-universalprofile-skill@skill`
-#    works (OpenClaw git installs expect SKILL.md at the source root), and
+# On a version tag (pushed on the `source` branch): rebuild, verify, then publish the shipped skill
+#  - to branch `main` with SKILL.md at the repository root (build/publish-main.mjs adds one
+#    commit whose tree is skills/universal-profile/), so
+#    `openclaw skills install git:universal-everything/ai-universalprofile-skill` and
+#    `npx skills add universal-everything/ai-universalprofile-skill` install exactly the skill, and
 #  - as a GitHub release asset universal-profile-<version>.tar.gz + SHA256SUMS
 #    (used by agents inside cloud VMs, e.g. Meta Muse, to fetch and verify).
 on:
@@ -37,12 +38,11 @@ jobs:
           V="${GITHUB_REF_NAME#v}"
           tar -C skills -czf "universal-profile-$V.tar.gz" universal-profile
           sha256sum "universal-profile-$V.tar.gz" > SHA256SUMS
-      - name: publish skill branch (SKILL.md at root)
+      - name: publish the skill to main (SKILL.md at the repository root)
         run: |
           git config user.name "release-bot"
           git config user.email "release-bot@users.noreply.github.com"
-          git subtree split --prefix skills/universal-profile -b skill-split
-          git push --force origin skill-split:skill
+          node build/publish-main.mjs --push
       - uses: softprops/action-gh-release@v2
         with:
           files: |

@@ -1,6 +1,6 @@
 # Platforms: installing and running the skill on each host
 
-The skill is one directory (`universal-profile/`: `SKILL.md`, `scripts/`, `references/`, `assets/`) that runs anywhere **Node.js 22 or newer** runs. There is no `npm install`, no native module, no admin step and nothing runs at install time. Source: https://github.com/universal-everything/ai-universalprofile-skill (the skill lives in `skills/universal-profile/`). Releases ship `universal-profile-<version>.tar.gz` with a `SHA256SUMS` file.
+The skill is one directory (`universal-profile/`: `SKILL.md`, `scripts/`, `references/`, `assets/`) that runs anywhere **Node.js 22 or newer** runs. There is no `npm install`, no native module, no admin step and nothing runs at install time. Repository: https://github.com/universal-everything/ai-universalprofile-skill (branch `main` is exactly this skill, `SKILL.md` at the root; the TypeScript sources, tests and build live on branch `source`). Releases ship `universal-profile-<version>.tar.gz` with a `SHA256SUMS` file.
 
 Status words below: **documented** = the host's own documentation describes this route; **candidate** = should work, not yet proven by an end-to-end test on a fresh installation; **not available** = missing in this version. No host has a recorded end-to-end pass for this version yet; do not tell a human that a host "is supported and tested".
 
@@ -17,10 +17,10 @@ OpenClaw gateways already run on a newer Node, so nothing is needed there.
 
 ## OpenClaw (first-class)
 
-- **Install (documented OpenClaw routes; the Git and ClawHub ones exist once a release is tagged and published):**
-  - `openclaw skills install git:universal-everything/ai-universalprofile-skill@skill`: every release publishes the skill folder as the `skill` branch with `SKILL.md` at its root, which is what OpenClaw Git installs expect (the `main` branch keeps the skill in `skills/universal-profile/`, so `git:…` without `@skill` does not work).
-  - ClawHub, slug `universal-profile`: `openclaw skills install @<owner>/universal-profile` (owner as shown on the listing).
-  - Local copy: `git clone --depth 1 https://github.com/universal-everything/ai-universalprofile-skill && openclaw skills install ./ai-universalprofile-skill/skills/universal-profile`, or copy the directory into the workspace `skills/` folder.
+- **Install (documented OpenClaw routes; the `main` branch of the repository is exactly this skill, with `SKILL.md` at its root):**
+  - `openclaw skills install git:universal-everything/ai-universalprofile-skill` (default branch `main`; pin a release with `@v<version>`).
+  - ClawHub, slug `universal-profile`: `openclaw skills install @<owner>/universal-profile` (owner as shown on the listing), once published.
+  - Local copy: `git clone --depth 1 https://github.com/universal-everything/ai-universalprofile-skill universal-profile && openclaw skills install ./universal-profile`, or clone straight into the workspace `skills/` folder.
   - Add `--global` to make it available to all agents.
 - **Gating:** the frontmatter declares `metadata.openclaw.requires.bins: [node]` and the supported OS list. `openclaw skills check` shows missing requirements.
 - **Running:** the agent runs `node {baseDir}/scripts/up.mjs …` through its exec tool. If an operator configured exec approvals (`ask`, `allowlist`, `deny`), a sandbox or an install policy, report that exact gate to the human instead of working around it.
@@ -32,7 +32,7 @@ OpenClaw gateways already run on a newer Node, so nothing is needed there.
 
 Status: **candidate**. Dots have a cloud computer that can run software; third-party skill installation inside it is not documented, and whether its files persist between sessions is not proven.
 
-- **Primary route (in-VM):** in the dot's cloud computer, fetch the release (or `git clone`), check `node --version`, run with `UP_AGENT_HOST=dots` so the key is kept in a protected file inside the VM (`vm-protected-file`; approved for this host). Then `up doctor`, `up init`, onboarding as usual.
+- **Primary route (in-VM):** in the dot's cloud computer, `git clone --depth 1 https://github.com/universal-everything/ai-universalprofile-skill universal-profile` (or fetch a release tarball), check `node --version`, run with `UP_AGENT_HOST=dots` so the key is kept in a protected file inside the VM (`vm-protected-file`; approved for this host). Then `up doctor`, `up init`, onboarding as usual.
 - If the VM loses its files, the key is gone: recommend the human's wallet as second controller right after setup (`references/onboarding.md`).
 - **Connected computer:** a dot can use "local skills" on a computer connected through the ChatGPT desktop app; install the skill there like on any machine. Whether a dot may execute the bundled scripts this way is not verified.
 - **Home bridge (optional, advanced):** `platforms/openai/plugin.json` and `platforms/openai/mcp.json` are an [Agent Plugins](https://agent-plugins.org) template for a private plugin that points a dot at an MCP server the user runs at home, so the key never leaves their machine. To assemble it: a folder with those two files plus this skill copied to `skills/universal-profile/`, and the placeholder URL in `mcp.json` replaced by the user's own HTTPS endpoint. That endpoint needs an HTTP MCP transport (Streamable HTTP with OAuth, or the ChatGPT Secure MCP Tunnel to a local server); this version ships the **stdio** MCP server only, so the bridge is **not available** yet. The project hosts no MCP service.
@@ -52,8 +52,8 @@ Status: **candidate**. Muse runs agents in a Linux VM with a terminal and file s
 
 Status: **candidate** for all.
 
-- `npx skills add universal-everything/ai-universalprofile-skill` (the skills CLI finds `skills/universal-profile` and links it into the chosen agent's skills directory; `-a <agent>` selects the host).
-- Or clone the repository and copy or link `skills/universal-profile` into the host's skills directory (for example `~/.claude/skills/universal-profile` for Claude Code, or `~/.agents/skills/universal-profile` for hosts that read that shared location). Check the host's documentation for its directory.
+- `npx skills add universal-everything/ai-universalprofile-skill` (the skills CLI finds `SKILL.md` at the repository root and links the skill into the chosen agent's skills directory; `-a <agent>` selects the host).
+- Or clone the repository (it is the skill directory) into the host's skills directory as `universal-profile` (for example `~/.claude/skills/universal-profile` for Claude Code, or `~/.agents/skills/universal-profile` for hosts that read that shared location). Check the host's documentation for its directory.
 - Scripts run through the host's shell tool from the skill directory. The same OS key-store backends apply.
 
 ## MCP (any MCP client)
