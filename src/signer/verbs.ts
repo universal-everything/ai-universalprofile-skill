@@ -21,6 +21,27 @@ import { BACKEND_IDS, chooseBackend, custodyWarnings, environment, internalBacke
 import { chainControllerList, controllerFor } from "./select.ts";
 import { decryptKeystoreV3, encryptKeystoreV3, STANDARD_SCRYPT } from "./keystore-v3.ts";
 
+/** Profiles (from local deployment manifests) whose FIRST owners include `address`. Those owners are
+ *  part of the profile address: on every chain deployed later, only they have access at first. */
+async function profilesFirstOwnedBy(home: string, address: string): Promise<Address[]> {
+  const { readdir } = await import("node:fs/promises");
+  let files: string[] = [];
+  try {
+    files = (await readdir(paths.profiles(home))).filter((f) => f.endsWith(".json"));
+  } catch {
+    return [];
+  }
+  const out: Address[] = [];
+  for (const f of files) {
+    const rec = await readJson<any>(join(paths.profiles(home), f), {});
+    const m = rec?.deployment;
+    if (!m?.profile) continue;
+    const owners = [m.controller, ...((m.extraControllers ?? []) as { address: string }[]).map((x) => x.address)].filter(Boolean);
+    if (owners.some((o: string) => sameAddress(o, address))) out.push(getAddress(m.profile));
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Candidate keys (rotation) — public data only, <UP_HOME>/keys/candidates.json
 // ---------------------------------------------------------------------------
@@ -334,6 +355,7 @@ export const keyRotatePlanVerb = defineVerb({
     const chains = chainId !== undefined ? [chainId] : cfg.chains?.length ? cfg.chains.filter((id) => !ownIds.has(id)) : undefined;
     const where = chainId !== undefined ? `on ${chainText(ctx, chainId)}` : `on each chain where the profile is deployed${chains ? ` and this key is used (configured: ${chains.join(", ") || "none"})` : ""}${own.length ? `, except chains with their own key (${own.map((k) => chainText(ctx, k.chainId)).join(", ")})` : ""}`;
     const chainFlag = chainId !== undefined ? `--chain ${chainId}` : "--chain <id>";
+    const firstOwnerOf = await profilesFirstOwnedBy(ctx.home, c.address);
     const steps = [
       {
         step: 1,
@@ -370,13 +392,21 @@ export const keyRotatePlanVerb = defineVerb({
         command: `up controller remove ${c.address} ${chainFlag}`,
         done: false,
       },
-      {
-        step: 6,
-        title: "Retire the old key",
-        detail: `Keep the old key in ${c.backend} for 30 days as a fallback, then delete it from the key store.`,
-        command: null,
-        done: false,
-      },
+      firstOwnerOf.length
+        ? {
+            step: 6,
+            title: "Keep the old key (it created your profile)",
+            detail: `Do NOT delete ${c.address}: it is a first owner of ${firstOwnerOf.join(", ")}. First owners are part of the profile address, so on every network where the profile is deployed later only they have access at first. Keep it in ${c.backend}; when you deploy on a new network, use it once there to add the current key (up key activate ${c.address} --chain <id>, up controller add <current key> --chain <id>, then switch back).`,
+            command: null,
+            done: false,
+          }
+        : {
+            step: 6,
+            title: "Retire the old key",
+            detail: `Keep the old key in ${c.backend} for 30 days as a fallback, then delete it from the key store.`,
+            command: null,
+            done: false,
+          },
     ];
     const text = [
       `Rotation plan for ${c.address} (${c.backend})${chainId !== undefined ? `, the agent's ${scope === "chain" ? "own key" : "default key"} on ${chainText(ctx, chainId)}` : ""}. The profile address never changes.`,
