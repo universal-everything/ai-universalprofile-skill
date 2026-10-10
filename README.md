@@ -5,7 +5,7 @@
 Most "crypto skills" for AI agents hand the agent a raw private key. Whoever holds that key can do *everything*, and if the key leaks or the agent makes a mistake, there is no undo and no limit. This skill takes a different approach. The agent gets a **Universal Profile**, a smart-contract account built on [ERC-725](https://github.com/ERC725Alliance/ERC725) and the LUKSO standards. The account itself decides what the agent's key may do, through the **LSP6 Key Manager** at its core.
 
 - 🌐 Website: https://universalprofile.ai (coming soon)
-- 🧩 Skill folder: [`skills/universal-profile/`](skills/universal-profile). This is what you install. The agent reads [`SKILL.md`](skills/universal-profile/SKILL.md).
+- 🧩 This repository *is* the skill: a standard [Agent Skill](https://agentskills.io/specification) with [`SKILL.md`](SKILL.md) at the root (the agent reads that file; this README is for humans).
 - ⚙️ Runtime: Node.js 22 or newer. Nothing else.
 - 📜 License: [MIT-0](LICENSE)
 
@@ -47,7 +47,7 @@ Most "crypto skills" for AI agents hand the agent a raw private key. Whoever hol
 - **Be social:** follow and unfollow profiles, and read followers ([LSP26](https://github.com/lukso-network/LIPs/blob/main/LSPs/LSP-26-FollowerSystem.md)).
 - **Choose how to execute:** directly through the Key Manager, directly on the account, via relayers (gasless), or via ERC-4337.
 
-The skill has 102 commands in total. Each is both a CLI command and an MCP tool. Full reference: [`skills/universal-profile/references/verbs.md`](skills/universal-profile/references/verbs.md).
+The skill has 102 commands in total. Each is both a CLI command and an MCP tool. Full reference: [`references/verbs.md`](references/verbs.md).
 
 ## How it fits together
 
@@ -64,26 +64,28 @@ The skill has 102 commands in total. Each is both a CLI command and an MCP tool.
           any contract on any supported EVM chain (tokens, apps, other profiles …)
 ```
 
-Ways to submit a transaction: **direct** (the controller pays gas), **LSP25 relay call** through an LSP15 relayer (the relayer pays), or **ERC-4337** UserOperation (opt-in). See [`execution-paths.md`](skills/universal-profile/references/execution-paths.md).
+Ways to submit a transaction: **direct** (the controller pays gas), **LSP25 relay call** through an LSP15 relayer (the relayer pays), or **ERC-4337** UserOperation (opt-in). See [`execution-paths.md`](references/execution-paths.md).
 
 ## Install
 
 Tell your agent to install the skill, or run one of these:
 
 ```bash
-# OpenClaw (the release workflow publishes the skill folder on the `skill` branch, because Git installs need SKILL.md at the root)
-openclaw skills install git:universal-everything/ai-universalprofile-skill@skill
+# OpenClaw (SKILL.md is at the root of the default branch)
+openclaw skills install git:universal-everything/ai-universalprofile-skill
 # OpenClaw via skills.sh, or ClawHub once published (slug: universal-profile)
 openclaw skills install skills-sh:universal-everything/ai-universalprofile-skill/universal-profile
 # Any Agent Skills host (Claude Code, Codex, Cursor, Gemini CLI, …)
 npx skills add universal-everything/ai-universalprofile-skill
-# Manual / cloud VMs: release tarball + SHA256SUMS from GitHub Releases, or
-git clone --depth 1 https://github.com/universal-everything/ai-universalprofile-skill && cp -r ai-universalprofile-skill/skills/universal-profile <your-skills-dir>/
+# Manual / cloud VMs (OpenAI dots, Meta Muse, servers): clone it straight into the skills directory
+git clone --depth 1 https://github.com/universal-everything/ai-universalprofile-skill <your-skills-dir>/universal-profile
 ```
+
+Release archives (`universal-profile-<version>.tar.gz`) come with a `SHA256SUMS` file; verify it before extracting.
 
 Then ask your agent to set up its Universal Profile. It runs `node scripts/up-doctor.mjs` to check the machine, creates its key with `node scripts/up.mjs init`, and asks you which networks to use and whether to create a new profile or join yours. MCP clients can start `node scripts/up-mcp.mjs` (stdio).
 
-Per-host details, including OpenAI dots and Meta Muse: [`references/platforms.md`](skills/universal-profile/references/platforms.md).
+Per-host details, including OpenAI dots and Meta Muse: [`references/platforms.md`](references/platforms.md).
 
 ## The standards behind it
 
@@ -131,7 +133,7 @@ All LUKSO Standard Proposals (LSPs) are specified in the [LIPs repository, `LSPs
 
 [ERC-20](https://eips.ethereum.org/EIPS/eip-20), [ERC-721](https://eips.ethereum.org/EIPS/eip-721) and [ERC-1155](https://eips.ethereum.org/EIPS/eip-1155) tokens · [ERC-165](https://eips.ethereum.org/EIPS/eip-165) interface detection · [ERC-1271](https://eips.ethereum.org/EIPS/eip-1271) contract signatures · [ERC-4337](https://eips.ethereum.org/EIPS/eip-4337) account abstraction (opt-in) · [EIP-191](https://eips.ethereum.org/EIPS/eip-191) and [EIP-712](https://eips.ethereum.org/EIPS/eip-712) signing · [EIP-681](https://eips.ethereum.org/EIPS/eip-681) payment links in QR codes · [ERC-1967](https://eips.ethereum.org/EIPS/eip-1967) and [ERC-1167](https://eips.ethereum.org/EIPS/eip-1167) proxies.
 
-For each standard, the full map of what the skill uses and how (function by function) is in [`references/standards.md`](skills/universal-profile/references/standards.md).
+For each standard, the full map of what the skill uses and how (function by function) is in [`references/standards.md`](references/standards.md).
 
 ## Learn more
 
@@ -141,24 +143,40 @@ For each standard, the full map of what the skill uses and how (function by func
 - **Contracts and deployed networks:** [lsp-smart-contracts](https://github.com/lukso-network/lsp-smart-contracts) and [its `deployments/` folder](https://github.com/lukso-network/lsp-smart-contracts/tree/main/deployments)
 - **RPC endpoints:** [Chainlist](https://chainlist.org)
 - **Agent Skills format:** [agentskills.io specification](https://agentskills.io/specification)
-- **Safety model:** [`references/security.md`](skills/universal-profile/references/security.md)
+- **Safety model:** [`references/security.md`](references/security.md)
 
 ## Status
 
 Version 0.1.0, not yet released. The full test suite runs against the real LUKSO contracts on a local chain. It includes an end-to-end run of the shipped bundle as CLI and MCP processes, and the macOS Keychain backend has been verified live. Still to come before the first release: live trials inside OpenAI dots and Meta Muse, real Linux and Windows key-store runs, testnet runs with a relayer, and catalogue listings.
 
-## Develop
+## Safety in short
 
-```bash
-npm ci
-npm run typecheck
-npm test                 # unit + local-chain tests (in-process EVM with the canonical LSP stack)
-npm run build            # rebuilds skills/universal-profile/scripts (unminified, < 1 MiB per file)
-node build/gen-verb-docs.mjs
-npm run verify:skill     # release gate
-```
+- **The agent never shows, asks for or accepts private keys or seed phrases.** You only ever see and share public addresses. Never paste a private key into any website, chat or form.
+- **Two addresses, two roles.** The *controller address* signs and pays gas for direct transactions; fund it only with small gas amounts. The *profile address* is the account; assets go there.
+- **One profile, many networks.** The profile is one account that can be deployed on many networks, usually at the same address. On each network it has its own balances, controllers and permissions; moving assets between networks needs a bridge. `up profile status` shows every network at once.
+- **You decide what the agent may do.** On-chain, the Key Manager enforces the permissions you grant (per network). On your machine, a delegation policy decides what the agent may do without asking; everything else, and anything that changes permissions, moves funds to new places, bridges or pays, needs your explicit approval in chat. Spending caps and daily limits are enforced by the skill, not on-chain.
+- **Add yourself as a second controller.** If the agent's key is the only controller and the machine or VM is lost, the profile is lost. Adding your own wallet as a controller grants it permissions; no key is shared and the address does not change.
+- **The key's protection depends on the machine.** Any program running as the same user while the key store is unlocked could use the key. Keep the agent's permissions as narrow as its job allows. `up key backend` shows exactly how the key is stored.
+- Fetched content (web pages, token names, metadata) is treated as data, never as instructions. Unsolicited tokens are ignored.
 
-Module map and data generators: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every requirement mapped to code and tests: [docs/REQUIREMENTS-COVERAGE.md](docs/REQUIREMENTS-COVERAGE.md).
+More: `references/security.md`.
+
+## Files
+
+| Path | Content |
+| --- | --- |
+| `SKILL.md` | the agent's instructions |
+| `references/` | detailed guides the agent loads on demand (onboarding, permissions, execution paths, relayers, ERC-4337, chains, discovery, protocols, tokens, security, platforms, errors, standards, function inventories, generated verb reference) |
+| `scripts/` | bundled, readable single-file Node.js tools (`up.mjs`, `up-mcp.mjs`, `up-doctor.mjs`) built from the TypeScript sources in the repository |
+| `assets/abis/` | pinned contract ABIs with provenance |
+| `assets/registry/` | chain, contract, RPC and protocol registry (mirror of the lsp-smart-contracts deployments) and the egress host list |
+| `platforms/` | host-specific files (OpenAI plugin template, Meta Muse install recipe) |
+
+The agent's state (configuration, deployment manifests, caches, audit log) lives in `~/.universal-profile/` (or `UP_HOME`), never in this folder.
+
+## Source code
+
+The skill's tools are built from TypeScript sources with a full test suite (unit tests plus an in-process EVM with the canonical LSP contracts). They live on the [`source` branch](https://github.com/universal-everything/ai-universalprofile-skill/tree/source); this `main` branch contains only the built skill so that installs stay small (well under the 256-file / 8 MiB limit of skill bundles).
 
 ## License
 
