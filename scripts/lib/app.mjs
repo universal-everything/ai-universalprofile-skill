@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint fcb9d8515076 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 445aa7f31b20 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -8406,7 +8406,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "fcb9d8515076" : "source";
+var SOURCE = true ? "445aa7f31b20" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -9054,6 +9054,24 @@ async function decryptKeystoreV3(input, passphrase) {
 }
 
 // src/signer/verbs.ts
+async function profilesFirstOwnedBy(home, address) {
+  const { readdir } = await import("node:fs/promises");
+  let files = [];
+  try {
+    files = (await readdir(paths.profiles(home))).filter((f) => f.endsWith(".json"));
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const f of files) {
+    const rec = await readJson(join7(paths.profiles(home), f), {});
+    const m = rec?.deployment;
+    if (!m?.profile) continue;
+    const owners = [m.controller, ...(m.extraControllers ?? []).map((x) => x.address)].filter(Boolean);
+    if (owners.some((o) => sameAddress(o, address))) out.push(getAddress9(m.profile));
+  }
+  return out;
+}
 function candidatesFile(home) {
   return join7(paths.keys(home), "candidates.json");
 }
@@ -9308,6 +9326,7 @@ var keyRotatePlanVerb = defineVerb({
     const chains = chainId !== void 0 ? [chainId] : cfg.chains?.length ? cfg.chains.filter((id) => !ownIds.has(id)) : void 0;
     const where = chainId !== void 0 ? `on ${chainText(ctx, chainId)}` : `on each chain where the profile is deployed${chains ? ` and this key is used (configured: ${chains.join(", ") || "none"})` : ""}${own.length ? `, except chains with their own key (${own.map((k) => chainText(ctx, k.chainId)).join(", ")})` : ""}`;
     const chainFlag = chainId !== void 0 ? `--chain ${chainId}` : "--chain <id>";
+    const firstOwnerOf = await profilesFirstOwnedBy(ctx.home, c.address);
     const steps = [
       {
         step: 1,
@@ -9344,7 +9363,13 @@ var keyRotatePlanVerb = defineVerb({
         command: `up controller remove ${c.address} ${chainFlag}`,
         done: false
       },
-      {
+      firstOwnerOf.length ? {
+        step: 6,
+        title: "Keep the old key (it created your profile)",
+        detail: `Do NOT delete ${c.address}: it is a first owner of ${firstOwnerOf.join(", ")}. First owners are part of the profile address, so on every network where the profile is deployed later only they have access at first. Keep it in ${c.backend}; when you deploy on a new network, use it once there to add the current key (up key activate ${c.address} --chain <id>, up controller add <current key> --chain <id>, then switch back).`,
+        command: null,
+        done: false
+      } : {
         step: 6,
         title: "Retire the old key",
         detail: `Keep the old key in ${c.backend} for 30 days as a fallback, then delete it from the key store.`,
