@@ -32,7 +32,7 @@ try {
 const REQUIRE_SHIM = `import { createRequire as __upCreateRequire } from "node:module";\nconst require = __upCreateRequire(import.meta.url);\n`;
 const banner = (what) =>
   `// ${what}\n` +
-  `// Universal Profile Agent Skill v${pkg.version} — MIT-0 — https://github.com/universal-everything/ai-universalprofile-mcp\n` +
+  `// Universal Profile Agent Skill v${pkg.version} — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill\n` +
   `// Built from source commit ${commit} with \`npm ci && npm run build\` (esbuild, unminified). Do not edit; edit src/ instead.\n` +
   REQUIRE_SHIM;
 

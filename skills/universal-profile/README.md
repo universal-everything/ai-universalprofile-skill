@@ -5,7 +5,7 @@ Give your AI agent its own **Universal Profile**: a smart-contract account (LSP0
 This folder is a standard [Agent Skill](https://agentskills.io/specification). The agent reads `SKILL.md`; this README is for humans.
 
 - Website: https://universalprofile.ai
-- Source and releases: https://github.com/universal-everything/ai-universalprofile-mcp
+- Source and releases: https://github.com/universal-everything/ai-universalprofile-skill
 - License: MIT-0 (`LICENSE`)
 
 ## What the agent can do with it
@@ -26,8 +26,8 @@ This folder is a standard [Agent Skill](https://agentskills.io/specification). T
 
 | Host | How | Status |
 | --- | --- | --- |
-| OpenClaw | `openclaw skills install git:universal-everything/ai-universalprofile-mcp@skill` (after the first tagged release), the ClawHub listing `universal-profile` once published, or `openclaw skills install <local path to this folder>` | documented by OpenClaw; not yet tested end to end |
-| Claude Code, Codex, Cursor, Gemini CLI and other Agent Skills hosts | `npx skills add universal-everything/ai-universalprofile-mcp`, or copy this folder into the host's skills directory | candidate |
+| OpenClaw | `openclaw skills install git:universal-everything/ai-universalprofile-skill@skill` (after the first tagged release), the ClawHub listing `universal-profile` once published, or `openclaw skills install <local path to this folder>` | documented by OpenClaw; not yet tested end to end |
+| Claude Code, Codex, Cursor, Gemini CLI and other Agent Skills hosts | `npx skills add universal-everything/ai-universalprofile-skill`, or copy this folder into the host's skills directory | candidate |
 | OpenAI dots | the dot installs the skill in its own cloud computer; key in a protected file there | candidate |
 | Meta Muse | install recipe in `platforms/meta/README.md`; key in a protected file inside the Muse VM | candidate |
 | Any MCP client | `node scripts/up-mcp.mjs` (stdio) | candidate |

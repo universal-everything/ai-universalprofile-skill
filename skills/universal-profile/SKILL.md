@@ -7,7 +7,7 @@ metadata:
   version: "0.1.0"
   data-version: "2026.10"
   homepage: "https://universalprofile.ai"
-  repository: "https://github.com/universal-everything/ai-universalprofile-mcp"
+  repository: "https://github.com/universal-everything/ai-universalprofile-skill"
   openclaw:
     emoji: "🪪"
     homepage: "https://universalprofile.ai"

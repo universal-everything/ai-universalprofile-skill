@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
-// Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-mcp
-// Built from source commit uncommitted with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
+// Built from source commit 208f28b with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -5791,7 +5791,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var COMMIT = true ? "uncommitted" : "source";
+var COMMIT = true ? "208f28b" : "source";
 
 // src/core/assets.ts
 import { existsSync as existsSync2, readFileSync } from "node:fs";

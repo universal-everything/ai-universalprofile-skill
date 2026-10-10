@@ -11,13 +11,13 @@ Give any AI agent its own **Universal Profile** — an ERC725 smart-contract acc
 
 ```bash
 # OpenClaw (Git installs need SKILL.md at the source root → the release workflow publishes it on the `skill` branch)
-openclaw skills install git:universal-everything/ai-universalprofile-mcp@skill
+openclaw skills install git:universal-everything/ai-universalprofile-skill@skill
 # OpenClaw via skills.sh ref, or ClawHub once published (slug: universal-profile)
-openclaw skills install skills-sh:universal-everything/ai-universalprofile-mcp/universal-profile
+openclaw skills install skills-sh:universal-everything/ai-universalprofile-skill/universal-profile
 # Any Agent-Skills host (Claude Code, Codex, Cursor, Gemini CLI, …)
-npx skills add universal-everything/ai-universalprofile-mcp
+npx skills add universal-everything/ai-universalprofile-skill
 # Manual / cloud VMs: release tarball + SHA256SUMS from GitHub Releases, or
-git clone --depth 1 https://github.com/universal-everything/ai-universalprofile-mcp && cp -r ai-universalprofile-mcp/skills/universal-profile <your-skills-dir>/
+git clone --depth 1 https://github.com/universal-everything/ai-universalprofile-skill && cp -r ai-universalprofile-skill/skills/universal-profile <your-skills-dir>/
 ```
 
 Then the agent runs `node scripts/up-doctor.mjs` and `node scripts/up.mjs init`. MCP hosts can start `node scripts/up-mcp.mjs` (stdio).

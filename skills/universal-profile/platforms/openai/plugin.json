@@ -8,7 +8,7 @@
     "url": "https://github.com/universal-everything"
   },
   "homepage": "https://universalprofile.ai",
-  "repository": "https://github.com/universal-everything/ai-universalprofile-mcp",
+  "repository": "https://github.com/universal-everything/ai-universalprofile-skill",
   "license": "MIT-0",
   "keywords": ["universal-profile", "lukso", "erc725", "lsp6", "smart-account", "agent-wallet", "evm"]
 }

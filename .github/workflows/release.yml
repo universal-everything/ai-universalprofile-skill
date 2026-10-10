@@ -2,7 +2,7 @@ name: release
 
 # On a version tag: rebuild, verify, then publish the shipped skill folder
 #  - as branch `skill` with SKILL.md at the repository root, so
-#    `openclaw skills install git:universal-everything/ai-universalprofile-mcp@skill`
+#    `openclaw skills install git:universal-everything/ai-universalprofile-skill@skill`
 #    works (OpenClaw git installs expect SKILL.md at the source root), and
 #  - as a GitHub release asset universal-profile-<version>.tar.gz + SHA256SUMS
 #    (used by agents inside cloud VMs, e.g. Meta Muse, to fetch and verify).

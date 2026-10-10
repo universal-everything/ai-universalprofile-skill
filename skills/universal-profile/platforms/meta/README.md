@@ -40,13 +40,13 @@ Continue only if `sha256sum -c` printed `OK`. Add the `export PATH=…` line to 
 
 ## 3. Download and verify the skill
 
-Use the release version the human asked for, or the latest release listed at https://github.com/universal-everything/ai-universalprofile-mcp/releases.
+Use the release version the human asked for, or the latest release listed at https://github.com/universal-everything/ai-universalprofile-skill/releases.
 
 ```sh
 VERSION=0.1.0
 cd "$(mktemp -d)"
-curl -fsSLO "https://github.com/universal-everything/ai-universalprofile-mcp/releases/download/v$VERSION/universal-profile-$VERSION.tar.gz"
-curl -fsSLO "https://github.com/universal-everything/ai-universalprofile-mcp/releases/download/v$VERSION/SHA256SUMS"
+curl -fsSLO "https://github.com/universal-everything/ai-universalprofile-skill/releases/download/v$VERSION/universal-profile-$VERSION.tar.gz"
+curl -fsSLO "https://github.com/universal-everything/ai-universalprofile-skill/releases/download/v$VERSION/SHA256SUMS"
 sha256sum -c SHA256SUMS
 mkdir -p "$HOME/skills"
 tar -xzf "universal-profile-$VERSION.tar.gz" -C "$HOME/skills"

@@ -1,34 +1,34 @@
 {
   "version": "0.1.0",
-  "commit": "uncommitted",
+  "commit": "208f28b",
   "files": {
     "scripts/lib/app.mjs": {
-      "bytes": 826486,
-      "sha256": "3631819b228268fcf007b25dca95fe18a609d021621ff9bf97be0687ae8f9578"
+      "bytes": 826480,
+      "sha256": "eac9e78b70871d844062a03749a84c64399a7769ef25a67e0c0ce729411a60b5"
     },
     "scripts/lib/vendor-erc725.mjs": {
-      "bytes": 123036,
-      "sha256": "cb6f611999d816f6dae919c27e3d7e55ac12dc5350427153ad69f2f1cd7bcea7"
+      "bytes": 123034,
+      "sha256": "56f1d9935620d74b5673341ab509d8bcbf4635c4c7d460395dc77e062b03aa5b"
     },
     "scripts/lib/vendor-qrcode.mjs": {
-      "bytes": 145560,
-      "sha256": "6a2fed9e89085f1075a25b1d0bea7c7215f594c0ec77918d0656f35e2af93e41"
+      "bytes": 145558,
+      "sha256": "4010cdd00ac850da9e748d13c294da896a089082f06b9b897ab163db0db66e11"
     },
     "scripts/lib/vendor-viem.mjs": {
-      "bytes": 943564,
-      "sha256": "43ca24c0e4ba81d45bf1a12669447677cb6b054ba65612ea317aa805c5003948"
+      "bytes": 943562,
+      "sha256": "198d99687e56f2ba1fb9cd1650be7480000f96265f9c43f4f7b1f8ace259d170"
     },
     "scripts/up-doctor.mjs": {
-      "bytes": 523,
-      "sha256": "b3def028423c2394486c36cdb5874b38399912be340f6b11857416f75fbcff9e"
+      "bytes": 521,
+      "sha256": "a87b82da51a84de662ddb83cd698265aa88f2737d06883e6b630ca38fafba15e"
     },
     "scripts/up-mcp.mjs": {
-      "bytes": 477,
-      "sha256": "e8cd02ad40c5db394a9060b713da154e7d30d3da8c0431003cddca55651980fb"
+      "bytes": 475,
+      "sha256": "b100493d645f7094216acb733f28ef83daefb41604cb8af1c1f5ae482c778fe1"
     },
     "scripts/up.mjs": {
-      "bytes": 501,
-      "sha256": "ea5399c6ddc659ae26e8487b3cca79d7e7859a44b485ebb9366f82b5f97564c7"
+      "bytes": 499,
+      "sha256": "86d19a2e9103afb7f86fe2a743ac6848307921f3ddbffa710dcefb759316feb2"
     }
   }
 }

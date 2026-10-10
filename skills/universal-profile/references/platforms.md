@@ -1,6 +1,6 @@
 # Platforms: installing and running the skill on each host
 
-The skill is one directory (`universal-profile/`: `SKILL.md`, `scripts/`, `references/`, `assets/`) that runs anywhere **Node.js 22 or newer** runs. There is no `npm install`, no native module, no admin step and nothing runs at install time. Source: https://github.com/universal-everything/ai-universalprofile-mcp (the skill lives in `skills/universal-profile/`). Releases ship `universal-profile-<version>.tar.gz` with a `SHA256SUMS` file.
+The skill is one directory (`universal-profile/`: `SKILL.md`, `scripts/`, `references/`, `assets/`) that runs anywhere **Node.js 22 or newer** runs. There is no `npm install`, no native module, no admin step and nothing runs at install time. Source: https://github.com/universal-everything/ai-universalprofile-skill (the skill lives in `skills/universal-profile/`). Releases ship `universal-profile-<version>.tar.gz` with a `SHA256SUMS` file.
 
 Status words below: **documented** = the host's own documentation describes this route; **candidate** = should work, not yet proven by an end-to-end test on a fresh installation; **not available** = missing in this version. No host has a recorded end-to-end pass for this version yet; do not tell a human that a host "is supported and tested".
 
@@ -18,9 +18,9 @@ OpenClaw gateways already run on a newer Node, so nothing is needed there.
 ## OpenClaw (first-class)
 
 - **Install (documented OpenClaw routes; the Git and ClawHub ones exist once a release is tagged and published):**
-  - `openclaw skills install git:universal-everything/ai-universalprofile-mcp@skill`: every release publishes the skill folder as the `skill` branch with `SKILL.md` at its root, which is what OpenClaw Git installs expect (the `main` branch keeps the skill in `skills/universal-profile/`, so `git:…` without `@skill` does not work).
+  - `openclaw skills install git:universal-everything/ai-universalprofile-skill@skill`: every release publishes the skill folder as the `skill` branch with `SKILL.md` at its root, which is what OpenClaw Git installs expect (the `main` branch keeps the skill in `skills/universal-profile/`, so `git:…` without `@skill` does not work).
   - ClawHub, slug `universal-profile`: `openclaw skills install @<owner>/universal-profile` (owner as shown on the listing).
-  - Local copy: `git clone --depth 1 https://github.com/universal-everything/ai-universalprofile-mcp && openclaw skills install ./ai-universalprofile-mcp/skills/universal-profile`, or copy the directory into the workspace `skills/` folder.
+  - Local copy: `git clone --depth 1 https://github.com/universal-everything/ai-universalprofile-skill && openclaw skills install ./ai-universalprofile-skill/skills/universal-profile`, or copy the directory into the workspace `skills/` folder.
   - Add `--global` to make it available to all agents.
 - **Gating:** the frontmatter declares `metadata.openclaw.requires.bins: [node]` and the supported OS list. `openclaw skills check` shows missing requirements.
 - **Running:** the agent runs `node {baseDir}/scripts/up.mjs …` through its exec tool. If an operator configured exec approvals (`ask`, `allowlist`, `deny`), a sandbox or an install policy, report that exact gate to the human instead of working around it.
@@ -52,7 +52,7 @@ Status: **candidate**. Muse runs agents in a Linux VM with a terminal and file s
 
 Status: **candidate** for all.
 
-- `npx skills add universal-everything/ai-universalprofile-mcp` (the skills CLI finds `skills/universal-profile` and links it into the chosen agent's skills directory; `-a <agent>` selects the host).
+- `npx skills add universal-everything/ai-universalprofile-skill` (the skills CLI finds `skills/universal-profile` and links it into the chosen agent's skills directory; `-a <agent>` selects the host).
 - Or clone the repository and copy or link `skills/universal-profile` into the host's skills directory (for example `~/.claude/skills/universal-profile` for Claude Code, or `~/.agents/skills/universal-profile` for hosts that read that shared location). Check the host's documentation for its directory.
 - Scripts run through the host's shell tool from the skill directory. The same OS key-store backends apply.
 

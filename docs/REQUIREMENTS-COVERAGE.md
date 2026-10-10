@@ -78,7 +78,7 @@ Maps every requirement of the task definition (Obsidian note *Universal Profile 
 | # | Decision | Implementation |
 | --- | --- | --- |
 | 1 | MIT-0 | `LICENSE`, SKILL.md `license: MIT-0` |
-| 2 | Repo universal-everything/ai-universalprofile-mcp | this repository; release workflow |
+| 2 | Repo universal-everything/ai-universalprofile-skill | this repository; release workflow |
 | 3 | Key file inside dots/Muse VM is fine, no lecture | `vm-protected-file` backend (0600/0700, never logged), plain one-line protection note |
 | 4 | No hosted MCP | none; knowledge bundled + links |
 | 5 | Order API = quota; no JWT/API key | `src/relayer/client.ts` |
