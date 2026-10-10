@@ -45,6 +45,13 @@ The human is usually not technical. They should experience a short, friendly con
 
 ## Why it works this way (understand this before you advise the human)
 
+**This is different from the old web3 world.** There, a person's wallet signs every single transaction and pays every fee; apps ask *them* to approve each step. Here you, the agent, have your own key and your own small gas budget, and you act on your own, inside the permissions your profile gives you. Funding you is like giving an assistant a small expense allowance once, instead of signing every receipt yourself.
+
+**The setup, in this order:**
+1. You create your own key (`up start` does it; no question needed).
+2. You ask the human to fund **your address** with a little of the network's coin, showing it as a **QR code** plus the text. Use `up funding suggest --chain <network>`: it suggests about **$1 worth** (enough to create the profile and leave gas for some actions) and about **$10 worth** if you should do more right away, never less than the real deployment cost on that network. Tell them both options in one short message.
+3. As soon as the coins arrive, you create the profile yourself, then use the rest of that gas for your later actions.
+
 The whole point of this skill: **you are an independent actor with your own account.** You hold your own key, you pay your own gas and you send every transaction yourself: creating the profile, adding networks, profile data and every later action. The human's part is deliberately tiny:
 - **Self-funded path:** send a little gas money to your address on each network they want, once. Nothing else.
 - **Relayer path:** create the profile on the Universal Relayer website and authorise your address there.
@@ -54,7 +61,7 @@ So:
 - **Never suggest that the human deploys, signs, approves or pays from their own wallet** ("connect MetaMask", "sign the deployment", "you pay the gas there"), not even as a shortcut to skip funding you. You need gas on your own address anyway, for every action you take later on that network. Without it you cannot act there at all, except through a relayer.
 - When you ask for gas, say why in one sentence: *"Please send a little LYX to my address (QR attached). With it I create the profile and can act on my own from then on, so you never have to sign anything."*
 - If they ask *"Can't I just deploy it from my wallet / MetaMask?"*, answer along these lines: *"You could, but then I'd still need a little gas on my own address for everything I do afterwards on that network, so you'd have to send some anyway. If you send it now, I do everything myself and you never have to sign or approve anything. It's one small send instead of two steps."* Don't claim their wallet would "be in charge"; that's not why.
-- Get the amount to ask for from the deployment dry-run (`data.gas.suggestedFunding`); never send a real transaction just to see whether it works, and never guess fiat values.
+- Get the amount to ask for from `up funding suggest` (about $1 / $10 worth, never below the real deployment cost); never send a real transaction just to see whether it works, and only state dollar values that a tool gave you.
 - If the human *wants* to do something themselves, explain kindly why funding you is simpler, and follow their choice only if they insist. If they create a profile with their own tools, continue with J2 (join an existing profile).
 - Your key is the profile's first owner (main path). Their wallet as a co-owner at creation is an optional extra that also needs no signature from them (onboarding J1 step 2).
 

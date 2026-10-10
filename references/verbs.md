@@ -8,7 +8,7 @@ Risk classes: **local** (no chain writes), **read** (chain/HTTP reads), **write*
 
 - **abi**: [`abi bundled`](#abi-bundled), [`abi decode`](#abi-decode), [`abi decode-error`](#abi-decode-error), [`abi decode-event`](#abi-decode-event), [`abi encode`](#abi-encode), [`abi fetch`](#abi-fetch), [`abi functions`](#abi-functions), [`abi resolve-proxy`](#abi-resolve-proxy), [`abi selector`](#abi-selector), [`contract call`](#contract-call), [`contract read`](#contract-read)
 - **account**: [`account data get`](#account-data-get), [`account data set`](#account-data-set), [`account deploy`](#account-deploy), [`account extensions add`](#account-extensions-add), [`account extensions remove`](#account-extensions-remove), [`account info`](#account-info), [`account manifest export`](#account-manifest-export), [`account manifest show`](#account-manifest-show), [`account precompute`](#account-precompute), [`account urd set`](#account-urd-set), [`profile join`](#profile-join), [`profile link`](#profile-link), [`profile metadata set`](#profile-metadata-set), [`profile metadata show`](#profile-metadata-show), [`profile status`](#profile-status), [`profile url`](#profile-url)
-- **chains**: [`chains add`](#chains-add), [`chains list`](#chains-list), [`chains refresh`](#chains-refresh), [`chains rpc find`](#chains-rpc-find), [`chains rpc list`](#chains-rpc-list), [`chains rpc set`](#chains-rpc-set), [`chains rpc verify`](#chains-rpc-verify), [`chains verify`](#chains-verify)
+- **chains**: [`chains add`](#chains-add), [`chains list`](#chains-list), [`chains refresh`](#chains-refresh), [`chains rpc find`](#chains-rpc-find), [`chains rpc list`](#chains-rpc-list), [`chains rpc set`](#chains-rpc-set), [`chains rpc verify`](#chains-rpc-verify), [`chains verify`](#chains-verify), [`funding suggest`](#funding-suggest)
 - **display**: [`display address`](#display-address), [`identicon`](#identicon), [`qr`](#qr)
 - **erc4337**: [`account 4337 deploy-entrypoint`](#account-4337-deploy-entrypoint), [`account 4337 deploy-extension`](#account-4337-deploy-extension), [`account 4337 deposit`](#account-4337-deposit), [`account 4337 disable`](#account-4337-disable), [`account 4337 enable`](#account-4337-enable), [`account 4337 status`](#account-4337-status), [`account 4337 withdraw`](#account-4337-withdraw), [`bundler set`](#bundler-set)
 - **execute**: [`exec batch`](#exec-batch), [`exec call`](#exec-call), [`exec receipt`](#exec-receipt), [`exec relay`](#exec-relay), [`exec send`](#exec-send), [`exec simulate`](#exec-simulate), [`exec userop`](#exec-userop), [`nonce`](#nonce)
@@ -597,6 +597,26 @@ Check RPC health and that the canonical LSP contracts (factory, implementations,
 | option | type | required | description |
 | --- | --- | --- | --- |
 | `--chain` | string |  | Chain id or slug. |
+
+### funding suggest
+
+How much native coin to ask the human to send to the agent's address on a network: about $1 worth to create the profile plus some gas, about $10 worth for more actions (never less than the current deployment cost). Plain-language text included.
+
+Uses a live price (CoinGecko, cached 10 minutes) and an on-chain estimate of the profile deployment on that network. Without a price it suggests a coin amount only and makes no dollar claim. Show the QR of the address (up display address <address>) together with `text`.
+
+- CLI: `up funding suggest [options]`
+- MCP tool: `up_funding_suggest` · risk: **read**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--address` | string |  | Address to fund (default: this agent's key for the chain). |
+
+Examples:
+
+```
+up funding suggest --chain lukso
+up funding suggest --chain base
+```
 
 ## display
 
@@ -1495,6 +1515,7 @@ Run it as soon as the skill is installed, when the human asks about a Universal 
 | option | type | required | description |
 | --- | --- | --- | --- |
 | `--host` | string (dots\|muse\|vm) |  | Cloud agent VM type when running inside one. |
+| `--backend` | string |  | Key store for a new key (default auto: the strongest unattended store here). Default: `"auto"`. |
 
 Examples:
 
