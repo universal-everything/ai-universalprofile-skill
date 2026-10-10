@@ -7,6 +7,7 @@ All notable changes to the Universal Profile Agent Skill. Versions follow Semant
 First version of the skill.
 
 ### Added
+- Keys are permanent: the agent's keys are never replaced, retired or deleted; additional keys (e.g. one per network, or a new one after a loss, authorised by a co-owner) are kept alongside.
 - Keys are permanent: the agent's key is the private key of a blockchain account and is never replaced or deleted. Switching the key the agent signs with (`key activate`, also per chain) keeps the previous key in its store and listed as a previous key (`config.previousControllers`; older configs load their earlier keys into it). `key address` lists every key the agent keeps. A key missing from its store is reported plainly by `start`, `init` and `doctor`, with the way back: its backup, or, if truly lost, a new additional key added by a co-owner or admin wallet on each network. `profile status` also checks previous keys when looking for a local key with access on a chain.
 - Test mode safety: with `UP_TEST_EPHEMERAL_KEY` set, automatic key-store selection always uses the in-memory store, so tests and simulations never write real OS key-store entries. `start --backend` passes an explicit key store through.
 - `funding suggest`: how much native coin to ask for on a network: about $1 worth (create the profile plus some gas) or $10 worth (more actions), never below the live deployment cost; live price from CoinGecko (cached, optional), no dollar claim on testnets or without a price; plain-language text. SKILL.md explains why this setup differs from classic web3 wallets.
@@ -32,10 +33,6 @@ First version of the skill.
 - LSP26 follower system, ERC-1271 signing as the profile, QR codes (plain address and EIP-681) and blockies identicons generated locally.
 - Stdio MCP server exposing every verb as an `up_*` tool and the documents as resources.
 - Knowledge verbs `docs` and `standards list`; function inventories of every LSP package and the reference standards.
-
-### Removed
-- `key rotate-plan` (keys are permanent; there is nothing to swap out).
-- `init --force` (the agent's key is never replaced).
 
 ### Known limitations
 - No host has a recorded end-to-end pass on a fresh installation yet; OpenAI dots, Meta Muse and generic Agent Skills hosts are candidates (`references/platforms.md`).
