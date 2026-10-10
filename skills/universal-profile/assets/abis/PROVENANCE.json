@@ -1,0 +1,762 @@
+{
+  "generatedAt": "2026-10-10T05:20:05.591Z",
+  "lspSmartContracts": {
+    "repository": "https://github.com/lukso-network/lsp-smart-contracts",
+    "commit": "abe865bcaa0647cfeb7dd4df11d262ecd88f87c8",
+    "note": "ABI surface identical to upstream main 16ab244 for the account stack (VERSION strings differ); LSP7/LSP8 0.18 deltas recorded in standards-functions (nonTransferabilityEnabled rename, burn in Mintable presets)."
+  },
+  "files": {
+    "lsp/ILSP0ERC725Account.json": {
+      "package": "@lukso/lsp0-contracts",
+      "version": "0.15.5",
+      "source": "contracts/ILSP0ERC725Account.sol",
+      "sha256": "e26886f4c25cdd79ff1b024a014e529c23d1cd5a0bf3dfc57b093d46b5e9656e"
+    },
+    "lsp/LSP0ERC725Account.json": {
+      "package": "@lukso/lsp0-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP0ERC725Account.sol",
+      "sha256": "6d9bc9f8326df5480c049398cbe0eeff5ae5a8f7d22c30050e14369b09ec62e3"
+    },
+    "lsp/LSP0ERC725AccountCore.json": {
+      "package": "@lukso/lsp0-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP0ERC725AccountCore.sol",
+      "sha256": "7793b0b4d06fe32f6f7f20076ef269bd06fb13e34402d2110fdb3d0265fcda24"
+    },
+    "lsp/LSP0ERC725AccountInit.json": {
+      "package": "@lukso/lsp0-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP0ERC725AccountInit.sol",
+      "sha256": "7472f92dabe3d08131c6a55dd686b8d61ce58fc2518979a562f9a9a416f8a8cf"
+    },
+    "lsp/LSP0ERC725AccountInitAbstract.json": {
+      "package": "@lukso/lsp0-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP0ERC725AccountInitAbstract.sol",
+      "sha256": "6ff69c1ce92950f490cd10a1d9b73720fc4a3300ae8828cc98aa182f2e6a6918"
+    },
+    "lsp/Version.json": {
+      "package": "@lukso/lsp0-contracts",
+      "version": "0.15.5",
+      "source": "contracts/Version.sol",
+      "sha256": "90b525bbe6feb4f5282e7fff0be09dc0f80fde1a384cda7b224f8287bf6d907b"
+    },
+    "lsp/ILSP1UniversalReceiver.json": {
+      "package": "@lukso/lsp1-contracts",
+      "version": "0.15.5",
+      "source": "contracts/ILSP1UniversalReceiver.sol",
+      "sha256": "427f1477a04e073c69f782f952b477f016f26629b93d67a36ec4fab18ecf5c63"
+    },
+    "lsp/ILSP1UniversalReceiverDelegate.json": {
+      "package": "@lukso/lsp1-contracts",
+      "version": "0.15.5",
+      "source": "contracts/ILSP1UniversalReceiverDelegate.sol",
+      "sha256": "eee16aefd5ea164dbc3b1b4776b45c9c9e601b35c7a3e1b39027ef6dc5220fd4"
+    },
+    "lsp/ILSP11SocialRecovery.json": {
+      "package": "@lukso/lsp11-contracts",
+      "version": "0.1.7",
+      "source": "contracts/ILSP11SocialRecovery.sol",
+      "sha256": "69e08d4e59851919685b70378e8e3277d717cc8107d79314bec0863317563619"
+    },
+    "lsp/LSP11SocialRecovery.json": {
+      "package": "@lukso/lsp11-contracts",
+      "version": "0.1.7",
+      "source": "contracts/LSP11SocialRecovery.sol",
+      "sha256": "89b0cbb02136aeb6a33a0eec90c5ed62a400144aa7f08dd7daf936cd4e7dde9b"
+    },
+    "lsp/ILSP14Ownable2Step.json": {
+      "package": "@lukso/lsp14-contracts",
+      "version": "0.15.5",
+      "source": "contracts/ILSP14Ownable2Step.sol",
+      "sha256": "97463dff3743265cc71fc8581034c0f5b68c9c038d8eb02058fae40a229e1ace"
+    },
+    "lsp/LSP14Ownable2Step.json": {
+      "package": "@lukso/lsp14-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP14Ownable2Step.sol",
+      "sha256": "a492767963805a092afa95cdf6443a4488ad6d1892476a754844b8c048af5601"
+    },
+    "lsp/LSP16UniversalFactory.json": {
+      "package": "@lukso/lsp16-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP16UniversalFactory.sol",
+      "sha256": "1dcaa88bed027f11899b429c323180376af97760294d140364b9e359ef188f29"
+    },
+    "lsp/ERC20MetadataCompatibilityExtension.json": {
+      "package": "@lukso/lsp17-contracts",
+      "version": "0.16.7",
+      "source": "contracts/ERC20MetadataCompatibilityExtension.sol",
+      "sha256": "609db1a655f3fd015bbf3b2f0240b2e4a6e59eb16779ff6c4905d2d303e23857"
+    },
+    "lsp/ERCTokenCallbacks.json": {
+      "package": "@lukso/lsp17-contracts",
+      "version": "0.16.7",
+      "source": "contracts/ERCTokenCallbacks.sol",
+      "sha256": "c4b0d06eea21e36d4378ea2f9f4242d7fbf19b08a01a67ca3926e93b44b0f213"
+    },
+    "lsp/Extension4337.json": {
+      "package": "@lukso/lsp17-contracts",
+      "version": "0.16.7",
+      "source": "contracts/Extension4337.sol",
+      "sha256": "68e0d2732c493140cb57e15bf2423a280cafa21fa579832704d56cdb49b81693"
+    },
+    "lsp/OnERC721ReceivedExtension.json": {
+      "package": "@lukso/lsp17-contracts",
+      "version": "0.16.7",
+      "source": "contracts/OnERC721ReceivedExtension.sol",
+      "sha256": "d9eaff50da1eab280c0b1e61bf5e7fd61a7f1f8a39ec6840642b3da22bb0ea6b"
+    },
+    "lsp/LSP17Extendable.json": {
+      "package": "@lukso/lsp17contractextension-contracts",
+      "version": "0.16.7",
+      "source": "contracts/LSP17Extendable.sol",
+      "sha256": "1603127255d9ed8066cd4026778d42b98591ccb9605403a93c9bbb596295809e"
+    },
+    "lsp/LSP17ExtendableInitAbstract.json": {
+      "package": "@lukso/lsp17contractextension-contracts",
+      "version": "0.16.7",
+      "source": "contracts/LSP17ExtendableInitAbstract.sol",
+      "sha256": "9d6f9ad21a31b3e1e024f36fa9ea582675d50bf4a7d7c2f2aefbcfb7e5e75e30"
+    },
+    "lsp/LSP17Extension.json": {
+      "package": "@lukso/lsp17contractextension-contracts",
+      "version": "0.16.7",
+      "source": "contracts/LSP17Extension.sol",
+      "sha256": "a0faa471ddfce0868694fd169711444840ff383ac9a4ba2a912704bada283513"
+    },
+    "lsp/LSP17ExtensionInitAbstract.json": {
+      "package": "@lukso/lsp17contractextension-contracts",
+      "version": "0.16.7",
+      "source": "contracts/LSP17ExtensionInitAbstract.sol",
+      "sha256": "63edd6af86fcb28095c3e084b99c1e35c0dda02076fd34b095dd4f95997ca71e"
+    },
+    "lsp/LSP1UniversalReceiverDelegateUP.json": {
+      "package": "@lukso/lsp1delegate-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP1UniversalReceiverDelegateUP.sol",
+      "sha256": "dadf47fc9873fa0a5df04abc95f7c4e413919e6d413bf2d55d874756c6a2cbc9"
+    },
+    "lsp/LSP1UniversalReceiverDelegateVault.json": {
+      "package": "@lukso/lsp1delegate-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP1UniversalReceiverDelegateVault.sol",
+      "sha256": "c6941288379bfa6f596e23098912ca2db86b6aa5b96048d1f82375c4610fdf66"
+    },
+    "lsp/ILSP20CallVerifier.json": {
+      "package": "@lukso/lsp20-contracts",
+      "version": "0.15.5",
+      "source": "contracts/ILSP20CallVerifier.sol",
+      "sha256": "78ecd3602c3e2209768369b3f97d946021c02144acde7442e4ffa1d6971788fc"
+    },
+    "lsp/ILSP23LinkedContractsFactory.json": {
+      "package": "@lukso/lsp23-contracts",
+      "version": "0.15.5",
+      "source": "contracts/ILSP23LinkedContractsFactory.sol",
+      "sha256": "851d5d6ef578989503c33914a57851c58a14bc57a9f43992c611b5751b794613"
+    },
+    "lsp/IPostDeploymentModule.json": {
+      "package": "@lukso/lsp23-contracts",
+      "version": "0.15.5",
+      "source": "contracts/IPostDeploymentModule.sol",
+      "sha256": "ed5ab846210f823f9e921f2652760721dd182ed8da1fc1ace4b6d67deace850d"
+    },
+    "lsp/LSP23LinkedContractsFactory.json": {
+      "package": "@lukso/lsp23-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP23LinkedContractsFactory.sol",
+      "sha256": "b713061e2a021d4a0a9a88e52f803d2d5eb2a6ac8d19190f3f616c44223defac"
+    },
+    "lsp/UniversalProfileInitPostDeploymentModule.json": {
+      "package": "@lukso/lsp23-contracts",
+      "version": "0.15.5",
+      "source": "contracts/modules/UniversalProfileInitPostDeploymentModule.sol",
+      "sha256": "0e2f06ca1ee60e969c4255060316695016198069584bd5f6c9883735fa5fc8ec"
+    },
+    "lsp/UniversalProfilePostDeploymentModule.json": {
+      "package": "@lukso/lsp23-contracts",
+      "version": "0.15.5",
+      "source": "contracts/modules/UniversalProfilePostDeploymentModule.sol",
+      "sha256": "3faf15e8290edcd695554d4a56993a0ae9d0d4eed27ec620651d34a318c88da6"
+    },
+    "lsp/ILSP25ExecuteRelayCall.json": {
+      "package": "@lukso/lsp25-contracts",
+      "version": "0.15.5",
+      "source": "contracts/ILSP25ExecuteRelayCall.sol",
+      "sha256": "391d04a4705ab7167cc595e287f11e9ad60a380b538225259b59dc5c1be1dd2f"
+    },
+    "lsp/ILSP26FollowerSystem.json": {
+      "package": "@lukso/lsp26-contracts",
+      "version": "0.1.7",
+      "source": "contracts/ILSP26FollowerSystem.sol",
+      "sha256": "25f6c9373af1e31b2b411aacc4574eb62cae961b9ef45476fd94dddf860796d0"
+    },
+    "lsp/LSP26FollowerSystem.json": {
+      "package": "@lukso/lsp26-contracts",
+      "version": "0.1.7",
+      "source": "contracts/LSP26FollowerSystem.sol",
+      "sha256": "cd0cde78b8a977b5e8d1edea243bd2117699bcf69e636e37195d253b51a4e0f4"
+    },
+    "lsp/LSP4DigitalAssetMetadata.json": {
+      "package": "@lukso/lsp4-contracts",
+      "version": "0.16.7",
+      "source": "contracts/LSP4DigitalAssetMetadata.sol",
+      "sha256": "18578909b483a259146c5b70b4853e20b620f2eb9a216127b1c9de165f3af233"
+    },
+    "lsp/LSP4DigitalAssetMetadataInitAbstract.json": {
+      "package": "@lukso/lsp4-contracts",
+      "version": "0.16.7",
+      "source": "contracts/LSP4DigitalAssetMetadataInitAbstract.sol",
+      "sha256": "9d303b133f582741a7b2f1aabd054577e71d5d8fb5fc81c45eab172c4bf2d38f"
+    },
+    "lsp/LSP4Utils.json": {
+      "package": "@lukso/lsp4-contracts",
+      "version": "0.16.7",
+      "source": "contracts/LSP4Utils.sol",
+      "sha256": "ae7239a27542257646abbb54ba3f2d13fdfe896d5487f2230f6d018a2444481a"
+    },
+    "lsp/ILSP6KeyManager.json": {
+      "package": "@lukso/lsp6-contracts",
+      "version": "0.15.5",
+      "source": "contracts/ILSP6KeyManager.sol",
+      "sha256": "a61a677f6bafa87638e80c4c1e9e1e53735c844b0b494a6c48681df80e7dcd53"
+    },
+    "lsp/LSP6KeyManager.json": {
+      "package": "@lukso/lsp6-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP6KeyManager.sol",
+      "sha256": "1cfb07dd226cc33d5fe262d02e0ad8a38c73010d0e8c3579180197754fede18d"
+    },
+    "lsp/LSP6KeyManagerCore.json": {
+      "package": "@lukso/lsp6-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP6KeyManagerCore.sol",
+      "sha256": "5acc9bb299f878d2f60a8e2bd1266724864bf6246bdd08bc1753eea87325d5b6"
+    },
+    "lsp/LSP6KeyManagerInit.json": {
+      "package": "@lukso/lsp6-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP6KeyManagerInit.sol",
+      "sha256": "2f7f548f17cab952278832f597064e7fe8bc375bf5f98ee2d2f5bcd93052d866"
+    },
+    "lsp/LSP6KeyManagerInitAbstract.json": {
+      "package": "@lukso/lsp6-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP6KeyManagerInitAbstract.sol",
+      "sha256": "d5c9568c2e3aaf92d3ab06f3166607763ff861423f9685c599e44e04f42b6cf4"
+    },
+    "lsp/ILSP7DigitalAsset.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/ILSP7DigitalAsset.sol",
+      "sha256": "6e9e8088782ed4da9ce0a0cbc4010e8c1d23d41569c8d9cc502b623933ec3f9b"
+    },
+    "lsp/LSP7DigitalAsset.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/LSP7DigitalAsset.sol",
+      "sha256": "e2f776bb90b0e9100e3e05d6d2ecd24ee4306e2757d40ff6314912cd54d63a01"
+    },
+    "lsp/LSP7DigitalAssetInitAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/LSP7DigitalAssetInitAbstract.sol",
+      "sha256": "fa8ea1fbc0c55a1bb5b796b043c92cd0ed8d5938cf6e80924169664a35252655"
+    },
+    "lsp/AccessControlExtendedAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/AccessControlExtended/AccessControlExtendedAbstract.sol",
+      "sha256": "e6e2a4d5ef6ffc72518017b973dced613a1e7e3ab799a8a8bcb873b2cc431c4a"
+    },
+    "lsp/AccessControlExtendedInitAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/AccessControlExtended/AccessControlExtendedInitAbstract.sol",
+      "sha256": "f83818a21410696f2d30baada986966587ac3aa3ba61e31cdceb3e4cb30235b6"
+    },
+    "lsp/IAccessControlExtended.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/AccessControlExtended/IAccessControlExtended.sol",
+      "sha256": "7a2a101b3f18a40d7bb6347e2ee458430cb336d85a354a0b1f2dc7fd63a9319d"
+    },
+    "lsp/LSP7Burnable.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7Burnable/LSP7Burnable.sol",
+      "sha256": "80b284d3445ac4ec60264dc7ea7c7f8eae1d4c423f49b05a99075d47b41b6fe2"
+    },
+    "lsp/LSP7BurnableInitAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7Burnable/LSP7BurnableInitAbstract.sol",
+      "sha256": "60de1d2f58df1080d53fed9307c35e4c7384e5be2ec8820a4a0bb9d77a679f85"
+    },
+    "lsp/ILSP7CappedBalance.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7CappedBalance/ILSP7CappedBalance.sol",
+      "sha256": "f8983d99a181df2288b5989375b4a9c8192ffe813408d171525e75618ed09647"
+    },
+    "lsp/LSP7CappedBalanceAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7CappedBalance/LSP7CappedBalanceAbstract.sol",
+      "sha256": "e93287bf53d91637625336dfd3042aae775d44c9b4852890334e660f86532b63"
+    },
+    "lsp/LSP7CappedBalanceInitAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7CappedBalance/LSP7CappedBalanceInitAbstract.sol",
+      "sha256": "49c5127fb1a79d6096152bdb6f673c1d1f12bdd0577542abc6398542425350fe"
+    },
+    "lsp/ILSP7CappedSupply.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7CappedSupply/ILSP7CappedSupply.sol",
+      "sha256": "9fcfd118fa2e6a3d1f5136b54719f18131dc8630b88c3a24f06d60cf99cf6b81"
+    },
+    "lsp/LSP7CappedSupplyAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7CappedSupply/LSP7CappedSupplyAbstract.sol",
+      "sha256": "4c24db37a7ed5134b67e8bc3b78203979f57aa589780e31e78cfd3b0fd0f2d46"
+    },
+    "lsp/LSP7CappedSupplyInitAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7CappedSupply/LSP7CappedSupplyInitAbstract.sol",
+      "sha256": "918be74c09bcaadd9e00732cc280758d647197b3b725857135174760a67da186"
+    },
+    "lsp/ILSP7Mintable.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7Mintable/ILSP7Mintable.sol",
+      "sha256": "953eecac2f7e3739aade5fa8577a897cf75f78dacb1e62cfe17ec141804c8b68"
+    },
+    "lsp/LSP7MintableAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7Mintable/LSP7MintableAbstract.sol",
+      "sha256": "4b8898e6d9ba253bec5afec5ce94531b7ccad89a1f449eda252e5501c1d2e947"
+    },
+    "lsp/LSP7MintableInitAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7Mintable/LSP7MintableInitAbstract.sol",
+      "sha256": "8090c64e6bc032b1494dbb6c85b06ed82995082123a17dfe08b167bc37075d79"
+    },
+    "lsp/ILSP7NonTransferable.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7NonTransferable/ILSP7NonTransferable.sol",
+      "sha256": "5dd09f146c245d33b2a1923e8750e5bc065dff95c7ce4817ff8400f8aa8f1eed"
+    },
+    "lsp/LSP7NonTransferableAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7NonTransferable/LSP7NonTransferableAbstract.sol",
+      "sha256": "76537718b9eddecedfc44f5972aa68b5a5be724da78588ffa08d666e0b958e21"
+    },
+    "lsp/LSP7NonTransferableInitAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7NonTransferable/LSP7NonTransferableInitAbstract.sol",
+      "sha256": "3a3b797bd067a96a9cba8d3a97dde46c291f1ce9987a43cf550134d2aee6dc12"
+    },
+    "lsp/ILSP7Revokable.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7Revokable/ILSP7Revokable.sol",
+      "sha256": "1356944b2f35fa22b04e1742f92e8d5120dbe4a014caf722ddd66a23e389e025"
+    },
+    "lsp/LSP7RevokableAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7Revokable/LSP7RevokableAbstract.sol",
+      "sha256": "c98ac7344e1f30122508748f34ae999bafe333b26501f98c262c084cb69ab11b"
+    },
+    "lsp/LSP7RevokableInitAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7Revokable/LSP7RevokableInitAbstract.sol",
+      "sha256": "2797d4a546783bd2574eee23888228f8d0d7ee21782420505cdfca8ad66a4523"
+    },
+    "lsp/LSP7Votes.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7Votes/LSP7Votes.sol",
+      "sha256": "ad1fb65f4743de4334e5922c70cb7fdac5a730b82e7cf79b61526c625963bf82"
+    },
+    "lsp/LSP7VotesInitAbstract.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/extensions/LSP7Votes/LSP7VotesInitAbstract.sol",
+      "sha256": "90439b3f0760664dd6dc4cf17de6bd414083da7633091a2332a5a758fd086976"
+    },
+    "lsp/LSP7CustomizableToken.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/presets/LSP7CustomizableToken.sol",
+      "sha256": "531f3749db24f433be3fa2061cf62d7c1c241313e658fd08ef56c083f0830139"
+    },
+    "lsp/LSP7CustomizableTokenInit.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/presets/LSP7CustomizableTokenInit.sol",
+      "sha256": "3a9f74ab6b6a424f7fe92d816ac1a07c1ed3dd8e7fe8f52bfa5a68be013957c1"
+    },
+    "lsp/LSP7Mintable.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/presets/LSP7Mintable.sol",
+      "sha256": "42a35a673ac2c7a65f0f3f974483f0af39f8428870e9563ceded62737f752264"
+    },
+    "lsp/LSP7MintableInit.json": {
+      "package": "@lukso/lsp7-contracts",
+      "version": "0.16.8",
+      "source": "contracts/presets/LSP7MintableInit.sol",
+      "sha256": "66e19610c400042ac215a8e222e2bde197c15c32e3e070c408ce5c089aeeeea3"
+    },
+    "lsp/ILSP8IdentifiableDigitalAsset.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/ILSP8IdentifiableDigitalAsset.sol",
+      "sha256": "b934b82d893c6570de07e831e74e46a8d3f3786c65c5dac913e73a7e77315982"
+    },
+    "lsp/LSP8IdentifiableDigitalAsset.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/LSP8IdentifiableDigitalAsset.sol",
+      "sha256": "59823851819760b9421b065cb3c2c23d6f292f2057dbace887bec8449914c1f9"
+    },
+    "lsp/LSP8IdentifiableDigitalAssetInitAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/LSP8IdentifiableDigitalAssetInitAbstract.sol",
+      "sha256": "bde2ac00cbbd623366d77a4ffa18b6e9f786b25f145e3c5108f11894216b0c9d"
+    },
+    "lsp/LSP8Burnable.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Burnable/LSP8Burnable.sol",
+      "sha256": "bc8732d0cf6d9b28324232b882b20c8998b6da305115f09cbfad4b2b171c9968"
+    },
+    "lsp/LSP8BurnableInitAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Burnable/LSP8BurnableInitAbstract.sol",
+      "sha256": "ce7088a16f4356a6ff9d93711c314286239f5feb4f9e43700563aa24212aba43"
+    },
+    "lsp/ILSP8CappedBalance.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8CappedBalance/ILSP8CappedBalance.sol",
+      "sha256": "3824f69e7a9a2e66804d624e44f2cad15594123e553f1f88386af9e0a4ea0651"
+    },
+    "lsp/LSP8CappedBalanceAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8CappedBalance/LSP8CappedBalanceAbstract.sol",
+      "sha256": "51c460752ccf50addfa69ef521ef75246cfa937c8f00ee839913452372bbbc99"
+    },
+    "lsp/LSP8CappedBalanceInitAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8CappedBalance/LSP8CappedBalanceInitAbstract.sol",
+      "sha256": "6da21e866efd3656680ce5d886e8365d0de49eb85757c1fdc7ba5c3b603d7aa9"
+    },
+    "lsp/ILSP8CappedSupply.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8CappedSupply/ILSP8CappedSupply.sol",
+      "sha256": "71698f9e84e96e83481142d1d3123da6ec486d382933335242b614010ad3c694"
+    },
+    "lsp/LSP8CappedSupplyAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8CappedSupply/LSP8CappedSupplyAbstract.sol",
+      "sha256": "09f65a7e3a94efe30f4e162eb91a9ac0e4d1eac0bb5b3c8ff7c5c9d1e23a0553"
+    },
+    "lsp/LSP8CappedSupplyInitAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8CappedSupply/LSP8CappedSupplyInitAbstract.sol",
+      "sha256": "56e5d72fc518a146c17dcf3e864c1657e54adcb2fec21cd1a0faf62057d7725c"
+    },
+    "lsp/LSP8Enumerable.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Enumerable/LSP8Enumerable.sol",
+      "sha256": "da6169c1195b99b96767c9d5973a62a9b8d7e095052c82987dbd1072ec98e57b"
+    },
+    "lsp/LSP8EnumerableInitAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Enumerable/LSP8EnumerableInitAbstract.sol",
+      "sha256": "c7d889e109d3aeec95be1acf7c948cb168e9be5ec26e9f40ab7535dd2c5e9613"
+    },
+    "lsp/ILSP8Mintable.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Mintable/ILSP8Mintable.sol",
+      "sha256": "33a36a4eb9fdf51fd8dc22d53cfbbe2108333aec6da880982f72a2ca4708e711"
+    },
+    "lsp/LSP8MintableAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Mintable/LSP8MintableAbstract.sol",
+      "sha256": "d6c868d146a7be466d3a8dcef9676914d43fc2337536ccadbb20fd6f4f343ec5"
+    },
+    "lsp/LSP8MintableInitAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Mintable/LSP8MintableInitAbstract.sol",
+      "sha256": "b57e357acaa8eb861c654489b3d7e318ad9ae4850faca0ef6c3db3dea5bbaf3a"
+    },
+    "lsp/ILSP8NonTransferable.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8NonTransferable/ILSP8NonTransferable.sol",
+      "sha256": "4b43ef4230b828769176331d494a545a7a365bfc0df57993116fbc0485cfad9b"
+    },
+    "lsp/LSP8NonTransferableAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8NonTransferable/LSP8NonTransferableAbstract.sol",
+      "sha256": "9e995466dbe7f350accdc061fd5a32b61603f4c83590510b1b319665b1d8e23c"
+    },
+    "lsp/LSP8NonTransferableInitAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8NonTransferable/LSP8NonTransferableInitAbstract.sol",
+      "sha256": "92de94f14527686e73f53e234e88a105501ba786907d61530fec9fab247177f4"
+    },
+    "lsp/ILSP8Revokable.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Revokable/ILSP8Revokable.sol",
+      "sha256": "f4d62276380f24034ccb4258b00ca9996f4b2d3fa605fe69aeaf665eafaa5aed"
+    },
+    "lsp/LSP8RevokableAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Revokable/LSP8RevokableAbstract.sol",
+      "sha256": "6ecd0c13c3c8cb7f568d477a99001ca57e5b21f9f5a7205d8dd95056cae3770f"
+    },
+    "lsp/LSP8RevokableInitAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Revokable/LSP8RevokableInitAbstract.sol",
+      "sha256": "9ffae78d6e88fca1eb8c6f5d60e7184e39ee92471c0ca8e45d3158211247079a"
+    },
+    "lsp/LSP8Votes.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Votes/LSP8Votes.sol",
+      "sha256": "9b14b1d31cf87a683d7c7622b9242a016ed688ceaa4abb761201d59e549b63ce"
+    },
+    "lsp/LSP8VotesInitAbstract.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/extensions/LSP8Votes/LSP8VotesInitAbstract.sol",
+      "sha256": "766e75da0c05891301c4fdf7b5f2fa2a3bc3983834ab0b3e6f49d55fb5b0aa67"
+    },
+    "lsp/LSP8CustomizableToken.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/presets/LSP8CustomizableToken.sol",
+      "sha256": "c504160ee3c0291d42c44e0a7ab0d67a4d14fa0baf4ddf62f3903ea0dc8d496f"
+    },
+    "lsp/LSP8CustomizableTokenInit.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/presets/LSP8CustomizableTokenInit.sol",
+      "sha256": "fb3c8d919b0b82c39e51a33a1a054069c0437235f8f93b0bde1dda1d2df13ea4"
+    },
+    "lsp/LSP8Mintable.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/presets/LSP8Mintable.sol",
+      "sha256": "c5ad13ef70c18e168ad2261614f5dede8a1b8bfaebaf9e50ff1faa66c4809c7b"
+    },
+    "lsp/LSP8MintableInit.json": {
+      "package": "@lukso/lsp8-contracts",
+      "version": "0.16.7",
+      "source": "contracts/presets/LSP8MintableInit.sol",
+      "sha256": "5b5e7f4cdfd3d9f5e0ca1d44a80bef6675bd28df86768ec50e7f4b3e95183d32"
+    },
+    "lsp/ILSP9Vault.json": {
+      "package": "@lukso/lsp9-contracts",
+      "version": "0.15.5",
+      "source": "contracts/ILSP9Vault.sol",
+      "sha256": "ac279c4f1c25ebbb088359587740d2e078fabe4be78319f3b3d9ba8a0f9aa0ba"
+    },
+    "lsp/LSP9Vault.json": {
+      "package": "@lukso/lsp9-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP9Vault.sol",
+      "sha256": "056f0aebdca8550f4c532c5b62a2cea3527e9256bea8891c18be7c75197881cd"
+    },
+    "lsp/LSP9VaultCore.json": {
+      "package": "@lukso/lsp9-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP9VaultCore.sol",
+      "sha256": "c5334b35cbe96b979664ebe726077a29b8373d453b93e6226fad093939ee7417"
+    },
+    "lsp/LSP9VaultInit.json": {
+      "package": "@lukso/lsp9-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP9VaultInit.sol",
+      "sha256": "1457a3ef56745552731bfed5216100836048011f2cd2b76f7809227fa86f4f50"
+    },
+    "lsp/LSP9VaultInitAbstract.json": {
+      "package": "@lukso/lsp9-contracts",
+      "version": "0.15.5",
+      "source": "contracts/LSP9VaultInitAbstract.sol",
+      "sha256": "5ca21b7cf8b4b6da305fdfd6fab7760979b56503b301f808e4cb1d85e25fbdad"
+    },
+    "lsp/UniversalProfile.json": {
+      "package": "@lukso/universalprofile-contracts",
+      "version": "0.15.5",
+      "source": "contracts/UniversalProfile.sol",
+      "sha256": "590c6e204b7f1205dfdba30e8c72f0df70c2963ed68bd2b2c0faeff3e664618d"
+    },
+    "lsp/UniversalProfileInit.json": {
+      "package": "@lukso/universalprofile-contracts",
+      "version": "0.15.5",
+      "source": "contracts/UniversalProfileInit.sol",
+      "sha256": "bb2dcc5328069a3d5d36cb27a9cc935f6c78c32521d0809d9cc8632be6316f9f"
+    },
+    "lsp/UniversalProfileInitAbstract.json": {
+      "package": "@lukso/universalprofile-contracts",
+      "version": "0.15.5",
+      "source": "contracts/UniversalProfileInitAbstract.sol",
+      "sha256": "8ad3be5c67face20cdcf4ed1aecd171ebdd0fd3e53da0848b1f23fe054e5a666"
+    },
+    "lsp/ERC725.json": {
+      "package": "@erc725/smart-contracts",
+      "version": "7.0.0",
+      "sha256": "c1b879a01f8e1bac3df958cd0ddfbd6a60140632bd0011240efa5166213862b7"
+    },
+    "lsp/ERC725Init.json": {
+      "package": "@erc725/smart-contracts",
+      "version": "7.0.0",
+      "sha256": "c892014225593977388793dc7b72080c639c1452979fd638e9a33cac800c397d"
+    },
+    "lsp/ERC725X.json": {
+      "package": "@erc725/smart-contracts",
+      "version": "7.0.0",
+      "sha256": "65409a9e462648222b7bb7dc44a7309e012ba0a95e17d717d63e93c8dfedab51"
+    },
+    "lsp/ERC725XInit.json": {
+      "package": "@erc725/smart-contracts",
+      "version": "7.0.0",
+      "sha256": "d3988c090cf20082f438c5309c754443d8783a180162f42babda32a363c87153"
+    },
+    "lsp/ERC725Y.json": {
+      "package": "@erc725/smart-contracts",
+      "version": "7.0.0",
+      "sha256": "2e1667d2c0825813b46a2907577a3da76a9f8244cb85106a6a48a7f12dc293f9"
+    },
+    "lsp/ERC725YInit.json": {
+      "package": "@erc725/smart-contracts",
+      "version": "7.0.0",
+      "sha256": "285697cd023b515710de1b2df013c016c61a38dc7be6633bb89dc7ab2cb3bb7e"
+    },
+    "deployed/ABI-ERCTokenCallbacks.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "b6374595cf1ced32e46e97d5702f16d059289a1f2da2fdcca4d86e93b61dbf93"
+    },
+    "deployed/ABI-LSP1UniversalReceiverDelegateUP-v0-14-0.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "3cd86f27651727984ab730b46fa0ec3eca28dad4ddfaa8dd65e2b0d57a80ae39"
+    },
+    "deployed/ABI-LSP23LinkedContractFactory.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "c7277efd2b749bc33004022b7673dfaa4258fc8036ad6f0c85ac0b0548e1111d"
+    },
+    "deployed/ABI-LSP6KeyManagerInit-v0-14-0.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "30494633b5381d9f55d63a2c04a948b073a3239d570d4473108443e98311ecfd"
+    },
+    "deployed/ABI-LSP7CustomizableTokenInit-v0-18-1.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "825e2da66ec25f08ea3ff2e6a8adfed8631700afc8c6535268704e3d63f7efbe"
+    },
+    "deployed/ABI-LSP7MintableInit-v0-19-0.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "d4b2c41d9ec4ffbcb37ec1ba85fb4f627a134bbbfe086c3bab610953de52d4d0"
+    },
+    "deployed/ABI-LSP8CustomizableTokenInit-v0-18-1.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "1e9b4ff3f30c9dad9aa6fe664773e16d226ca0ff0640d0a9114f83e71079c6e5"
+    },
+    "deployed/ABI-LSP8MintableInit-v0-19-0.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "51c014e2703b06861a7b914b50153738c3fe3cac50d724c02f8e7fa622fe6bb9"
+    },
+    "deployed/ABI-UniversalProfileInit-v0-14-0.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "bb6a6903f84cf7307e6813736f5147c0f50df4a0ab3afe981872444699a41dce"
+    },
+    "deployed/ABI-UniversalProfileInitPostDeploymentModule.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "28b23b981938e0978449a96fe092413ef16216bfc6c19ccae189dc09b4f551b7"
+    },
+    "deployed/ABI-UniversalProfilePostDeploymentModule.json": {
+      "source": "lsp-smart-contracts deployments/abi (pinned commit, see registry/lsp-deployments/PROVENANCE.json)",
+      "sha256": "55b41ac582aca9ad8e87172db46bb413618561b12764c7a1f4aa10875c455bae"
+    },
+    "reference/ERC20.json": {
+      "source": "EIP-20 + EIP-2612 (viem erc20Abi + permit)",
+      "sha256": "981b6075de7550eb8166f128f9ee73d82546462c7dea28289a11e6926bd76cad"
+    },
+    "reference/ERC721.json": {
+      "source": "EIP-721 (+Metadata, +Enumerable)",
+      "sha256": "0e21bb78ce20f449c83a8bba10ec318dacd9c87ec9b0ff14ec3e2eb2ba3213a2"
+    },
+    "reference/ERC1155.json": {
+      "source": "EIP-1155 (+MetadataURI)",
+      "sha256": "7502e46c096cd854f13edcde14b27d727c4b6ebfc8a7bdde070b18b30bae79cd"
+    },
+    "reference/ERC165.json": {
+      "source": "EIP-165",
+      "sha256": "734bbce4a8413bfc460c8bef88d84ee37e571101f13642c4a1b7f8c4627bb2aa"
+    },
+    "reference/ERC1271.json": {
+      "source": "EIP-1271",
+      "sha256": "7af5909a43888aa9762deb7f52e7ffced2eb328b892729dd612ccc119aa58c7e"
+    },
+    "reference/ERC4626.json": {
+      "source": "EIP-4626 (viem)",
+      "sha256": "03c5f13af2c0fd75781b96f8e33f12c43c7b178aba7dbdbdf67f593afc6e4c50"
+    },
+    "reference/Multicall3.json": {
+      "source": "https://github.com/mds1/multicall3 (viem multicall3Abi)",
+      "sha256": "dcb603bfc6ed3e2d81d62aeb74ff918e12cf9f3905496037c7b59ab92192791b"
+    },
+    "reference/EntryPointV06.json": {
+      "source": "eth-infinitism/account-abstraction v0.6.0 (viem entryPoint06Abi)",
+      "sha256": "45183294cebc4c428a76af96119f8642035dcc71e5f58b77c88ef0212f17f1be"
+    },
+    "reference/WETH9.json": {
+      "source": "WETH9 canonical source",
+      "sha256": "d672e1f64b1ca8d505a3b04abbe2e5d5cfcfb55aecb311cf258f013aee869268"
+    },
+    "reference/Permit2.json": {
+      "source": "Uniswap Permit2 (subset: allowance transfer)",
+      "sha256": "1d4e9b1d5ca04d1bee480078403b1997ec9a9d1a8bfee01e6b4bc356c923d7df"
+    },
+    "reference/HyperlaneTokenRouter.json": {
+      "source": "Hyperlane TokenRouter (warp routes)",
+      "sha256": "180e3d49516482fe89797091ba55327119b429b53bdddb42e58d2042919b8a11"
+    },
+    "reference/CoWSettlement.json": {
+      "source": "CoW Protocol GPv2Settlement (subset)",
+      "sha256": "350795d728c3482ffc144005f75434172d737a8152f90e7a59029d9d23fa4d4b"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "universal-profile",
+  "version": "0.1.0",
+  "description": "Universal Profile (LUKSO) for AI agents: the agent's own ERC725 smart-contract account with an LSP6 Key Manager on LUKSO and other EVM chains. Template for the optional home-bridge mode: the skill runs on the user's own machine and the agent reaches it through the MCP server in mcp.json.",
+  "author": {
+    "name": "Universal Everything and contributors",
+    "url": "https://github.com/universal-everything"
+  },
+  "homepage": "https://universalprofile.ai",
+  "repository": "https://github.com/universal-everything/ai-universalprofile-mcp",
+  "license": "MIT-0",
+  "keywords": ["universal-profile", "lukso", "erc725", "lsp6", "smart-account", "agent-wallet", "evm"]
+}

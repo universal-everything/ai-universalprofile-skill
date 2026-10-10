@@ -1,0 +1,32 @@
+{
+ "contractName": "IPostDeploymentModule",
+ "package": "@lukso/lsp23-contracts",
+ "packageVersion": "0.15.5",
+ "sourceName": "contracts/IPostDeploymentModule.sol",
+ "kind": "interface-or-abstract",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "primaryContract",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "secondaryContract",
+     "type": "address"
+    },
+    {
+     "internalType": "bytes",
+     "name": "calldataToPostDeploymentModule",
+     "type": "bytes"
+    }
+   ],
+   "name": "executePostDeployment",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  }
+ ]
+}

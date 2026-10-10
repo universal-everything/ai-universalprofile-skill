@@ -1,0 +1,43 @@
+{
+ "contractName": "ILSP1UniversalReceiverDelegate",
+ "package": "@lukso/lsp1-contracts",
+ "packageVersion": "0.15.5",
+ "sourceName": "contracts/ILSP1UniversalReceiverDelegate.sol",
+ "kind": "interface-or-abstract",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "sender",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "value",
+     "type": "uint256"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "typeId",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bytes",
+     "name": "data",
+     "type": "bytes"
+    }
+   ],
+   "name": "universalReceiverDelegate",
+   "outputs": [
+    {
+     "internalType": "bytes",
+     "name": "",
+     "type": "bytes"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  }
+ ]
+}

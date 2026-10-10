@@ -1,0 +1,22 @@
+{
+ "contractName": "ILSP8CappedSupply",
+ "package": "@lukso/lsp8-contracts",
+ "packageVersion": "0.16.7",
+ "sourceName": "contracts/extensions/LSP8CappedSupply/ILSP8CappedSupply.sol",
+ "kind": "interface-or-abstract",
+ "abi": [
+  {
+   "inputs": [],
+   "name": "tokenSupplyCap",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  }
+ ]
+}

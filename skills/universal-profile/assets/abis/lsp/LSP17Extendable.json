@@ -1,0 +1,28 @@
+{
+ "contractName": "LSP17Extendable",
+ "package": "@lukso/lsp17contractextension-contracts",
+ "packageVersion": "0.16.7",
+ "sourceName": "contracts/LSP17Extendable.sol",
+ "kind": "interface-or-abstract",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "bytes4",
+     "name": "interfaceId",
+     "type": "bytes4"
+    }
+   ],
+   "name": "supportsInterface",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  }
+ ]
+}

@@ -1,0 +1,186 @@
+{
+ "contractName": "LSP14Ownable2Step",
+ "package": "@lukso/lsp14-contracts",
+ "packageVersion": "0.15.5",
+ "sourceName": "contracts/LSP14Ownable2Step.sol",
+ "kind": "interface-or-abstract",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "caller",
+     "type": "address"
+    }
+   ],
+   "name": "LSP14CallerNotPendingOwner",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "LSP14CannotTransferOwnershipToSelf",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "LSP14MustAcceptOwnershipInSeparateTransaction",
+   "type": "error"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint256",
+     "name": "renounceOwnershipStart",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "renounceOwnershipEnd",
+     "type": "uint256"
+    }
+   ],
+   "name": "LSP14NotInRenounceOwnershipInterval",
+   "type": "error"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "callerAddress",
+     "type": "address"
+    }
+   ],
+   "name": "OwnableCallerNotTheOwner",
+   "type": "error"
+  },
+  {
+   "anonymous": false,
+   "inputs": [],
+   "name": "OwnershipRenounced",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "previousOwner",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "newOwner",
+     "type": "address"
+    }
+   ],
+   "name": "OwnershipTransferStarted",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "previousOwner",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "newOwner",
+     "type": "address"
+    }
+   ],
+   "name": "OwnershipTransferred",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [],
+   "name": "RenounceOwnershipStarted",
+   "type": "event"
+  },
+  {
+   "inputs": [],
+   "name": "RENOUNCE_OWNERSHIP_CONFIRMATION_DELAY",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "RENOUNCE_OWNERSHIP_CONFIRMATION_PERIOD",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "acceptOwnership",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "owner",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "pendingOwner",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "renounceOwnership",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "newOwner",
+     "type": "address"
+    }
+   ],
+   "name": "transferOwnership",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  }
+ ]
+}

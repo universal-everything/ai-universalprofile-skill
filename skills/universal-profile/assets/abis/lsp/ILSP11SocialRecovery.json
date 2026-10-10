@@ -1,0 +1,668 @@
+{
+ "contractName": "ILSP11SocialRecovery",
+ "package": "@lukso/lsp11-contracts",
+ "packageVersion": "0.1.7",
+ "sourceName": "contracts/ILSP11SocialRecovery.sol",
+ "kind": "interface-or-abstract",
+ "abi": [
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "guardian",
+     "type": "address"
+    }
+   ],
+   "name": "GuardianAdded",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "guardian",
+     "type": "address"
+    }
+   ],
+   "name": "GuardianRemoved",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "recoveryCounter",
+     "type": "uint256"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "guardian",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "guardianVotedAddress",
+     "type": "address"
+    }
+   ],
+   "name": "GuardianVotedFor",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "guardianThreshold",
+     "type": "uint256"
+    }
+   ],
+   "name": "GuardiansThresholdChanged",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "previousRecoveryCounter",
+     "type": "uint256"
+    }
+   ],
+   "name": "RecoveryCancelled",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "recoveryDelay",
+     "type": "uint256"
+    }
+   ],
+   "name": "RecoveryDelayChanged",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "uint256",
+     "name": "recoveryCounter",
+     "type": "uint256"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "guardianVotedAddress",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "bytes",
+     "name": "calldataExecuted",
+     "type": "bytes"
+    }
+   ],
+   "name": "RecoveryProcessSuccessful",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "bytes32",
+     "name": "secretHash",
+     "type": "bytes32"
+    }
+   ],
+   "name": "SecretHashChanged",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint256",
+     "name": "recoveryCounter",
+     "type": "uint256"
+    },
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "committedBy",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "bytes32",
+     "name": "commitment",
+     "type": "bytes32"
+    }
+   ],
+   "name": "SecretHashCommitted",
+   "type": "event"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "newGuardian",
+     "type": "address"
+    }
+   ],
+   "name": "addGuardian",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    }
+   ],
+   "name": "cancelRecoveryProcess",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "votedAddress",
+     "type": "address"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "commitment",
+     "type": "bytes32"
+    }
+   ],
+   "name": "commitToRecover",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "recoveryCounter",
+     "type": "uint256"
+    },
+    {
+     "internalType": "address",
+     "name": "committedBy",
+     "type": "address"
+    }
+   ],
+   "name": "getCommitmentInfoOf",
+   "outputs": [
+    {
+     "internalType": "bytes32",
+     "name": "",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "recoveryCounter",
+     "type": "uint256"
+    }
+   ],
+   "name": "getFirstRecoveryTimestampOf",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    }
+   ],
+   "name": "getGuardiansOf",
+   "outputs": [
+    {
+     "internalType": "address[]",
+     "name": "",
+     "type": "address[]"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    }
+   ],
+   "name": "getGuardiansThresholdOf",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    }
+   ],
+   "name": "getRecoveryCounterOf",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    }
+   ],
+   "name": "getRecoveryDelayOf",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    }
+   ],
+   "name": "getSecretHashOf",
+   "outputs": [
+    {
+     "internalType": "bytes32",
+     "name": "",
+     "type": "bytes32"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "recoveryCounter",
+     "type": "uint256"
+    },
+    {
+     "internalType": "address",
+     "name": "guardian",
+     "type": "address"
+    }
+   ],
+   "name": "getVotedAddressByGuardian",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "recoveryCounter",
+     "type": "uint256"
+    },
+    {
+     "internalType": "address",
+     "name": "votedAddress",
+     "type": "address"
+    }
+   ],
+   "name": "getVotesOfGuardianVotedAddress",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "recoveryCounter",
+     "type": "uint256"
+    },
+    {
+     "internalType": "address",
+     "name": "votedAddress",
+     "type": "address"
+    }
+   ],
+   "name": "hasReachedThreshold",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "guardianAddress",
+     "type": "address"
+    }
+   ],
+   "name": "isGuardianOf",
+   "outputs": [
+    {
+     "internalType": "bool",
+     "name": "",
+     "type": "bool"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "votedAddress",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "secretHash",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "newSecretHash",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bytes",
+     "name": "calldataToExecute",
+     "type": "bytes"
+    }
+   ],
+   "name": "recoverAccess",
+   "outputs": [
+    {
+     "internalType": "bytes",
+     "name": "",
+     "type": "bytes"
+    }
+   ],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "existingGuardian",
+     "type": "address"
+    }
+   ],
+   "name": "removeGuardian",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "newThreshold",
+     "type": "uint256"
+    }
+   ],
+   "name": "setGuardiansThreshold",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "uint256",
+     "name": "recoveryDelay",
+     "type": "uint256"
+    }
+   ],
+   "name": "setRecoveryDelay",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "newRecoverSecretHash",
+     "type": "bytes32"
+    }
+   ],
+   "name": "setRecoverySecretHash",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "account",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "guardian",
+     "type": "address"
+    },
+    {
+     "internalType": "address",
+     "name": "guardianVotedAddress",
+     "type": "address"
+    }
+   ],
+   "name": "voteForRecovery",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  }
+ ]
+}

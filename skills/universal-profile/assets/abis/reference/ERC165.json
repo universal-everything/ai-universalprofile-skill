@@ -1,0 +1,22 @@
+{
+ "contractName": "ERC165",
+ "source": "EIP-165",
+ "abi": [
+  {
+   "name": "supportsInterface",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "bytes4",
+     "name": "interfaceId"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ]
+  }
+ ]
+}

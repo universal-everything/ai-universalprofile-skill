@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - name: chain tests (in-process EVM, canonical LSP stack)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run test:chain
+      - name: shipped bundle runs on this OS without node_modules
+        shell: bash
+        run: |
+          export UP_HOME="$RUNNER_TEMP/up-home"
+          node skills/universal-profile/scripts/up.mjs help >/dev/null
+          node skills/universal-profile/scripts/up-doctor.mjs --offline --json >/dev/null || true
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' | node skills/universal-profile/scripts/up-mcp.mjs | grep -q universal-profile
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: reproducible build (committed bundles must match a fresh build)
+        run: |
+          npm run build
+          node build/gen-verb-docs.mjs
+          git diff --exit-code -- skills/universal-profile/scripts skills/universal-profile/references/verbs.md
+      - name: skill package gate (spec, sizes, text-only, no local paths/secrets)
+        run: npm run verify:skill
+      - name: dependency audit (runtime deps are bundled)
+        run: npm audit --omit=dev --audit-level=high

@@ -1,0 +1,269 @@
+{
+ "contractName": "LSP16UniversalFactory",
+ "package": "@lukso/lsp16-contracts",
+ "packageVersion": "0.15.5",
+ "sourceName": "contracts/LSP16UniversalFactory.sol",
+ "kind": "deployable",
+ "abi": [
+  {
+   "inputs": [],
+   "name": "ContractInitializationFailed",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "InvalidValueSum",
+   "type": "error"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "createdContract",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "internalType": "bytes32",
+     "name": "providedSalt",
+     "type": "bytes32"
+    },
+    {
+     "indexed": false,
+     "internalType": "bytes32",
+     "name": "generatedSalt",
+     "type": "bytes32"
+    },
+    {
+     "indexed": true,
+     "internalType": "bool",
+     "name": "initialized",
+     "type": "bool"
+    },
+    {
+     "indexed": false,
+     "internalType": "bytes",
+     "name": "initializeCalldata",
+     "type": "bytes"
+    }
+   ],
+   "name": "ContractCreated",
+   "type": "event"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "bytes32",
+     "name": "creationBytecodeHash",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "providedSalt",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bool",
+     "name": "initializable",
+     "type": "bool"
+    },
+    {
+     "internalType": "bytes",
+     "name": "initializeCalldata",
+     "type": "bytes"
+    }
+   ],
+   "name": "computeAddress",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "implementationContract",
+     "type": "address"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "providedSalt",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bool",
+     "name": "initializable",
+     "type": "bool"
+    },
+    {
+     "internalType": "bytes",
+     "name": "initializeCalldata",
+     "type": "bytes"
+    }
+   ],
+   "name": "computeERC1167Address",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "bytes",
+     "name": "creationBytecode",
+     "type": "bytes"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "providedSalt",
+     "type": "bytes32"
+    }
+   ],
+   "name": "deployCreate2",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "bytes",
+     "name": "creationBytecode",
+     "type": "bytes"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "providedSalt",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bytes",
+     "name": "initializeCalldata",
+     "type": "bytes"
+    },
+    {
+     "internalType": "uint256",
+     "name": "constructorMsgValue",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "initializeCalldataMsgValue",
+     "type": "uint256"
+    }
+   ],
+   "name": "deployCreate2AndInitialize",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "implementationContract",
+     "type": "address"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "providedSalt",
+     "type": "bytes32"
+    }
+   ],
+   "name": "deployERC1167Proxy",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "implementationContract",
+     "type": "address"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "providedSalt",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bytes",
+     "name": "initializeCalldata",
+     "type": "bytes"
+    }
+   ],
+   "name": "deployERC1167ProxyAndInitialize",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "bytes32",
+     "name": "providedSalt",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bool",
+     "name": "initializable",
+     "type": "bool"
+    },
+    {
+     "internalType": "bytes",
+     "name": "initializeCalldata",
+     "type": "bytes"
+    }
+   ],
+   "name": "generateSalt",
+   "outputs": [
+    {
+     "internalType": "bytes32",
+     "name": "",
+     "type": "bytes32"
+    }
+   ],
+   "stateMutability": "pure",
+   "type": "function"
+  }
+ ]
+}

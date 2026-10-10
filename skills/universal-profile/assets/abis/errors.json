@@ -1,0 +1,1700 @@
+[
+ {
+  "inputs": [],
+  "name": "ERC725X_ContractDeploymentFailed",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ERC725X_CreateOperationsRequireEmptyRecipientAddress",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ERC725X_ExecuteParametersEmptyArray",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ERC725X_ExecuteParametersLengthMismatch",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "balance",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "value",
+    "type": "uint256"
+   }
+  ],
+  "name": "ERC725X_InsufficientBalance",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ERC725X_MsgValueDisallowedInDelegateCall",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ERC725X_MsgValueDisallowedInStaticCall",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ERC725X_NoContractBytecodeProvided",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "operationTypeProvided",
+    "type": "uint256"
+   }
+  ],
+  "name": "ERC725X_UnknownOperationType",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ERC725Y_DataKeysValuesEmptyArray",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ERC725Y_DataKeysValuesLengthMismatch",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "caller",
+    "type": "address"
+   }
+  ],
+  "name": "LSP14CallerNotPendingOwner",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP14CannotTransferOwnershipToSelf",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP14MustAcceptOwnershipInSeparateTransaction",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "renounceOwnershipStart",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "renounceOwnershipEnd",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP14NotInRenounceOwnershipInterval",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bool",
+    "name": "postCall",
+    "type": "bool"
+   },
+   {
+    "internalType": "bytes4",
+    "name": "returnedStatus",
+    "type": "bytes4"
+   }
+  ],
+  "name": "LSP20CallVerificationFailed",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bool",
+    "name": "postCall",
+    "type": "bool"
+   }
+  ],
+  "name": "LSP20CallingVerifierFailed",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "logicVerifier",
+    "type": "address"
+   }
+  ],
+  "name": "LSP20EOACannotVerifyCall",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes4",
+    "name": "functionSelector",
+    "type": "bytes4"
+   }
+  ],
+  "name": "NoExtensionFoundForFunctionSelector",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "AccountNotSetupYet",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "iteration",
+    "type": "uint256"
+   }
+  ],
+  "name": "BatchCallsFailed",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "BatchExecuteRelayCallParamsLengthMismatch",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "guardian",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "caller",
+    "type": "address"
+   }
+  ],
+  "name": "CallerIsNotGuardian",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "caller",
+    "type": "address"
+   }
+  ],
+  "name": "CallerIsNotTheAccount",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "votedAddress",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "caller",
+    "type": "address"
+   }
+  ],
+  "name": "CallerIsNotVotedAddress",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "recoverer",
+    "type": "address"
+   }
+  ],
+  "name": "CallerVotesHaveNotReachedThreshold",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "committer",
+    "type": "address"
+   }
+  ],
+  "name": "CannotRecoverAfterDirectCommit",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "delay",
+    "type": "uint256"
+   }
+  ],
+  "name": "CannotRecoverBeforeDelay",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "guardian",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "guardianVotedAddress",
+    "type": "address"
+   }
+  ],
+  "name": "CannotVoteToAddressTwice",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "guardian",
+    "type": "address"
+   }
+  ],
+  "name": "GuardianAlreadyExists",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "guardian",
+    "type": "address"
+   }
+  ],
+  "name": "GuardianNotFound",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "threshold",
+    "type": "uint256"
+   }
+  ],
+  "name": "GuardianNumberCannotGoBelowThreshold",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "committer",
+    "type": "address"
+   }
+  ],
+  "name": "InvalidCommitment",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "signer",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "invalidNonce",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bytes",
+    "name": "signature",
+    "type": "bytes"
+   }
+  ],
+  "name": "InvalidRelayNonce",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "bytes32",
+    "name": "secretHash",
+    "type": "bytes32"
+   }
+  ],
+  "name": "InvalidSecretHash",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "totalValues",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "msgValue",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP11BatchExcessiveValueSent",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "totalValues",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "msgValue",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP11BatchInsufficientValueSent",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "nonGuardian",
+    "type": "address"
+   }
+  ],
+  "name": "NotAGuardianOfTheAccount",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "RelayCallBeforeStartTime",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "RelayCallExpired",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes4",
+    "name": "functionSelector",
+    "type": "bytes4"
+   }
+  ],
+  "name": "RelayCallNotSupported",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "votedAddress",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "recoveredAddress",
+    "type": "address"
+   }
+  ],
+  "name": "SignerIsNotVotedAddress",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "threshold",
+    "type": "uint256"
+   }
+  ],
+  "name": "ThresholdExceedsGuardianNumber",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "callerAddress",
+    "type": "address"
+   }
+  ],
+  "name": "OwnableCallerNotTheOwner",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ContractInitializationFailed",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "InvalidValueSum",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "caller",
+    "type": "address"
+   }
+  ],
+  "name": "CannotRegisterEOAsAsAssets",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes",
+    "name": "errorData",
+    "type": "bytes"
+   }
+  ],
+  "name": "PrimaryContractProxyInitFailureError",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes",
+    "name": "errorData",
+    "type": "bytes"
+   }
+  ],
+  "name": "SecondaryContractProxyInitFailureError",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "addr",
+    "type": "address"
+   }
+  ],
+  "name": "LSP26AlreadyFollowing",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP26CannotSelfFollow",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "addr",
+    "type": "address"
+   }
+  ],
+  "name": "LSP26NotFollowing",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ERC725Y_MsgValueDisallowed",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP4TokenNameNotEditable",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP4TokenSymbolNotEditable",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP4TokenTypeNotEditable",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "OwnableCannotSetZeroAddressAsOwner",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "BatchExecuteParamsLengthMismatch",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "CallingKeyManagerNotAllowed",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "DelegateCallDisallowedViaKeyManager",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "dataKey",
+    "type": "bytes32"
+   },
+   {
+    "internalType": "bytes",
+    "name": "dataValue",
+    "type": "bytes"
+   }
+  ],
+  "name": "InvalidDataValuesForDataKeys",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes4",
+    "name": "invalidFunction",
+    "type": "bytes4"
+   }
+  ],
+  "name": "InvalidERC725Function",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes",
+    "name": "allowedCallsValue",
+    "type": "bytes"
+   }
+  ],
+  "name": "InvalidEncodedAllowedCalls",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes",
+    "name": "value",
+    "type": "bytes"
+   },
+   {
+    "internalType": "string",
+    "name": "context",
+    "type": "string"
+   }
+  ],
+  "name": "InvalidEncodedAllowedERC725YDataKeys",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "InvalidLSP6Target",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes",
+    "name": "payload",
+    "type": "bytes"
+   }
+  ],
+  "name": "InvalidPayload",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   }
+  ],
+  "name": "InvalidWhitelistedCall",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "KeyManagerCannotBeSetAsExtensionForLSP20Functions",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "totalValues",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "msgValue",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP6BatchExcessiveValueSent",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "totalValues",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "msgValue",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP6BatchInsufficientValueSent",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   }
+  ],
+  "name": "NoCallsAllowed",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   }
+  ],
+  "name": "NoERC725YDataKeysAllowed",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   }
+  ],
+  "name": "NoPermissionsSet",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "to",
+    "type": "address"
+   },
+   {
+    "internalType": "bytes4",
+    "name": "selector",
+    "type": "bytes4"
+   }
+  ],
+  "name": "NotAllowedCall",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   },
+   {
+    "internalType": "bytes32",
+    "name": "disallowedKey",
+    "type": "bytes32"
+   }
+  ],
+  "name": "NotAllowedERC725YDataKey",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   },
+   {
+    "internalType": "string",
+    "name": "permission",
+    "type": "string"
+   }
+  ],
+  "name": "NotAuthorised",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "dataKey",
+    "type": "bytes32"
+   }
+  ],
+  "name": "NotRecognisedPermissionKey",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes",
+    "name": "storedData",
+    "type": "bytes"
+   }
+  ],
+  "name": "InvalidExtensionAddress",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes",
+    "name": "data",
+    "type": "bytes"
+   }
+  ],
+  "name": "InvalidFunctionSelector",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "tokenOwner",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "authorizedAmount",
+    "type": "uint256"
+   },
+   {
+    "internalType": "address",
+    "name": "operator",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "amount",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP7AmountExceedsAuthorizedAmount",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "balance",
+    "type": "uint256"
+   },
+   {
+    "internalType": "address",
+    "name": "tokenOwner",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "amount",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP7AmountExceedsBalance",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "callIndex",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP7BatchCallFailed",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7CannotSendWithAddressZero",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7CannotUseAddressZeroAsOperator",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "caller",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "tokenOwner",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "operator",
+    "type": "address"
+   }
+  ],
+  "name": "LSP7DecreaseAllowanceNotAuthorized",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7DecreasedAllowanceBelowZero",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7InvalidTransferBatch",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "tokenReceiver",
+    "type": "address"
+   }
+  ],
+  "name": "LSP7NotifyTokenReceiverContractMissingLSP1Interface",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "tokenReceiver",
+    "type": "address"
+   }
+  ],
+  "name": "LSP7NotifyTokenReceiverIsEOA",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "caller",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "tokenOwner",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "operator",
+    "type": "address"
+   }
+  ],
+  "name": "LSP7RevokeOperatorNotAuthorized",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7TokenContractCannotHoldValue",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7TokenOwnerCannotBeOperator",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "operator",
+    "type": "address"
+   }
+  ],
+  "name": "OperatorAllowanceCannotBeIncreasedFromZero",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "AccessControlBadConfirmation",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "AccessControlCannotSetAdminForDefaultAdminRole",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "account",
+    "type": "address"
+   },
+   {
+    "internalType": "bytes32",
+    "name": "neededRole",
+    "type": "bytes32"
+   }
+  ],
+  "name": "AccessControlUnauthorizedAccount",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "to",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "tranferAmount",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "balanceOf",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "tokenBalanceCap",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP7CappedBalanceExceeded",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7MintDisabled",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7CannotUpdateTransferLockPeriod",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7InvalidTransferLockPeriod",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7TokenAlreadyTransferable",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7TransferDisabled",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7RevokableFeatureDisabled",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "InvalidShortString",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7VotesBrokenClockMode",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "supply",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "cap",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP7VotesExceededSafeSupply",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "timepoint",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP7VotesFutureLookup",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "signer",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "nonce",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP7VotesInvalidNonce",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "expiry",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP7VotesSignatureExpired",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "string",
+    "name": "str",
+    "type": "string"
+   }
+  ],
+  "name": "StringTooLong",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP7CappedSupplyCannotMintOverCap",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "callIndex",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP8BatchCallFailed",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8CannotSendToAddressZero",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8CannotUseAddressZeroAsOperator",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8InvalidTransferBatch",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "tokenId",
+    "type": "bytes32"
+   }
+  ],
+  "name": "LSP8NonExistentTokenId",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "operator",
+    "type": "address"
+   },
+   {
+    "internalType": "bytes32",
+    "name": "tokenId",
+    "type": "bytes32"
+   }
+  ],
+  "name": "LSP8NonExistingOperator",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "tokenId",
+    "type": "bytes32"
+   },
+   {
+    "internalType": "address",
+    "name": "caller",
+    "type": "address"
+   }
+  ],
+  "name": "LSP8NotTokenOperator",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "tokenOwner",
+    "type": "address"
+   },
+   {
+    "internalType": "bytes32",
+    "name": "tokenId",
+    "type": "bytes32"
+   },
+   {
+    "internalType": "address",
+    "name": "caller",
+    "type": "address"
+   }
+  ],
+  "name": "LSP8NotTokenOwner",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "tokenReceiver",
+    "type": "address"
+   }
+  ],
+  "name": "LSP8NotifyTokenReceiverContractMissingLSP1Interface",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "tokenReceiver",
+    "type": "address"
+   }
+  ],
+  "name": "LSP8NotifyTokenReceiverIsEOA",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "operator",
+    "type": "address"
+   },
+   {
+    "internalType": "bytes32",
+    "name": "tokenId",
+    "type": "bytes32"
+   }
+  ],
+  "name": "LSP8OperatorAlreadyAuthorized",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "caller",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "tokenOwner",
+    "type": "address"
+   },
+   {
+    "internalType": "bytes32",
+    "name": "tokenId",
+    "type": "bytes32"
+   }
+  ],
+  "name": "LSP8RevokeOperatorNotAuthorized",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8TokenContractCannotHoldValue",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8TokenIdFormatNotEditable",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8TokenIdsDataEmptyArray",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8TokenIdsDataLengthMismatch",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8TokenOwnerCannotBeOperator",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "tokenId",
+    "type": "bytes32"
+   },
+   {
+    "internalType": "address",
+    "name": "oldOwner",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "newOwner",
+    "type": "address"
+   }
+  ],
+  "name": "LSP8TokenOwnerChanged",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "to",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "currentBalance",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "tokenBalanceCap",
+    "type": "uint256"
+   }
+  ],
+  "name": "LSP8CappedBalanceExceeded",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8MintDisabled",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "tokenId",
+    "type": "bytes32"
+   }
+  ],
+  "name": "LSP8TokenIdAlreadyMinted",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8CannotUpdateTransferLockPeriod",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8InvalidTransferLockPeriod",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8TokenAlreadyTransferable",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8TransferDisabled",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8RevokableFeatureDisabled",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "LSP8CappedSupplyCannotMintOverCap",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "dataKey",
+    "type": "bytes32"
+   }
+  ],
+  "name": "LSP1DelegateNotAllowedToSetDataKey",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "name": "preOpGas",
+    "type": "uint256"
+   },
+   {
+    "name": "paid",
+    "type": "uint256"
+   },
+   {
+    "name": "validAfter",
+    "type": "uint48"
+   },
+   {
+    "name": "validUntil",
+    "type": "uint48"
+   },
+   {
+    "name": "targetSuccess",
+    "type": "bool"
+   },
+   {
+    "name": "targetResult",
+    "type": "bytes"
+   }
+  ],
+  "name": "ExecutionResult",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "name": "opIndex",
+    "type": "uint256"
+   },
+   {
+    "name": "reason",
+    "type": "string"
+   }
+  ],
+  "name": "FailedOp",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "name": "sender",
+    "type": "address"
+   }
+  ],
+  "name": "SenderAddressResult",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "name": "aggregator",
+    "type": "address"
+   }
+  ],
+  "name": "SignatureValidationFailed",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "components": [
+     {
+      "name": "preOpGas",
+      "type": "uint256"
+     },
+     {
+      "name": "prefund",
+      "type": "uint256"
+     },
+     {
+      "name": "sigFailed",
+      "type": "bool"
+     },
+     {
+      "name": "validAfter",
+      "type": "uint48"
+     },
+     {
+      "name": "validUntil",
+      "type": "uint48"
+     },
+     {
+      "name": "paymasterContext",
+      "type": "bytes"
+     }
+    ],
+    "name": "returnInfo",
+    "type": "tuple"
+   },
+   {
+    "components": [
+     {
+      "name": "stake",
+      "type": "uint256"
+     },
+     {
+      "name": "unstakeDelaySec",
+      "type": "uint256"
+     }
+    ],
+    "name": "senderInfo",
+    "type": "tuple"
+   },
+   {
+    "components": [
+     {
+      "name": "stake",
+      "type": "uint256"
+     },
+     {
+      "name": "unstakeDelaySec",
+      "type": "uint256"
+     }
+    ],
+    "name": "factoryInfo",
+    "type": "tuple"
+   },
+   {
+    "components": [
+     {
+      "name": "stake",
+      "type": "uint256"
+     },
+     {
+      "name": "unstakeDelaySec",
+      "type": "uint256"
+     }
+    ],
+    "name": "paymasterInfo",
+    "type": "tuple"
+   }
+  ],
+  "name": "ValidationResult",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "components": [
+     {
+      "name": "preOpGas",
+      "type": "uint256"
+     },
+     {
+      "name": "prefund",
+      "type": "uint256"
+     },
+     {
+      "name": "sigFailed",
+      "type": "bool"
+     },
+     {
+      "name": "validAfter",
+      "type": "uint48"
+     },
+     {
+      "name": "validUntil",
+      "type": "uint48"
+     },
+     {
+      "name": "paymasterContext",
+      "type": "bytes"
+     }
+    ],
+    "name": "returnInfo",
+    "type": "tuple"
+   },
+   {
+    "components": [
+     {
+      "name": "stake",
+      "type": "uint256"
+     },
+     {
+      "name": "unstakeDelaySec",
+      "type": "uint256"
+     }
+    ],
+    "name": "senderInfo",
+    "type": "tuple"
+   },
+   {
+    "components": [
+     {
+      "name": "stake",
+      "type": "uint256"
+     },
+     {
+      "name": "unstakeDelaySec",
+      "type": "uint256"
+     }
+    ],
+    "name": "factoryInfo",
+    "type": "tuple"
+   },
+   {
+    "components": [
+     {
+      "name": "stake",
+      "type": "uint256"
+     },
+     {
+      "name": "unstakeDelaySec",
+      "type": "uint256"
+     }
+    ],
+    "name": "paymasterInfo",
+    "type": "tuple"
+   },
+   {
+    "components": [
+     {
+      "name": "aggregator",
+      "type": "address"
+     },
+     {
+      "components": [
+       {
+        "name": "stake",
+        "type": "uint256"
+       },
+       {
+        "name": "unstakeDelaySec",
+        "type": "uint256"
+       }
+      ],
+      "name": "stakeInfo",
+      "type": "tuple"
+     }
+    ],
+    "name": "aggregatorInfo",
+    "type": "tuple"
+   }
+  ],
+  "name": "ValidationResultWithAggregation",
+  "type": "error"
+ }
+]

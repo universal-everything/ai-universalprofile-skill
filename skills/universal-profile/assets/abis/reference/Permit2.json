@@ -1,0 +1,158 @@
+{
+ "contractName": "Permit2",
+ "source": "Uniswap Permit2 (subset: allowance transfer)",
+ "abi": [
+  {
+   "name": "approve",
+   "type": "function",
+   "stateMutability": "nonpayable",
+   "inputs": [
+    {
+     "type": "address",
+     "name": "token"
+    },
+    {
+     "type": "address",
+     "name": "spender"
+    },
+    {
+     "type": "uint160",
+     "name": "amount"
+    },
+    {
+     "type": "uint48",
+     "name": "expiration"
+    }
+   ],
+   "outputs": []
+  },
+  {
+   "name": "allowance",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "address",
+     "name": "user"
+    },
+    {
+     "type": "address",
+     "name": "token"
+    },
+    {
+     "type": "address",
+     "name": "spender"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint160",
+     "name": "amount"
+    },
+    {
+     "type": "uint48",
+     "name": "expiration"
+    },
+    {
+     "type": "uint48",
+     "name": "nonce"
+    }
+   ]
+  },
+  {
+   "name": "transferFrom",
+   "type": "function",
+   "stateMutability": "nonpayable",
+   "inputs": [
+    {
+     "type": "address",
+     "name": "from"
+    },
+    {
+     "type": "address",
+     "name": "to"
+    },
+    {
+     "type": "uint160",
+     "name": "amount"
+    },
+    {
+     "type": "address",
+     "name": "token"
+    }
+   ],
+   "outputs": []
+  },
+  {
+   "name": "invalidateNonces",
+   "type": "function",
+   "stateMutability": "nonpayable",
+   "inputs": [
+    {
+     "type": "address",
+     "name": "token"
+    },
+    {
+     "type": "address",
+     "name": "spender"
+    },
+    {
+     "type": "uint48",
+     "name": "newNonce"
+    }
+   ],
+   "outputs": []
+  },
+  {
+   "name": "lockdown",
+   "type": "function",
+   "stateMutability": "nonpayable",
+   "inputs": [
+    {
+     "type": "tuple[]",
+     "name": "approvals",
+     "components": [
+      {
+       "type": "address",
+       "name": "token"
+      },
+      {
+       "type": "address",
+       "name": "spender"
+      }
+     ]
+    }
+   ],
+   "outputs": []
+  },
+  {
+   "name": "nonceBitmap",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "address"
+    },
+    {
+     "type": "uint256"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ]
+  },
+  {
+   "name": "DOMAIN_SEPARATOR",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [],
+   "outputs": [
+    {
+     "type": "bytes32"
+    }
+   ]
+  }
+ ]
+}

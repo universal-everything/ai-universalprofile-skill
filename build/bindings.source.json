@@ -1,0 +1,1150 @@
+{
+ "source": "Obsidian standards-functions-bindings.md (plan) \u2014 classification per selector",
+ "bindings": {
+  "0x79ba5097": {
+   "signature": "acceptOwnership()",
+   "standard": "LSP14",
+   "binding": "verb `ownership accept`",
+   "kind": "verb",
+   "test": "O",
+   "verb": "ownership accept"
+  },
+  "0xc6845210": {
+   "signature": "addGuardian(address,address)",
+   "standard": "LSP11",
+   "binding": "generic (LSP11 is not deployed with a UP by default)",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0x6963d438": {
+   "signature": "batchCalls(bytes[])",
+   "standard": "LSP7/LSP8",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0x1ce59666": {
+   "signature": "cancelRecoveryProcess(address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0xb79336ee": {
+   "signature": "COMMITMEMT_DELAY()",
+   "standard": "LSP11 (typo verbatim)",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0xa9e3b276": {
+   "signature": "commitToRecover(address,address,bytes32)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0x3b315680": {
+   "signature": "computeAddress(bytes32,bytes32,bool,bytes)",
+   "standard": "LSP16",
+   "binding": "knowledge",
+   "kind": "knowledge",
+   "test": "V"
+  },
+  "0xdd5940f3": {
+   "signature": "computeAddresses((bytes32,uint256,bytes),(uint256,bytes,bool,bytes),address,bytes)",
+   "standard": "LSP23 (non-proxy)",
+   "binding": "internal (`account precompute --mode full`)",
+   "kind": "internal",
+   "test": "V,F"
+  },
+  "0xe888edcb": {
+   "signature": "computeERC1167Address(address,bytes32,bool,bytes)",
+   "standard": "LSP16",
+   "binding": "knowledge",
+   "kind": "knowledge",
+   "test": "V"
+  },
+  "0x72b19d36": {
+   "signature": "computeERC1167Addresses((bytes32,uint256,address,bytes),(uint256,address,bytes,bool,bytes),address,bytes)",
+   "standard": "LSP23",
+   "binding": "verb `account precompute`",
+   "kind": "verb",
+   "test": "V,F",
+   "verb": "account precompute"
+  },
+  "0x8bc0ab75": {
+   "signature": "DEFAULT_RECOVERY_DELAY()",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0x754b86b5": {
+   "signature": "deployContracts((bytes32,uint256,bytes),(uint256,bytes,bool,bytes),address,bytes)",
+   "standard": "LSP23",
+   "binding": "verb `account deploy --mode full`",
+   "kind": "verb",
+   "test": "W,P,F",
+   "verb": "account deploy"
+  },
+  "0x26736355": {
+   "signature": "deployCreate2(bytes,bytes32)",
+   "standard": "LSP16",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W,P"
+  },
+  "0xcdbd473a": {
+   "signature": "deployCreate2AndInitialize(bytes,bytes32,bytes,uint256,uint256)",
+   "standard": "LSP16",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W,P"
+  },
+  "0x6a66a753": {
+   "signature": "deployERC1167Proxies((bytes32,uint256,address,bytes),(uint256,address,bytes,bool,bytes),address,bytes)",
+   "standard": "LSP23",
+   "binding": "verb `account deploy` (default)",
+   "kind": "verb",
+   "test": "W,P,F",
+   "verb": "account deploy"
+  },
+  "0x49d8abed": {
+   "signature": "deployERC1167Proxy(address,bytes32)",
+   "standard": "LSP16",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0x5340165f": {
+   "signature": "deployERC1167ProxyAndInitialize(address,bytes32,bytes)",
+   "standard": "LSP16",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W,P"
+  },
+  "0xb0d691fe": {
+   "signature": "entryPoint()",
+   "standard": "Extension4337",
+   "binding": "verb `account info` (4337 section)",
+   "kind": "verb",
+   "test": "V,A",
+   "verb": "account info"
+  },
+  "0x09c5eabe": {
+   "signature": "execute(bytes)",
+   "standard": "LSP6",
+   "binding": "verb `exec send` (direct KM path)",
+   "kind": "verb",
+   "test": "W,P",
+   "verb": "exec send"
+  },
+  "0x44c028fe": {
+   "signature": "execute(uint256,address,uint256,bytes)",
+   "standard": "ERC725X (LSP0/LSP9)",
+   "binding": "verb `exec send --via lsp0` + payload builder for all paths",
+   "kind": "verb",
+   "test": "W,P",
+   "verb": "exec send"
+  },
+  "0x31858452": {
+   "signature": "executeBatch(uint256[],address[],uint256[],bytes[])",
+   "standard": "ERC725X",
+   "binding": "verb `exec batch --via lsp0`",
+   "kind": "verb",
+   "test": "W,P",
+   "verb": "exec batch"
+  },
+  "0xbf0176ff": {
+   "signature": "executeBatch(uint256[],bytes[])",
+   "standard": "LSP6",
+   "binding": "verb `exec batch` (KM)",
+   "kind": "verb",
+   "test": "W,P",
+   "verb": "exec batch"
+  },
+  "0x28c4d14e": {
+   "signature": "executePostDeployment(address,address,bytes)",
+   "standard": "LSP23 module",
+   "binding": "internal (called by factory)",
+   "kind": "internal",
+   "test": "W"
+  },
+  "0x4c8a4e74": {
+   "signature": "executeRelayCall(bytes,uint256,uint256,bytes)",
+   "standard": "LSP25 (on KM)",
+   "binding": "verb `exec relay`",
+   "kind": "verb",
+   "test": "W,P,R",
+   "verb": "exec relay"
+  },
+  "0xa20856a5": {
+   "signature": "executeRelayCallBatch(bytes[],uint256[],uint256[],uint256[],bytes[])",
+   "standard": "LSP25",
+   "binding": "verb `exec relay --batch`",
+   "kind": "verb",
+   "test": "W,P,R",
+   "verb": "exec relay"
+  },
+  "0x1a17ccbf": {
+   "signature": "generateSalt(bytes32,bool,bytes)",
+   "standard": "LSP16",
+   "binding": "knowledge",
+   "kind": "knowledge",
+   "test": "V"
+  },
+  "0x6289a163": {
+   "signature": "getCommitmentInfoOf(address,uint256,address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0x54f6127f": {
+   "signature": "getData(bytes32)",
+   "standard": "ERC725Y",
+   "binding": "verb `account data get`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "account data get"
+  },
+  "0xdedff9c6": {
+   "signature": "getDataBatch(bytes32[])",
+   "standard": "ERC725Y",
+   "binding": "verb `account data get` (multi)",
+   "kind": "verb",
+   "test": "V",
+   "verb": "account data get"
+  },
+  "0x88095527": {
+   "signature": "getFirstRecoveryTimestampOf(address,uint256)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0x8ca4aaaf": {
+   "signature": "getGuardiansOf(address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0xdbd119bd": {
+   "signature": "getGuardiansThresholdOf(address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0xb44581d9": {
+   "signature": "getNonce(address,uint128)",
+   "standard": "LSP25",
+   "binding": "verb `nonce` (+ internal)",
+   "kind": "verb",
+   "test": "V,R",
+   "verb": "nonce"
+  },
+  "0xcee79d45": {
+   "signature": "getRecoveryCounterOf(address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0x02543bff": {
+   "signature": "getRecoveryDelayOf(address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0x06fe1738": {
+   "signature": "getSecretHashOf(address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0x506d1a0f": {
+   "signature": "getVotedAddressByGuardian(address,uint256,address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0xa65068b6": {
+   "signature": "getVotesOfGuardianVotedAddress(address,uint256,address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0xd617b890": {
+   "signature": "hasReachedThreshold(address,uint256,address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0xc4d66de8": {
+   "signature": "initialize(address)",
+   "standard": "Init variants (LSP0/LSP6/LSP9/ERC725)",
+   "binding": "internal (proxy init via LSP23 calldata)",
+   "kind": "internal",
+   "test": "W"
+  },
+  "0x769e54df": {
+   "signature": "isGuardianOf(address,address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0x1626ba7e": {
+   "signature": "isValidSignature(bytes32,bytes)",
+   "standard": "ERC1271 (LSP0, LSP6)",
+   "binding": "verb `verify-1271`; internal for CoW/x402/off-chain auth",
+   "kind": "verb",
+   "test": "V",
+   "verb": "verify-1271"
+  },
+  "0xde928f14": {
+   "signature": "lsp20VerifyCall(address,address,address,uint256,bytes)",
+   "standard": "LSP20 (KM)",
+   "binding": "internal (dry-run permission checks; 4337 validation)",
+   "kind": "internal",
+   "test": "simulate"
+  },
+  "0xd3fc45d3": {
+   "signature": "lsp20VerifyCallResult(bytes32,bytes)",
+   "standard": "LSP20",
+   "binding": "internal",
+   "kind": "internal",
+   "test": "\u2014"
+  },
+  "0x06fdde03": {
+   "signature": "name()",
+   "standard": "ERC20MetadataCompatibilityExtension",
+   "binding": "knowledge",
+   "kind": "knowledge",
+   "test": "V"
+  },
+  "0xbc197c81": {
+   "signature": "onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)",
+   "standard": "ERCTokenCallbacks (LSP17 ext.)",
+   "binding": "internal check (`token transfer` warns if missing)",
+   "kind": "internal",
+   "test": "V"
+  },
+  "0xf23a6e61": {
+   "signature": "onERC1155Received(address,address,uint256,uint256,bytes)",
+   "standard": "ERCTokenCallbacks",
+   "binding": "same",
+   "kind": "internal",
+   "test": "V"
+  },
+  "0x150b7a02": {
+   "signature": "onERC721Received(address,address,uint256,bytes)",
+   "standard": "ERCTokenCallbacks / OnERC721ReceivedExtension",
+   "binding": "same",
+   "kind": "internal",
+   "test": "V"
+  },
+  "0x8da5cb5b": {
+   "signature": "owner()",
+   "standard": "OwnableUnset",
+   "binding": "verb `account info`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "account info"
+  },
+  "0xe30c3978": {
+   "signature": "pendingOwner()",
+   "standard": "LSP14",
+   "binding": "verb `account info`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "account info"
+  },
+  "0xf3b3c785": {
+   "signature": "recoverAccess(address,address,bytes32,bytes32,bytes)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W,P"
+  },
+  "0x9b27a90e": {
+   "signature": "removeGuardian(address,address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0xead3fbdf": {
+   "signature": "RENOUNCE_OWNERSHIP_CONFIRMATION_DELAY()",
+   "standard": "LSP14",
+   "binding": "knowledge",
+   "kind": "knowledge",
+   "test": "V"
+  },
+  "0x01bfba61": {
+   "signature": "RENOUNCE_OWNERSHIP_CONFIRMATION_PERIOD()",
+   "standard": "LSP14",
+   "binding": "knowledge",
+   "kind": "knowledge",
+   "test": "V"
+  },
+  "0x715018a6": {
+   "signature": "renounceOwnership()",
+   "standard": "LSP14",
+   "binding": "verb `ownership renounce` (double confirmation)",
+   "kind": "verb",
+   "test": "O",
+   "verb": "ownership renounce"
+  },
+  "0x7f23690c": {
+   "signature": "setData(bytes32,bytes)",
+   "standard": "ERC725Y",
+   "binding": "verb `account data set` (+ permission/controller/extension/URD verbs)",
+   "kind": "verb",
+   "test": "W,P",
+   "verb": "account data set"
+  },
+  "0x4f04d60a": {
+   "signature": "setDataAndTransferOwnership(bytes32[],bytes[],address)",
+   "standard": "LSP23 UP Init post-deployment module",
+   "binding": "internal (deployment calldata)",
+   "kind": "internal",
+   "test": "W"
+  },
+  "0x97902421": {
+   "signature": "setDataBatch(bytes32[],bytes[])",
+   "standard": "ERC725Y",
+   "binding": "verb `account data set` (multi), `controller add/edit/remove`",
+   "kind": "verb",
+   "test": "W,P",
+   "verb": "account data set"
+  },
+  "0x639cea19": {
+   "signature": "setGuardiansThreshold(address,uint256)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0xa219b404": {
+   "signature": "setRecoveryDelay(address,uint256)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0x78f84ebd": {
+   "signature": "setRecoverySecretHash(address,bytes32)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0x01ffc9a7": {
+   "signature": "supportsInterface(bytes4)",
+   "standard": "ERC165",
+   "binding": "internal (`abi resolve`, token standard detection)",
+   "kind": "internal",
+   "test": "V"
+  },
+  "0x95d89b41": {
+   "signature": "symbol()",
+   "standard": "ERC20MetadataCompatibilityExtension",
+   "binding": "knowledge",
+   "kind": "knowledge",
+   "test": "V"
+  },
+  "0xd4b83992": {
+   "signature": "target()",
+   "standard": "LSP6",
+   "binding": "verb `account info` (KM \u2192 UP link check)",
+   "kind": "verb",
+   "test": "V",
+   "verb": "account info"
+  },
+  "0x0023de29": {
+   "signature": "tokensReceived(address,address,address,uint256,bytes,bytes)",
+   "standard": "ERCTokenCallbacks (ERC777)",
+   "binding": "knowledge",
+   "kind": "knowledge",
+   "test": "V"
+  },
+  "0xf2fde38b": {
+   "signature": "transferOwnership(address)",
+   "standard": "LSP14",
+   "binding": "verb `ownership transfer`",
+   "kind": "verb",
+   "test": "O",
+   "verb": "ownership transfer"
+  },
+  "0x6bb56a14": {
+   "signature": "universalReceiver(bytes32,bytes)",
+   "standard": "LSP1 (LSP0)",
+   "binding": "generic; internal for LSP5 bookkeeping tests",
+   "kind": "generic",
+   "test": "W,P"
+  },
+  "0xa245bbda": {
+   "signature": "universalReceiverDelegate(address,uint256,bytes32,bytes)",
+   "standard": "LSP1 delegate",
+   "binding": "knowledge (called by the UP)",
+   "kind": "knowledge",
+   "test": "\u2014"
+  },
+  "0x3a871cdd": {
+   "signature": "validateUserOp((address,uint256,bytes,bytes,uint256,uint256,uint256,uint256,uint256,bytes,bytes),bytes32,uint256)",
+   "standard": "IAccount v0.6 via Extension4337",
+   "binding": "internal (`exec userop`; registration via `account 4337 enable`)",
+   "kind": "internal",
+   "test": "A"
+  },
+  "0xffa1ad74": {
+   "signature": "VERSION()",
+   "standard": "Version",
+   "binding": "verb `account info`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "account info"
+  },
+  "0xfa04a7f1": {
+   "signature": "voteForRecovery(address,address,address)",
+   "standard": "LSP11",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0x70a08231": {
+   "signature": "balanceOf(address)",
+   "standard": "LSP7/LSP8",
+   "binding": "verb `token balance`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token balance"
+  },
+  "0x18160ddd": {
+   "signature": "totalSupply()",
+   "standard": "LSP7/LSP8",
+   "binding": "verb `token metadata`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token metadata"
+  },
+  "0x313ce567": {
+   "signature": "decimals()",
+   "standard": "LSP7",
+   "binding": "verb `token metadata`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token metadata"
+  },
+  "0x760d9bba": {
+   "signature": "transfer(address,address,uint256,bool,bytes)",
+   "standard": "LSP7",
+   "binding": "verb `token transfer` (force + receiver-hook warnings)",
+   "kind": "verb",
+   "test": "W,T",
+   "verb": "token transfer"
+  },
+  "0x2d7667c9": {
+   "signature": "transferBatch(address[],address[],uint256[],bool[],bytes[])",
+   "standard": "LSP7",
+   "binding": "verb `token transfer --batch`",
+   "kind": "verb",
+   "test": "W,T",
+   "verb": "token transfer"
+  },
+  "0xb49506fd": {
+   "signature": "authorizeOperator(address,uint256,bytes)",
+   "standard": "LSP7",
+   "binding": "verb `token approve`",
+   "kind": "verb",
+   "test": "W,T",
+   "verb": "token approve"
+  },
+  "0x30d0dc37": {
+   "signature": "revokeOperator(address,address,bool,bytes)",
+   "standard": "LSP7",
+   "binding": "verb `token approve --revoke`",
+   "kind": "verb",
+   "test": "W,T",
+   "verb": "token approve"
+  },
+  "0x2bc1da82": {
+   "signature": "increaseAllowance(address,uint256,bytes)",
+   "standard": "LSP7",
+   "binding": "verb `token approve --increase`",
+   "kind": "verb",
+   "test": "W",
+   "verb": "token approve"
+  },
+  "0x78381670": {
+   "signature": "decreaseAllowance(address,address,uint256,bytes)",
+   "standard": "LSP7",
+   "binding": "verb `token approve --decrease`",
+   "kind": "verb",
+   "test": "W",
+   "verb": "token approve"
+  },
+  "0x65aeaa95": {
+   "signature": "authorizedAmountFor(address,address)",
+   "standard": "LSP7",
+   "binding": "verb `token operators`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token operators"
+  },
+  "0xd72fc29a": {
+   "signature": "getOperatorsOf(address)",
+   "standard": "LSP7",
+   "binding": "verb `token operators`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token operators"
+  },
+  "0x511b6952": {
+   "signature": "transfer(address,address,bytes32,bool,bytes)",
+   "standard": "LSP8",
+   "binding": "verb `token transfer` (tokenId)",
+   "kind": "verb",
+   "test": "W,T",
+   "verb": "token transfer"
+  },
+  "0x7e87632c": {
+   "signature": "transferBatch(address[],address[],bytes32[],bool[],bytes[])",
+   "standard": "LSP8",
+   "binding": "verb `token transfer --batch`",
+   "kind": "verb",
+   "test": "W,T",
+   "verb": "token transfer"
+  },
+  "0x86a10ddd": {
+   "signature": "authorizeOperator(address,bytes32,bytes)",
+   "standard": "LSP8",
+   "binding": "verb `token approve`",
+   "kind": "verb",
+   "test": "W,T",
+   "verb": "token approve"
+  },
+  "0xdb8c9663": {
+   "signature": "revokeOperator(address,bytes32,bool,bytes)",
+   "standard": "LSP8",
+   "binding": "verb `token approve --revoke`",
+   "kind": "verb",
+   "test": "W,T",
+   "verb": "token approve"
+  },
+  "0x2a3654a4": {
+   "signature": "isOperatorFor(address,bytes32)",
+   "standard": "LSP8",
+   "binding": "verb `token operators`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token operators"
+  },
+  "0x49a6078d": {
+   "signature": "getOperatorsOf(bytes32)",
+   "standard": "LSP8",
+   "binding": "verb `token operators`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token operators"
+  },
+  "0xa3b261f2": {
+   "signature": "tokenIdsOf(address)",
+   "standard": "LSP8",
+   "binding": "verb `token list`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token list"
+  },
+  "0x217b2270": {
+   "signature": "tokenOwnerOf(bytes32)",
+   "standard": "LSP8",
+   "binding": "verb `token metadata --token-id`",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token metadata"
+  },
+  "0x16e023b3": {
+   "signature": "getDataForTokenId(bytes32,bytes32)",
+   "standard": "LSP8",
+   "binding": "verb `token metadata --token-id` (read via eth_call)",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token metadata"
+  },
+  "0x1d26fce6": {
+   "signature": "getDataBatchForTokenIds(bytes32[],bytes32[])",
+   "standard": "LSP8",
+   "binding": "verb `token metadata --token-id` (multi)",
+   "kind": "verb",
+   "test": "V",
+   "verb": "token metadata"
+  },
+  "0xd6c1407c": {
+   "signature": "setDataForTokenId(bytes32,bytes32,bytes)",
+   "standard": "LSP8",
+   "binding": "generic (issuer action)",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0xbe9f0e6f": {
+   "signature": "setDataBatchForTokenIds(bytes32[],bytes32[],bytes[])",
+   "standard": "LSP8",
+   "binding": "generic (issuer action)",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0x7580d920": {
+   "signature": "mint(address,uint256,bool,bytes)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xaf255b61": {
+   "signature": "mint(address,bytes32,bool,bytes)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x7e5cd5c1": {
+   "signature": "disableMinting()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x46b45af7": {
+   "signature": "isMintable()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xd5391393": {
+   "signature": "MINTER_ROLE()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x44d17187": {
+   "signature": "burn(address,uint256,bytes)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x6c79b70b": {
+   "signature": "burn(bytes32,bytes)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x52058d8a": {
+   "signature": "tokenSupplyCap()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xd1ca0188": {
+   "signature": "tokenBalanceCap()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x94187753": {
+   "signature": "UNCAPPED_BALANCE_ROLE()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x2121dc75": {
+   "signature": "isTransferable()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x696fd68c": {
+   "signature": "makeTransferable()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x45e14c46": {
+   "signature": "updateTransferLockPeriod(uint256,uint256)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xe6fc6098": {
+   "signature": "transferLockStart()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x8fb05730": {
+   "signature": "transferLockEnd()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xecff3a0c": {
+   "signature": "transferLockEnabled()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x34ac6823": {
+   "signature": "nonTransferabilityEnabled()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x12318ac4": {
+   "signature": "NON_TRANSFERABLE_BYPASS_ROLE()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xf5fb0b0c": {
+   "signature": "revoke(address,address,uint256,bytes)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x84bfc8eb": {
+   "signature": "revoke(address,address,bytes32,bytes)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x9e045773": {
+   "signature": "isRevokable()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xc282ca78": {
+   "signature": "disableRevokable()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x7c4acabf": {
+   "signature": "REVOKER_ROLE()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x5c19a95c": {
+   "signature": "delegate(address)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xc3cda520": {
+   "signature": "delegateBySig(...)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x587cde1e": {
+   "signature": "delegates(address)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x9ab24eb0": {
+   "signature": "getVotes(address)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x3a46b1a8": {
+   "signature": "getPastVotes(address,uint256)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x8e539e8c": {
+   "signature": "getPastTotalSupply(uint256)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xf1127ed8": {
+   "signature": "checkpoints(address,uint32)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x6fcfff45": {
+   "signature": "numCheckpoints(address)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x7ecebe00": {
+   "signature": "nonces(address)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x91ddadf4": {
+   "signature": "clock()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x4bf5d7e9": {
+   "signature": "CLOCK_MODE()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x3644e515": {
+   "signature": "DOMAIN_SEPARATOR()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x84b0196e": {
+   "signature": "eip712Domain()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x1e4e0091": {
+   "signature": "setRoleAdmin(bytes32,bytes32)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x9010d07c": {
+   "signature": "getRoleMember(bytes32,uint256)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xca15c873": {
+   "signature": "getRoleMemberCount(bytes32)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xa3246ad3": {
+   "signature": "getRoleMembers(bytes32)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x2de94807": {
+   "signature": "rolesOf(address)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0xa217fddf": {
+   "signature": "DEFAULT_ADMIN_ROLE()",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x92a91a3a": {
+   "signature": "tokenAt(uint256)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x04689a81": {
+   "signature": "initialize(string,string,address,uint256,bool)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x15f71630": {
+   "signature": "initialize(string,string,address,uint256,bool,(bool,uint256),(uint256,uint256),(uint256,uint256),(bool))",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x74823132": {
+   "signature": "initialize(string,string,address,uint256,uint256)",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x48c4f93e": {
+   "signature": "initialize(string,string,address,uint256,uint256,(bool,bytes32[]),(uint256,uint256),(uint256,uint256),(bool))",
+   "standard": "see standards-functions-bindings",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W/V"
+  },
+  "0x4dbf27cc": {
+   "signature": "follow(address)",
+   "standard": "LSP26",
+   "binding": "verb `follow`",
+   "kind": "verb",
+   "test": "W/V",
+   "verb": "follow"
+  },
+  "0x015a4ead": {
+   "signature": "unfollow(address)",
+   "standard": "LSP26",
+   "binding": "verb `unfollow`",
+   "kind": "verb",
+   "test": "W/V",
+   "verb": "unfollow"
+  },
+  "0xcf8711c8": {
+   "signature": "followBatch(address[])",
+   "standard": "LSP26",
+   "binding": "verb `follow batch`",
+   "kind": "verb",
+   "test": "W/V",
+   "verb": "follow batch"
+  },
+  "0x8dd1e47e": {
+   "signature": "unfollowBatch(address[])",
+   "standard": "LSP26",
+   "binding": "verb `follow batch`",
+   "kind": "verb",
+   "test": "W/V",
+   "verb": "follow batch"
+  },
+  "0x99ec3a42": {
+   "signature": "isFollowing(address,address)",
+   "standard": "LSP26",
+   "binding": "verb `is-following`",
+   "kind": "verb",
+   "test": "W/V",
+   "verb": "is-following"
+  },
+  "0x30b3a890": {
+   "signature": "followerCount(address)",
+   "standard": "LSP26",
+   "binding": "verb `followers`",
+   "kind": "verb",
+   "test": "W/V",
+   "verb": "followers"
+  },
+  "0x64548707": {
+   "signature": "followingCount(address)",
+   "standard": "LSP26",
+   "binding": "verb `followers`",
+   "kind": "verb",
+   "test": "W/V",
+   "verb": "followers"
+  },
+  "0x5a39c581": {
+   "signature": "getFollowsByIndex(address,uint256,uint256)",
+   "standard": "LSP26",
+   "binding": "verb `followers`",
+   "kind": "verb",
+   "test": "W/V",
+   "verb": "followers"
+  },
+  "0xb2a8d069": {
+   "signature": "getFollowersByIndex(address,uint256,uint256)",
+   "standard": "LSP26",
+   "binding": "verb `followers`",
+   "kind": "verb",
+   "test": "W/V",
+   "verb": "followers"
+  },
+  "0x4821954f": {
+   "signature": "toLSP4MetadataJSON(...)",
+   "standard": "LSP4Utils library",
+   "binding": "knowledge (metadata JSON builder reference)",
+   "kind": "knowledge",
+   "test": "V"
+  },
+  "0x248a9ca3": {
+   "signature": "getRoleAdmin(bytes32)",
+   "standard": "AccessControlExtended (LSP7/LSP8 extension)",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0x2f2ff15d": {
+   "signature": "grantRole(bytes32,address)",
+   "standard": "AccessControlExtended",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0x91d14854": {
+   "signature": "hasRole(bytes32,address)",
+   "standard": "AccessControlExtended",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "V"
+  },
+  "0x36568abe": {
+   "signature": "renounceRole(bytes32,address)",
+   "standard": "AccessControlExtended",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  },
+  "0xd547741f": {
+   "signature": "revokeRole(bytes32,address)",
+   "standard": "AccessControlExtended",
+   "binding": "generic",
+   "kind": "generic",
+   "test": "W"
+  }
+ }
+}

@@ -1,0 +1,163 @@
+{
+ "contractName": "WETH9",
+ "source": "WETH9 canonical source",
+ "abi": [
+  {
+   "name": "deposit",
+   "type": "function",
+   "stateMutability": "payable",
+   "inputs": [],
+   "outputs": []
+  },
+  {
+   "name": "withdraw",
+   "type": "function",
+   "stateMutability": "nonpayable",
+   "inputs": [
+    {
+     "type": "uint256",
+     "name": "wad"
+    }
+   ],
+   "outputs": []
+  },
+  {
+   "name": "balanceOf",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "address"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ]
+  },
+  {
+   "name": "approve",
+   "type": "function",
+   "stateMutability": "nonpayable",
+   "inputs": [
+    {
+     "type": "address",
+     "name": "guy"
+    },
+    {
+     "type": "uint256",
+     "name": "wad"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ]
+  },
+  {
+   "name": "transfer",
+   "type": "function",
+   "stateMutability": "nonpayable",
+   "inputs": [
+    {
+     "type": "address",
+     "name": "dst"
+    },
+    {
+     "type": "uint256",
+     "name": "wad"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ]
+  },
+  {
+   "name": "transferFrom",
+   "type": "function",
+   "stateMutability": "nonpayable",
+   "inputs": [
+    {
+     "type": "address",
+     "name": "src"
+    },
+    {
+     "type": "address",
+     "name": "dst"
+    },
+    {
+     "type": "uint256",
+     "name": "wad"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ]
+  },
+  {
+   "name": "allowance",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "address"
+    },
+    {
+     "type": "address"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ]
+  },
+  {
+   "name": "totalSupply",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ]
+  },
+  {
+   "name": "Deposit",
+   "type": "event",
+   "inputs": [
+    {
+     "type": "address",
+     "name": "dst",
+     "indexed": true
+    },
+    {
+     "type": "uint256",
+     "name": "wad"
+    }
+   ]
+  },
+  {
+   "name": "Withdrawal",
+   "type": "event",
+   "inputs": [
+    {
+     "type": "address",
+     "name": "src",
+     "indexed": true
+    },
+    {
+     "type": "uint256",
+     "name": "wad"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+  "order": [
+    "LSP23LinkedContractsFactory",
+    "UniversalProfileInitPostDeploymentModule",
+    "UniversalProfilePostDeploymentModule",
+    "UniversalProfileInit",
+    "LSP6KeyManagerInit",
+    "LSP1UniversalReceiverDelegateUP",
+    "LSP7MintableInit",
+    "LSP8MintableInit",
+    "LSP7CustomizableTokenInit",
+    "LSP8CustomizableTokenInit",
+    "ERCTokenCallbacks"
+  ],
+  "sourceSha256": "21b7f83d5df8d08f57fae4f35a3e2c437c097407e3df2f9ea42cbd1c238bb6fd"
+}

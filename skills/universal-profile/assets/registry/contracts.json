@@ -1,0 +1,143 @@
+{
+  "generatedAt": "2026-10-10T05:22:51.555Z",
+  "source": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/contracts.json",
+  "note": "Same address on every chain where deployed (CREATE2). Presence per chain: chains.json lsp.versions; always verify code at runtime.",
+  "contracts": {
+    "LSP23LinkedContractsFactory": {
+      "type": "Singleton",
+      "versions": {
+        "singleton": {
+          "address": "0x2300000A84D25dF63081feAa37ba6b62C4c89a30",
+          "salt": "0x12a6712f113536d8b01d99f72ce168c7e1090124db54cd16f03c20000022178c"
+        }
+      }
+    },
+    "UniversalProfileInitPostDeploymentModule": {
+      "type": "Singleton",
+      "versions": {
+        "singleton": {
+          "address": "0x000000000066093407b6704B89793beFfD0D8F00",
+          "salt": "0x12a6712f113536d8b01d99f72ce168c7e10901240d73e80eeb821d01aa4c2b1a"
+        }
+      }
+    },
+    "UniversalProfilePostDeploymentModule": {
+      "type": "Singleton",
+      "versions": {
+        "singleton": {
+          "address": "0x0000005aD606bcFEF9Ea6D0BbE5b79847054BcD7",
+          "salt": "0x42ff55d7957589c62da54a4368b10a2bc549f2038bbb6880ec6b3e0ecae2ba58"
+        }
+      }
+    },
+    "UniversalProfileInit": {
+      "type": "Implementation",
+      "versions": {
+        "0.12.1": {
+          "address": "0x52c90985AF970D4E0DC26Cb5D052505278aF32A9",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        },
+        "0.14.0": {
+          "address": "0x3024D38EA2434BA6635003Dc1BDC0daB5882ED4F",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        }
+      }
+    },
+    "LSP6KeyManagerInit": {
+      "type": "Implementation",
+      "versions": {
+        "0.12.1": {
+          "address": "0xa75684d7D048704a2DB851D05Ba0c3cbe226264C",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        },
+        "0.14.0": {
+          "address": "0x2Fe3AeD98684E7351aD2D408A43cE09a738BF8a4",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        }
+      }
+    },
+    "LSP1UniversalReceiverDelegateUP": {
+      "type": "Singleton",
+      "versions": {
+        "0.12.1": {
+          "address": "0xA5467dfe7019bF2C7C5F7A707711B9d4cAD118c8",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        },
+        "0.14.0": {
+          "address": "0x7870C5B8BC9572A8001C3f96f7ff59961B23500D",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        }
+      }
+    },
+    "LSP7MintableInit": {
+      "type": "Implementation",
+      "versions": {
+        "0.14.0": {
+          "address": "0x28B7CcdaD1E15cCbDf380c439Cc1F2EBe7f5B2d8",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        },
+        "0.17.3": {
+          "address": "0xf006554F96bf91616dAda3FdB73Ca213874DcFF9",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        },
+        "0.19.0": {
+          "address": "0x94430626Ad0E3b4716f7c5c2dA92A0F3A3fD63e7",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        }
+      }
+    },
+    "LSP8MintableInit": {
+      "type": "Implementation",
+      "versions": {
+        "0.14.0": {
+          "address": "0xd787a2f6B14d4dcC2fb897f40b87f2Ff63a07997",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        },
+        "0.17.3": {
+          "address": "0xE0835D37b9b2Ed3719409B52499Af6411CEF49eB",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        },
+        "0.19.0": {
+          "address": "0xcc7e0A6900F7947Cce6B7b45AB281F6Ba2014951",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        }
+      }
+    },
+    "LSP7CustomizableTokenInit": {
+      "type": "Implementation",
+      "versions": {
+        "0.18.1": {
+          "address": "0x2803BA6e11Bb5fD9fDd3aFba653428f341df5A0F",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        }
+      }
+    },
+    "LSP8CustomizableTokenInit": {
+      "type": "Implementation",
+      "versions": {
+        "0.18.1": {
+          "address": "0xc95b5e293d6f1BfcedB803c763A5B83A6484B5b8",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        }
+      }
+    },
+    "ERCTokenCallbacks": {
+      "type": "Singleton",
+      "versions": {
+        "singleton": {
+          "address": "0x082d49D8487d2ed2527440c7879C66d850daaBc5",
+          "salt": "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        }
+      }
+    },
+    "NickFactory": {
+      "type": "Singleton",
+      "versions": {
+        "singleton": {
+          "address": "0x4e59b44847b379578588920cA78FbF26c0B4956C"
+        }
+      },
+      "source": "https://github.com/Arachnid/deterministic-deployment-proxy"
+    }
+  }
+}

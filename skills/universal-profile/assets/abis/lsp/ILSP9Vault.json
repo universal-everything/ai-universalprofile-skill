@@ -1,0 +1,28 @@
+{
+ "contractName": "ILSP9Vault",
+ "package": "@lukso/lsp9-contracts",
+ "packageVersion": "0.15.5",
+ "sourceName": "contracts/ILSP9Vault.sol",
+ "kind": "interface-or-abstract",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "bytes[]",
+     "name": "data",
+     "type": "bytes[]"
+    }
+   ],
+   "name": "batchCalls",
+   "outputs": [
+    {
+     "internalType": "bytes[]",
+     "name": "results",
+     "type": "bytes[]"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  }
+ ]
+}

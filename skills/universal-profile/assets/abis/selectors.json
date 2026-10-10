@@ -1,0 +1,480 @@
+{
+ "0x6963d438": [
+  "batchCalls(bytes[] data) returns (bytes[] results)"
+ ],
+ "0xead3fbdf": [
+  "RENOUNCE_OWNERSHIP_CONFIRMATION_DELAY() view returns (uint256)"
+ ],
+ "0x01bfba61": [
+  "RENOUNCE_OWNERSHIP_CONFIRMATION_PERIOD() view returns (uint256)"
+ ],
+ "0xffa1ad74": [
+  "VERSION() view returns (string)"
+ ],
+ "0x79ba5097": [
+  "acceptOwnership()"
+ ],
+ "0x44c028fe": [
+  "execute(uint256 operationType, address target, uint256 value, bytes data) payable returns (bytes)"
+ ],
+ "0x31858452": [
+  "executeBatch(uint256[] operationsType, address[] targets, uint256[] values, bytes[] datas) payable returns (bytes[])"
+ ],
+ "0x54f6127f": [
+  "getData(bytes32 dataKey) view returns (bytes dataValue)"
+ ],
+ "0xdedff9c6": [
+  "getDataBatch(bytes32[] dataKeys) view returns (bytes[] dataValues)"
+ ],
+ "0x1626ba7e": [
+  "isValidSignature(bytes32 dataHash, bytes signature) view returns (bytes4 returnedStatus)",
+  "isValidSignature(bytes32 hash, bytes signature) view returns (bytes4 magicValue)"
+ ],
+ "0x8da5cb5b": [
+  "owner() view returns (address)"
+ ],
+ "0xe30c3978": [
+  "pendingOwner() view returns (address)"
+ ],
+ "0x715018a6": [
+  "renounceOwnership()"
+ ],
+ "0x7f23690c": [
+  "setData(bytes32 dataKey, bytes dataValue) payable"
+ ],
+ "0x97902421": [
+  "setDataBatch(bytes32[] dataKeys, bytes[] dataValues) payable"
+ ],
+ "0x01ffc9a7": [
+  "supportsInterface(bytes4 interfaceId) view returns (bool)"
+ ],
+ "0xf2fde38b": [
+  "transferOwnership(address pendingNewOwner)",
+  "transferOwnership(address newOwner)"
+ ],
+ "0x6bb56a14": [
+  "universalReceiver(bytes32 typeId, bytes receivedData) payable returns (bytes returnedValues)",
+  "universalReceiver(bytes32 typeId, bytes data) payable returns (bytes)"
+ ],
+ "0xc4d66de8": [
+  "initialize(address initialOwner) payable",
+  "initialize(address target_)",
+  "initialize(address newOwner) payable"
+ ],
+ "0xa245bbda": [
+  "universalReceiverDelegate(address sender, uint256 value, bytes32 typeId, bytes data) returns (bytes)",
+  "universalReceiverDelegate(address notifier, uint256, bytes32 typeId, bytes) returns (bytes)"
+ ],
+ "0xc6845210": [
+  "addGuardian(address account, address newGuardian)"
+ ],
+ "0x1ce59666": [
+  "cancelRecoveryProcess(address account)"
+ ],
+ "0xa9e3b276": [
+  "commitToRecover(address account, address votedAddress, bytes32 commitment)"
+ ],
+ "0x6289a163": [
+  "getCommitmentInfoOf(address account, uint256 recoveryCounter, address committedBy) view returns (bytes32, uint256)"
+ ],
+ "0x88095527": [
+  "getFirstRecoveryTimestampOf(address account, uint256 recoveryCounter) view returns (uint256)"
+ ],
+ "0x8ca4aaaf": [
+  "getGuardiansOf(address account) view returns (address[])"
+ ],
+ "0xdbd119bd": [
+  "getGuardiansThresholdOf(address account) view returns (uint256)"
+ ],
+ "0xcee79d45": [
+  "getRecoveryCounterOf(address account) view returns (uint256)"
+ ],
+ "0x02543bff": [
+  "getRecoveryDelayOf(address account) view returns (uint256)"
+ ],
+ "0x06fe1738": [
+  "getSecretHashOf(address account) view returns (bytes32)"
+ ],
+ "0x506d1a0f": [
+  "getVotedAddressByGuardian(address account, uint256 recoveryCounter, address guardian) view returns (address)"
+ ],
+ "0xa65068b6": [
+  "getVotesOfGuardianVotedAddress(address account, uint256 recoveryCounter, address votedAddress) view returns (uint256)"
+ ],
+ "0xd617b890": [
+  "hasReachedThreshold(address account, uint256 recoveryCounter, address votedAddress) view returns (bool)"
+ ],
+ "0x769e54df": [
+  "isGuardianOf(address account, address guardianAddress) view returns (bool)"
+ ],
+ "0xf3b3c785": [
+  "recoverAccess(address votedAddress, address account, bytes32 secretHash, bytes32 newSecretHash, bytes calldataToExecute) payable returns (bytes)",
+  "recoverAccess(address account, address votedAddress, bytes32 secretHash, bytes32 newSecretHash, bytes calldataToExecute) payable returns (bytes)"
+ ],
+ "0x9b27a90e": [
+  "removeGuardian(address account, address existingGuardian)"
+ ],
+ "0x639cea19": [
+  "setGuardiansThreshold(address account, uint256 newThreshold)"
+ ],
+ "0xa219b404": [
+  "setRecoveryDelay(address account, uint256 recoveryDelay)"
+ ],
+ "0x78f84ebd": [
+  "setRecoverySecretHash(address account, bytes32 newRecoverSecretHash)"
+ ],
+ "0xfa04a7f1": [
+  "voteForRecovery(address account, address guardian, address guardianVotedAddress)"
+ ],
+ "0xb79336ee": [
+  "COMMITMEMT_DELAY() view returns (uint256)"
+ ],
+ "0x8bc0ab75": [
+  "DEFAULT_RECOVERY_DELAY() view returns (uint256)"
+ ],
+ "0x4c8a4e74": [
+  "executeRelayCall(bytes signature, uint256 nonce, uint256 validityTimestamps, bytes payload) payable returns (bytes)"
+ ],
+ "0xa20856a5": [
+  "executeRelayCallBatch(bytes[] signatures, uint256[] nonces, uint256[] validityTimestamps, uint256[] values, bytes[] payloads) payable returns (bytes[])"
+ ],
+ "0xb44581d9": [
+  "getNonce(address from, uint128 channelId) view returns (uint256)"
+ ],
+ "0x3b315680": [
+  "computeAddress(bytes32 creationBytecodeHash, bytes32 providedSalt, bool initializable, bytes initializeCalldata) view returns (address)"
+ ],
+ "0xe888edcb": [
+  "computeERC1167Address(address implementationContract, bytes32 providedSalt, bool initializable, bytes initializeCalldata) view returns (address)"
+ ],
+ "0x26736355": [
+  "deployCreate2(bytes creationBytecode, bytes32 providedSalt) payable returns (address)"
+ ],
+ "0xcdbd473a": [
+  "deployCreate2AndInitialize(bytes creationBytecode, bytes32 providedSalt, bytes initializeCalldata, uint256 constructorMsgValue, uint256 initializeCalldataMsgValue) payable returns (address)"
+ ],
+ "0x49d8abed": [
+  "deployERC1167Proxy(address implementationContract, bytes32 providedSalt) returns (address)"
+ ],
+ "0x5340165f": [
+  "deployERC1167ProxyAndInitialize(address implementationContract, bytes32 providedSalt, bytes initializeCalldata) payable returns (address)"
+ ],
+ "0x1a17ccbf": [
+  "generateSalt(bytes32 providedSalt, bool initializable, bytes initializeCalldata) pure returns (bytes32)"
+ ],
+ "0x06fdde03": [
+  "name() view returns (string)"
+ ],
+ "0x95d89b41": [
+  "symbol() view returns (string)"
+ ],
+ "0xbc197c81": [
+  "onERC1155BatchReceived(address, address, uint256[], uint256[], bytes) returns (bytes4)"
+ ],
+ "0xf23a6e61": [
+  "onERC1155Received(address, address, uint256, uint256, bytes) returns (bytes4)"
+ ],
+ "0x150b7a02": [
+  "onERC721Received(address, address, uint256, bytes) returns (bytes4)"
+ ],
+ "0x0023de29": [
+  "tokensReceived(address operator, address from, address to, uint256 amount, bytes userData, bytes operatorData)"
+ ],
+ "0xb0d691fe": [
+  "entryPoint() view returns (address)"
+ ],
+ "0x3a871cdd": [
+  "validateUserOp((address sender, uint256 nonce, bytes initCode, bytes callData, uint256 callGasLimit, uint256 verificationGasLimit, uint256 preVerificationGas, uint256 maxFeePerGas, uint256 maxPriorityFeePerGas, bytes paymasterAndData, bytes signature) userOp, bytes32 userOpHash, uint256) returns (uint256)"
+ ],
+ "0xde928f14": [
+  "lsp20VerifyCall(address requestor, address target, address caller, uint256 value, bytes callData) returns (bytes4 returnedStatus)",
+  "lsp20VerifyCall(address, address targetContract, address caller, uint256 msgValue, bytes callData) returns (bytes4)"
+ ],
+ "0xd3fc45d3": [
+  "lsp20VerifyCallResult(bytes32 callHash, bytes callResult) returns (bytes4)",
+  "lsp20VerifyCallResult(bytes32, bytes) returns (bytes4)"
+ ],
+ "0xdd5940f3": [
+  "computeAddresses((bytes32 salt, uint256 fundingAmount, bytes creationBytecode) primaryContractDeployment, (uint256 fundingAmount, bytes creationBytecode, bool addPrimaryContractAddress, bytes extraConstructorParams) secondaryContractDeployment, address postDeploymentModule, bytes postDeploymentModuleCalldata) view returns (address primaryContractAddress, address secondaryContractAddress)"
+ ],
+ "0x72b19d36": [
+  "computeERC1167Addresses((bytes32 salt, uint256 fundingAmount, address implementationContract, bytes initializationCalldata) primaryContractDeploymentInit, (uint256 fundingAmount, address implementationContract, bytes initializationCalldata, bool addPrimaryContractAddress, bytes extraInitializationParams) secondaryContractDeploymentInit, address postDeploymentModule, bytes postDeploymentModuleCalldata) view returns (address primaryContractAddress, address secondaryContractAddress)"
+ ],
+ "0x754b86b5": [
+  "deployContracts((bytes32 salt, uint256 fundingAmount, bytes creationBytecode) primaryContractDeployment, (uint256 fundingAmount, bytes creationBytecode, bool addPrimaryContractAddress, bytes extraConstructorParams) secondaryContractDeployment, address postDeploymentModule, bytes postDeploymentModuleCalldata) payable returns (address primaryContractAddress, address secondaryContractAddress)"
+ ],
+ "0x6a66a753": [
+  "deployERC1167Proxies((bytes32 salt, uint256 fundingAmount, address implementationContract, bytes initializationCalldata) primaryContractDeploymentInit, (uint256 fundingAmount, address implementationContract, bytes initializationCalldata, bool addPrimaryContractAddress, bytes extraInitializationParams) secondaryContractDeploymentInit, address postDeploymentModule, bytes postDeploymentModuleCalldata) payable returns (address primaryContractAddress, address secondaryContractAddress)"
+ ],
+ "0x28c4d14e": [
+  "executePostDeployment(address primaryContract, address secondaryContract, bytes calldataToPostDeploymentModule)",
+  "executePostDeployment(address universalProfile, address keyManager, bytes setDataBatchBytes)"
+ ],
+ "0x4f04d60a": [
+  "setDataAndTransferOwnership(bytes32[] dataKeys, bytes[] dataValues, address newOwner) payable"
+ ],
+ "0x4dbf27cc": [
+  "follow(address addr)"
+ ],
+ "0xcf8711c8": [
+  "followBatch(address[] addresses)"
+ ],
+ "0x30b3a890": [
+  "followerCount(address addr) view returns (uint256)"
+ ],
+ "0x64548707": [
+  "followingCount(address addr) view returns (uint256)"
+ ],
+ "0xb2a8d069": [
+  "getFollowersByIndex(address addr, uint256 startIndex, uint256 endIndex) view returns (address[])"
+ ],
+ "0x5a39c581": [
+  "getFollowsByIndex(address addr, uint256 startIndex, uint256 endIndex) view returns (address[])"
+ ],
+ "0x99ec3a42": [
+  "isFollowing(address follower, address addr) view returns (bool)"
+ ],
+ "0x015a4ead": [
+  "unfollow(address addr)"
+ ],
+ "0x8dd1e47e": [
+  "unfollowBatch(address[] addresses)"
+ ],
+ "0x4821954f": [
+  "toLSP4MetadataJSON(string name, string description, (string title, string url)[] links, (string key, string value, string valueType)[] attributes, ((uint256 width, uint256 height, string url, (string method, bytes32 data) verification)[] icons, (address contractAddress)[] lsp7icons, (address contractAddress, bytes32 tokenId)[] lsp8icons) icons, (((uint256 width, uint256 height, string url, (string method, bytes32 data) verification)[] images, (address contractAddress)[] lsp7images, (address contractAddress, bytes32 tokenId)[] lsp8images)[] imageFields) images, ((string url, string fileType, (string method, bytes32 data) verification)[] assets, (address contractAddress)[] lsp7assets, (address contractAddress, bytes32 tokenId)[] lsp8assets) assets) pure returns (string)"
+ ],
+ "0x09c5eabe": [
+  "execute(bytes payload) payable returns (bytes)"
+ ],
+ "0xbf0176ff": [
+  "executeBatch(uint256[] values, bytes[] payloads) payable returns (bytes[])"
+ ],
+ "0xd4b83992": [
+  "target() view returns (address)"
+ ],
+ "0xb49506fd": [
+  "authorizeOperator(address operator, uint256 amount, bytes operatorNotificationData)"
+ ],
+ "0x65aeaa95": [
+  "authorizedAmountFor(address operator, address tokenOwner) view returns (uint256)"
+ ],
+ "0x70a08231": [
+  "balanceOf(address tokenOwner) view returns (uint256)"
+ ],
+ "0x313ce567": [
+  "decimals() view returns (uint8)"
+ ],
+ "0x78381670": [
+  "decreaseAllowance(address operator, address tokenOwner, uint256 subtractedAmount, bytes operatorNotificationData)"
+ ],
+ "0xd72fc29a": [
+  "getOperatorsOf(address tokenOwner) view returns (address[])"
+ ],
+ "0x2bc1da82": [
+  "increaseAllowance(address operator, uint256 addedAmount, bytes operatorNotificationData)"
+ ],
+ "0x30d0dc37": [
+  "revokeOperator(address operator, address tokenOwner, bool notify, bytes operatorNotificationData)"
+ ],
+ "0x18160ddd": [
+  "totalSupply() view returns (uint256)"
+ ],
+ "0x760d9bba": [
+  "transfer(address from, address to, uint256 amount, bool force, bytes data)"
+ ],
+ "0x2d7667c9": [
+  "transferBatch(address[] from, address[] to, uint256[] amount, bool[] force, bytes[] data)"
+ ],
+ "0xa217fddf": [
+  "DEFAULT_ADMIN_ROLE() view returns (bytes32)"
+ ],
+ "0x248a9ca3": [
+  "getRoleAdmin(bytes32 role) view returns (bytes32)"
+ ],
+ "0x9010d07c": [
+  "getRoleMember(bytes32 role, uint256 index) view returns (address)"
+ ],
+ "0xca15c873": [
+  "getRoleMemberCount(bytes32 role) view returns (uint256)"
+ ],
+ "0xa3246ad3": [
+  "getRoleMembers(bytes32 role) view returns (address[])"
+ ],
+ "0x2f2ff15d": [
+  "grantRole(bytes32 role, address account)"
+ ],
+ "0x91d14854": [
+  "hasRole(bytes32 role, address account) view returns (bool)"
+ ],
+ "0x36568abe": [
+  "renounceRole(bytes32 role, address callerConfirmation)",
+  "renounceRole(bytes32 role, address account)"
+ ],
+ "0xd547741f": [
+  "revokeRole(bytes32 role, address account)"
+ ],
+ "0x2de94807": [
+  "rolesOf(address account) view returns (bytes32[])"
+ ],
+ "0x1e4e0091": [
+  "setRoleAdmin(bytes32 role, bytes32 adminRole)"
+ ],
+ "0x44d17187": [
+  "burn(address from, uint256 amount, bytes data)"
+ ],
+ "0xd1ca0188": [
+  "tokenBalanceCap() view returns (uint256)"
+ ],
+ "0x94187753": [
+  "UNCAPPED_BALANCE_ROLE() view returns (bytes32)"
+ ],
+ "0x52058d8a": [
+  "tokenSupplyCap() view returns (uint256)"
+ ],
+ "0x7e5cd5c1": [
+  "disableMinting()"
+ ],
+ "0x7580d920": [
+  "mint(address to, uint256 amount, bool force, bytes data)"
+ ],
+ "0xd5391393": [
+  "MINTER_ROLE() view returns (bytes32)"
+ ],
+ "0x46b45af7": [
+  "isMintable() view returns (bool)"
+ ],
+ "0x2121dc75": [
+  "isTransferable() view returns (bool)"
+ ],
+ "0x696fd68c": [
+  "makeTransferable()"
+ ],
+ "0xecff3a0c": [
+  "transferLockEnabled() view returns (bool)"
+ ],
+ "0x8fb05730": [
+  "transferLockEnd() view returns (uint256)"
+ ],
+ "0xe6fc6098": [
+  "transferLockStart() view returns (uint256)"
+ ],
+ "0x45e14c46": [
+  "updateTransferLockPeriod(uint256 newTransferLockStart, uint256 newTransferLockEnd)"
+ ],
+ "0x12318ac4": [
+  "NON_TRANSFERABLE_BYPASS_ROLE() view returns (bytes32)"
+ ],
+ "0xc282ca78": [
+  "disableRevokable()"
+ ],
+ "0x9e045773": [
+  "isRevokable() view returns (bool)"
+ ],
+ "0xf5fb0b0c": [
+  "revoke(address from, address to, uint256 amount, bytes data)"
+ ],
+ "0x7c4acabf": [
+  "REVOKER_ROLE() view returns (bytes32)"
+ ],
+ "0x4bf5d7e9": [
+  "CLOCK_MODE() view returns (string)"
+ ],
+ "0x3644e515": [
+  "DOMAIN_SEPARATOR() view returns (bytes32)"
+ ],
+ "0xf1127ed8": [
+  "checkpoints(address account, uint32 pos) view returns ((uint32 fromBlock, uint224 votes))"
+ ],
+ "0x91ddadf4": [
+  "clock() view returns (uint48)"
+ ],
+ "0x5c19a95c": [
+  "delegate(address delegatee)"
+ ],
+ "0xc3cda520": [
+  "delegateBySig(address delegatee, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s)"
+ ],
+ "0x587cde1e": [
+  "delegates(address account) view returns (address)"
+ ],
+ "0x84b0196e": [
+  "eip712Domain() view returns (bytes1 fields, string name, string version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] extensions)"
+ ],
+ "0x8e539e8c": [
+  "getPastTotalSupply(uint256 timepoint) view returns (uint256)"
+ ],
+ "0x3a46b1a8": [
+  "getPastVotes(address account, uint256 timepoint) view returns (uint256)"
+ ],
+ "0x9ab24eb0": [
+  "getVotes(address account) view returns (uint256)"
+ ],
+ "0x7ecebe00": [
+  "nonces(address owner) view returns (uint256)"
+ ],
+ "0x6fcfff45": [
+  "numCheckpoints(address account) view returns (uint32)"
+ ],
+ "0x15f71630": [
+  "initialize(string name_, string symbol_, address newOwner_, uint256 lsp4TokenType_, bool isNonDivisible_, (bool isMintable, uint256 initialMintAmount) mintableParams, (uint256 tokenBalanceCap, uint256 tokenSupplyCap) cappedParams, (uint256 transferLockStart, uint256 transferLockEnd) nonTransferableParams, (bool isRevokable) revokableParams)"
+ ],
+ "0x04689a81": [
+  "initialize(string name_, string symbol_, address newOwner_, uint256 lsp4TokenType_, bool isNonDivisible_)"
+ ],
+ "0x86a10ddd": [
+  "authorizeOperator(address operator, bytes32 tokenId, bytes operatorNotificationData)"
+ ],
+ "0x1d26fce6": [
+  "getDataBatchForTokenIds(bytes32[] tokenIds, bytes32[] dataKeys) returns (bytes[] dataValues)",
+  "getDataBatchForTokenIds(bytes32[] tokenIds, bytes32[] dataKeys) view returns (bytes[] dataValues)"
+ ],
+ "0x16e023b3": [
+  "getDataForTokenId(bytes32 tokenId, bytes32 dataKey) returns (bytes dataValues)",
+  "getDataForTokenId(bytes32 tokenId, bytes32 dataKey) view returns (bytes dataValue)"
+ ],
+ "0x49a6078d": [
+  "getOperatorsOf(bytes32 tokenId) view returns (address[])"
+ ],
+ "0x2a3654a4": [
+  "isOperatorFor(address operator, bytes32 tokenId) view returns (bool)"
+ ],
+ "0xdb8c9663": [
+  "revokeOperator(address operator, bytes32 tokenId, bool notify, bytes operatorNotificationData)"
+ ],
+ "0xbe9f0e6f": [
+  "setDataBatchForTokenIds(bytes32[] tokenIds, bytes32[] dataKeys, bytes[] dataValues)"
+ ],
+ "0xd6c1407c": [
+  "setDataForTokenId(bytes32 tokenId, bytes32 dataKey, bytes dataValue)"
+ ],
+ "0xa3b261f2": [
+  "tokenIdsOf(address tokenOwner) view returns (bytes32[])"
+ ],
+ "0x217b2270": [
+  "tokenOwnerOf(bytes32 tokenId) view returns (address)"
+ ],
+ "0x511b6952": [
+  "transfer(address from, address to, bytes32 tokenId, bool force, bytes data)"
+ ],
+ "0x7e87632c": [
+  "transferBatch(address[] from, address[] to, bytes32[] tokenId, bool[] force, bytes[] data)"
+ ],
+ "0x6c79b70b": [
+  "burn(bytes32 tokenId, bytes data)"
+ ],
+ "0x92a91a3a": [
+  "tokenAt(uint256 index) view returns (bytes32)"
+ ],
+ "0xaf255b61": [
+  "mint(address to, bytes32 tokenId, bool force, bytes data)"
+ ],
+ "0x84bfc8eb": [
+  "revoke(address from, address to, bytes32 tokenId, bytes data)"
+ ],
+ "0x48c4f93e": [
+  "initialize(string name_, string symbol_, address newOwner_, uint256 lsp4TokenType_, uint256 lsp8TokenIdFormat_, (bool isMintable, bytes32[] initialMintTokenIds) mintableParams, (uint256 tokenBalanceCap, uint256 tokenSupplyCap) cappedParams, (uint256 transferLockStart, uint256 transferLockEnd) nonTransferableParams, (bool isRevokable) revokableParams)"
+ ],
+ "0x74823132": [
+  "initialize(string name_, string symbol_, address newOwner_, uint256 lsp4TokenType_, uint256 lsp8TokenIdFormat_)"
+ ]
+}

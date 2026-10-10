@@ -1,0 +1,22 @@
+{
+ "contractName": "Version",
+ "package": "@lukso/lsp0-contracts",
+ "packageVersion": "0.15.5",
+ "sourceName": "contracts/Version.sol",
+ "kind": "interface-or-abstract",
+ "abi": [
+  {
+   "inputs": [],
+   "name": "VERSION",
+   "outputs": [
+    {
+     "internalType": "string",
+     "name": "",
+     "type": "string"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  }
+ ]
+}

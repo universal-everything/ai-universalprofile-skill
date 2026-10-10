@@ -1,0 +1,299 @@
+{
+ "contractName": "LSP4Utils",
+ "package": "@lukso/lsp4-contracts",
+ "packageVersion": "0.16.7",
+ "sourceName": "contracts/LSP4Utils.sol",
+ "kind": "deployable",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "string",
+     "name": "name",
+     "type": "string"
+    },
+    {
+     "internalType": "string",
+     "name": "description",
+     "type": "string"
+    },
+    {
+     "components": [
+      {
+       "internalType": "string",
+       "name": "title",
+       "type": "string"
+      },
+      {
+       "internalType": "string",
+       "name": "url",
+       "type": "string"
+      }
+     ],
+     "internalType": "struct Link[]",
+     "name": "links",
+     "type": "tuple[]"
+    },
+    {
+     "components": [
+      {
+       "internalType": "string",
+       "name": "key",
+       "type": "string"
+      },
+      {
+       "internalType": "string",
+       "name": "value",
+       "type": "string"
+      },
+      {
+       "internalType": "string",
+       "name": "valueType",
+       "type": "string"
+      }
+     ],
+     "internalType": "struct Attribute[]",
+     "name": "attributes",
+     "type": "tuple[]"
+    },
+    {
+     "components": [
+      {
+       "components": [
+        {
+         "internalType": "uint256",
+         "name": "width",
+         "type": "uint256"
+        },
+        {
+         "internalType": "uint256",
+         "name": "height",
+         "type": "uint256"
+        },
+        {
+         "internalType": "string",
+         "name": "url",
+         "type": "string"
+        },
+        {
+         "components": [
+          {
+           "internalType": "string",
+           "name": "method",
+           "type": "string"
+          },
+          {
+           "internalType": "bytes32",
+           "name": "data",
+           "type": "bytes32"
+          }
+         ],
+         "internalType": "struct Verification",
+         "name": "verification",
+         "type": "tuple"
+        }
+       ],
+       "internalType": "struct Image[]",
+       "name": "icons",
+       "type": "tuple[]"
+      },
+      {
+       "components": [
+        {
+         "internalType": "address",
+         "name": "contractAddress",
+         "type": "address"
+        }
+       ],
+       "internalType": "struct LSP7Asset[]",
+       "name": "lsp7icons",
+       "type": "tuple[]"
+      },
+      {
+       "components": [
+        {
+         "internalType": "address",
+         "name": "contractAddress",
+         "type": "address"
+        },
+        {
+         "internalType": "bytes32",
+         "name": "tokenId",
+         "type": "bytes32"
+        }
+       ],
+       "internalType": "struct LSP8Asset[]",
+       "name": "lsp8icons",
+       "type": "tuple[]"
+      }
+     ],
+     "internalType": "struct Icons",
+     "name": "icons",
+     "type": "tuple"
+    },
+    {
+     "components": [
+      {
+       "components": [
+        {
+         "components": [
+          {
+           "internalType": "uint256",
+           "name": "width",
+           "type": "uint256"
+          },
+          {
+           "internalType": "uint256",
+           "name": "height",
+           "type": "uint256"
+          },
+          {
+           "internalType": "string",
+           "name": "url",
+           "type": "string"
+          },
+          {
+           "components": [
+            {
+             "internalType": "string",
+             "name": "method",
+             "type": "string"
+            },
+            {
+             "internalType": "bytes32",
+             "name": "data",
+             "type": "bytes32"
+            }
+           ],
+           "internalType": "struct Verification",
+           "name": "verification",
+           "type": "tuple"
+          }
+         ],
+         "internalType": "struct Image[]",
+         "name": "images",
+         "type": "tuple[]"
+        },
+        {
+         "components": [
+          {
+           "internalType": "address",
+           "name": "contractAddress",
+           "type": "address"
+          }
+         ],
+         "internalType": "struct LSP7Asset[]",
+         "name": "lsp7images",
+         "type": "tuple[]"
+        },
+        {
+         "components": [
+          {
+           "internalType": "address",
+           "name": "contractAddress",
+           "type": "address"
+          },
+          {
+           "internalType": "bytes32",
+           "name": "tokenId",
+           "type": "bytes32"
+          }
+         ],
+         "internalType": "struct LSP8Asset[]",
+         "name": "lsp8images",
+         "type": "tuple[]"
+        }
+       ],
+       "internalType": "struct GroupImageField[]",
+       "name": "imageFields",
+       "type": "tuple[]"
+      }
+     ],
+     "internalType": "struct Images",
+     "name": "images",
+     "type": "tuple"
+    },
+    {
+     "components": [
+      {
+       "components": [
+        {
+         "internalType": "string",
+         "name": "url",
+         "type": "string"
+        },
+        {
+         "internalType": "string",
+         "name": "fileType",
+         "type": "string"
+        },
+        {
+         "components": [
+          {
+           "internalType": "string",
+           "name": "method",
+           "type": "string"
+          },
+          {
+           "internalType": "bytes32",
+           "name": "data",
+           "type": "bytes32"
+          }
+         ],
+         "internalType": "struct Verification",
+         "name": "verification",
+         "type": "tuple"
+        }
+       ],
+       "internalType": "struct Asset[]",
+       "name": "assets",
+       "type": "tuple[]"
+      },
+      {
+       "components": [
+        {
+         "internalType": "address",
+         "name": "contractAddress",
+         "type": "address"
+        }
+       ],
+       "internalType": "struct LSP7Asset[]",
+       "name": "lsp7assets",
+       "type": "tuple[]"
+      },
+      {
+       "components": [
+        {
+         "internalType": "address",
+         "name": "contractAddress",
+         "type": "address"
+        },
+        {
+         "internalType": "bytes32",
+         "name": "tokenId",
+         "type": "bytes32"
+        }
+       ],
+       "internalType": "struct LSP8Asset[]",
+       "name": "lsp8assets",
+       "type": "tuple[]"
+      }
+     ],
+     "internalType": "struct Assets",
+     "name": "assets",
+     "type": "tuple"
+    }
+   ],
+   "name": "toLSP4MetadataJSON",
+   "outputs": [
+    {
+     "internalType": "string",
+     "name": "",
+     "type": "string"
+    }
+   ],
+   "stateMutability": "pure",
+   "type": "function"
+  }
+ ]
+}

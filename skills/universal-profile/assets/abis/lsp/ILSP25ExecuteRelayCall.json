@@ -1,0 +1,106 @@
+{
+ "contractName": "ILSP25ExecuteRelayCall",
+ "package": "@lukso/lsp25-contracts",
+ "packageVersion": "0.15.5",
+ "sourceName": "contracts/ILSP25ExecuteRelayCall.sol",
+ "kind": "interface-or-abstract",
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "bytes",
+     "name": "signature",
+     "type": "bytes"
+    },
+    {
+     "internalType": "uint256",
+     "name": "nonce",
+     "type": "uint256"
+    },
+    {
+     "internalType": "uint256",
+     "name": "validityTimestamps",
+     "type": "uint256"
+    },
+    {
+     "internalType": "bytes",
+     "name": "payload",
+     "type": "bytes"
+    }
+   ],
+   "name": "executeRelayCall",
+   "outputs": [
+    {
+     "internalType": "bytes",
+     "name": "",
+     "type": "bytes"
+    }
+   ],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "bytes[]",
+     "name": "signatures",
+     "type": "bytes[]"
+    },
+    {
+     "internalType": "uint256[]",
+     "name": "nonces",
+     "type": "uint256[]"
+    },
+    {
+     "internalType": "uint256[]",
+     "name": "validityTimestamps",
+     "type": "uint256[]"
+    },
+    {
+     "internalType": "uint256[]",
+     "name": "values",
+     "type": "uint256[]"
+    },
+    {
+     "internalType": "bytes[]",
+     "name": "payloads",
+     "type": "bytes[]"
+    }
+   ],
+   "name": "executeRelayCallBatch",
+   "outputs": [
+    {
+     "internalType": "bytes[]",
+     "name": "",
+     "type": "bytes[]"
+    }
+   ],
+   "stateMutability": "payable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "from",
+     "type": "address"
+    },
+    {
+     "internalType": "uint128",
+     "name": "channelId",
+     "type": "uint128"
+    }
+   ],
+   "name": "getNonce",
+   "outputs": [
+    {
+     "internalType": "uint256",
+     "name": "",
+     "type": "uint256"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  }
+ ]
+}

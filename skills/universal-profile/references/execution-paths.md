@@ -1,0 +1,97 @@
+# Execution paths: how an action becomes a transaction of the profile
+
+Every write verb (`exec send`, `contract call`, `token transfer`, `controller add`, `follow`, …) builds one **payload** for the profile and hands it to one of four transports. On every path the final target sees `msg.sender == profile`. The Key Manager (LSP6) checks permissions on every path. Pick the path with `--via km|lsp0|relay|userop` (a verb's default is shown in `up <verb> --help`; the path used is reported in `data.path`). `userop` is never used unless you pass it.
+
+## The payload
+
+The payload is profile-level calldata:
+
+| Action | Profile function | Selector |
+| --- | --- | --- |
+| Call / send value / deploy | `execute(uint256 operation, address to, uint256 value, bytes data)` | `0x44c028fe` |
+| Several calls, atomic | `executeBatch(uint256[],address[],uint256[],bytes[])` | `0x31858452` |
+| Write data keys | `setData(bytes32,bytes)` / `setDataBatch(bytes32[],bytes[])` | `0x7f23690c` / `0x97902421` |
+| Ownership (LSP14) | `transferOwnership(address)` / `acceptOwnership()` / `renounceOwnership()` | `0xf2fde38b` / `0x79ba5097` / `0x715018a6` |
+
+Operation types: `0` CALL, `1` CREATE, `2` CREATE2, `3` STATICCALL, `4` DELEGATECALL. DELEGATECALL through the Key Manager always reverts (`DelegateCallDisallowedViaKeyManager`); the skill refuses it up front. Calling the Key Manager itself from the profile reverts (`CallingKeyManagerNotAllowed`).
+
+## The four paths
+
+| | `km` direct Key Manager | `lsp0` direct profile (LSP20) | `relay` LSP25 via relayer | `userop` ERC-4337 (opt-in) |
+| --- | --- | --- | --- | --- |
+| Entry call | `KeyManager.execute(bytes payload)` `0x09c5eabe` (batch: `executeBatch(uint256[],bytes[])` `0xbf0176ff`) | the payload sent straight to the profile; the profile asks its owner via `lsp20VerifyCall` | relayer submits `KeyManager.executeRelayCall(bytes signature, uint256 nonce, uint256 validityTimestamps, bytes payload)` `0x4c8a4e74` (batch `0xa20856a5`) | bundler → `EntryPoint.handleOps` → profile `validateUserOp` (via LSP17 `Extension4337`) → payload executed by the EntryPoint |
+| What the controller signs | an ordinary EIP-1559 transaction | an ordinary EIP-1559 transaction | an LSP25 message (EIP-191 version `0x00`), no transaction | the UserOperation hash (EIP-191 `personal_sign`) |
+| Who pays gas | controller address | controller address | relayer (counts against your quota) | the profile's deposit at the EntryPoint, or a paymaster |
+| Value sent by the action | from the profile's balance | from the profile's balance | from the profile's balance | from the profile's balance |
+| Permission checked first | the payload's permissions | the payload's permissions | `EXECUTE_RELAY_CALL` on the signer, then the payload's | bit 23 on the signer (validation), then the EntryPoint's own permissions (execution) |
+| Simulation | `eth_call` from the controller to the Key Manager | `eth_call` from the controller to the profile | `eth_call` of `executeRelayCall` (anyone can be `from`) | `eth_estimateUserOperationGas` / `simulateValidation` |
+| Tracking | transaction hash | transaction hash | relayer response + transaction hash; the chain receipt is the proof | UserOperation hash, then its receipt |
+
+### When to use which
+
+1. **`relay`** is the primary path when a relayer covers the chain (`up relayer list`) and `up relayer quota --chain <id>` shows enough quota. No gas needed at the controller. Requires `EXECUTE_RELAY_CALL` (J1 profiles have it; it is in the J2 recommendation).
+2. **`km`** when no relayer covers the chain or quota is insufficient, and the controller address holds enough native coin. If it does not, the skill reports the amount needed; turn that into a funding request (`up display address <controller> --chain <id>`).
+3. **`lsp0`** only when the human asks for it or a payload must reach the profile directly (every payload verb accepts `--via lsp0`: setData, controller and ownership changes). The profile must be owned by a Key Manager (LSP20 verification). Same permissions and same gas payer as `km`.
+4. **`userop`** only after the human explicitly asked for ERC-4337 and `up account 4337 status --chain <id>` says it is enabled (`references/erc4337.md`). Self-bundling (no public bundler) is not gasless: the controller pays the bundle transaction.
+
+To use a specific path, pass `--via` on every call; the policy does not pin paths.
+
+## What the Key Manager checks (all paths)
+
+| Payload | Permission needed |
+| --- | --- |
+| `execute` CALL with value | `TRANSFERVALUE` (needs a matching AllowedCalls entry with the VALUE call type) or `SUPER_TRANSFERVALUE` |
+| `execute` CALL with data, or with neither data nor value | `CALL` (needs a matching AllowedCalls entry) or `SUPER_CALL` |
+| `execute` STATICCALL | `STATICCALL` (+ AllowedCalls) or `SUPER_STATICCALL` |
+| `execute` CREATE / CREATE2 | `DEPLOY` (+ `SUPER_TRANSFERVALUE` if value is sent to the constructor) |
+| `setData` on `AddressPermissions…` keys | `ADDCONTROLLER` (new controller) / `EDITPERMISSIONS` (existing) |
+| `setData` on `LSP1UniversalReceiverDelegate…` keys | `ADDUNIVERSALRECEIVERDELEGATE` / `CHANGEUNIVERSALRECEIVERDELEGATE` |
+| `setData` on `LSP17Extension:<selector>` keys | `ADDEXTENSIONS` / `CHANGEEXTENSIONS` (`SUPER_SETDATA` does not bypass this) |
+| `setData` on any other key | `SETDATA` + matching AllowedERC725YDataKeys, or `SUPER_SETDATA` |
+| ownership functions | `CHANGEOWNER` |
+| a nested call re-entering the profile | `REENTRANCY` on the re-entering controller |
+
+Meaning of each permission and the allow-list encodings: `references/permissions.md`.
+
+## Signatures (never mixed)
+
+| Purpose | Scheme | Signed digest |
+| --- | --- | --- |
+| LSP25 relay call | EIP-191 version `0x00` ("intended validator" = the Key Manager) | `keccak256(0x19 ‖ 0x00 ‖ keyManager ‖ abi.encodePacked(uint256 25, uint256 chainId, uint256 nonce, uint256 validityTimestamps, uint256 value, bytes payload))` |
+| ERC-4337 UserOperation | EIP-191 `personal_sign` (`0x45`) | `userOpHash = keccak256(abi.encode(hash(userOp), entryPoint, chainId))` |
+| Profile signature for off-chain use (ERC-1271) | as required by the consumer (EIP-712 typed data or EIP-191) | validated by `profile.isValidSignature(hash, sig)`: the Key Manager accepts a signature from a controller holding `SIGN`; success returns `0x1626ba7e` |
+| LSP15 `/quota` | controller signs the quota message defined by LSP15 | see `references/relayer.md` |
+| Direct paths | EIP-1559 transaction | — |
+
+An LSP25 signature is bound to **one Key Manager on one chain** (both are inside the digest). A relayer cannot replay it elsewhere; the HTTP `chainId` field is only a routing hint.
+
+## Nonces and validity (relay)
+
+- LSP25 nonce = `(channelId << 128) | sequence`, read with `getNonce(address signer, uint128 channel)` (`up nonce`). Calls on different channels are independent; within a channel they execute in order. The skill uses one channel per relayer and chain by default and channel 0 for strictly ordered flows.
+- `validityTimestamps` packs a start and an end time (two `uint128`). The skill's default window is from 60 s ago to 10 minutes ahead. `0` means valid forever; use it only when the human explicitly wants that.
+- A relay call that reverts does not consume the nonce.
+- Errors: `InvalidRelayNonce` (used or wrong nonce, or wrong signing scheme), `RelayCallBeforeStartTime`, `RelayCallExpired`.
+
+## Batches
+
+- `KeyManager.executeBatch` and `executeRelayCallBatch` are **atomic**: one failure reverts everything. The sum of all values must equal the value sent exactly (`LSP6BatchInsufficientValueSent` / `LSP6BatchExcessiveValueSent`).
+- `profile.executeBatch` (ERC725X) is atomic as well and needs one permission check per call.
+- `batchCalls(bytes[])` on the profile re-enters the profile per call and needs `REENTRANCY` for the second non-setData call from a non-owner controller. No verb sends `batchCalls`; use `exec batch` (`executeBatch`). A raw `batchCalls` payload is treated as an unknown payload and needs the human's approval.
+
+## Before sending: the confirmation block
+
+Every write shows (and `--dry-run` returns) the same block: chain name and id, actor (the profile), Key Manager, target, value with symbol, decoded function and arguments, path, gas payer and, for relay, relayer, nonce channel and validity window. Show it to the human when approval is needed. The skill refuses to send anything whose simulation reverts.
+
+## After sending: receipts and finality
+
+- The skill waits for the receipt on the **same chain** and reports `status`, block, gas used and an explorer link. A relayer's or bundler's answer is not proof; the chain receipt is.
+- On failure it decodes the revert with the bundled LSP/ERC725/EntryPoint error table (`references/errors.md` lists the common ones).
+- Inclusion is not finality. LUKSO and Ethereum have about 12-second blocks and finalise after roughly 13 minutes; say "included" until then for large amounts. `up exec receipt <txHash> --chain <id>` re-checks later.
+- Decoded events tell what happened: `Executed`, `ContractCreated`, `DataChanged`, `UniversalReceiver`, `PermissionsVerified`, ownership events.
+
+## Gas and funding in one sentence each
+
+- Direct paths: the controller address pays gas in the chain's native coin; fund it per chain.
+- Relay: the relayer pays gas; your quota decreases. Quota does not pay for the value you send.
+- ERC-4337: the profile's EntryPoint deposit (or a paymaster) pays; the extension never pays the prefund itself, so a missing deposit fails with `AA21`.
+- Value sent by any action always comes from the profile's balance on that chain.

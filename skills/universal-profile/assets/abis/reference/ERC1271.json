@@ -1,0 +1,27 @@
+{
+ "contractName": "ERC1271",
+ "source": "EIP-1271",
+ "abi": [
+  {
+   "name": "isValidSignature",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "bytes32",
+     "name": "hash"
+    },
+    {
+     "type": "bytes",
+     "name": "signature"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bytes4",
+     "name": "magicValue"
+    }
+   ]
+  }
+ ]
+}

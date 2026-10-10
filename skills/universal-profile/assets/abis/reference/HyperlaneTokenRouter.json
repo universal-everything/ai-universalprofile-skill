@@ -1,0 +1,108 @@
+{
+ "contractName": "HyperlaneTokenRouter",
+ "source": "Hyperlane TokenRouter (warp routes)",
+ "abi": [
+  {
+   "name": "transferRemote",
+   "type": "function",
+   "stateMutability": "payable",
+   "inputs": [
+    {
+     "type": "uint32",
+     "name": "destination"
+    },
+    {
+     "type": "bytes32",
+     "name": "recipient"
+    },
+    {
+     "type": "uint256",
+     "name": "amount"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bytes32",
+     "name": "messageId"
+    }
+   ]
+  },
+  {
+   "name": "quoteGasPayment",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "uint32",
+     "name": "destinationDomain"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ]
+  },
+  {
+   "name": "quoteTransferRemote",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "uint32",
+     "name": "destination"
+    },
+    {
+     "type": "bytes32",
+     "name": "recipient"
+    },
+    {
+     "type": "uint256",
+     "name": "amount"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "tuple[]",
+     "name": "quotes",
+     "components": [
+      {
+       "type": "address",
+       "name": "token"
+      },
+      {
+       "type": "uint256",
+       "name": "amount"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "wrappedToken",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [],
+   "outputs": [
+    {
+     "type": "address"
+    }
+   ]
+  },
+  {
+   "name": "balanceOf",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "address"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ]
+  }
+ ]
+}

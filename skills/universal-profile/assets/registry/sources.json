@@ -1,0 +1,39 @@
+{
+  "note": "Remote pointers used by `up chains refresh` and `up chains rpc find`. Remote data is labelled remote-unpinned/remote-discovered and never silently overwrites the bundled seed.",
+  "lspDeployments": {
+    "repository": "https://github.com/lukso-network/lsp-smart-contracts/tree/main/deployments",
+    "raw": {
+      "deployedChains": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/main/deployments/DEPLOYED_CHAINS.md",
+      "chainsMainnet": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/main/deployments/chains-mainnet.json",
+      "chainsTestnet": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/main/deployments/chains-testnet.json",
+      "contracts": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/main/deployments/contracts.json"
+    },
+    "pinnedCommit": "16ab2441a79c34da56386c30caa00c33379ce06f"
+  },
+  "rpcLists": [
+    {
+      "name": "chainlist",
+      "url": "https://chainlist.org/rpcs.json",
+      "site": "https://chainlist.org",
+      "note": "DefiLlama; per-endpoint tracking label"
+    },
+    {
+      "name": "chainid.network",
+      "url": "https://chainid.network/chains.json",
+      "site": "https://github.com/ethereum-lists/chains"
+    }
+  ],
+  "docs": {
+    "lukso": "https://docs.lukso.tech",
+    "lips": "https://github.com/lukso-network/LIPs",
+    "lsp15": "https://github.com/lukso-network/LIPs/blob/main/LSPs/LSP-15-TransactionRelayServiceAPI.md",
+    "deployments": "https://docs.lukso.tech/networks/mainnet/contracts"
+  },
+  "abiDiscovery": {
+    "sourcify": "https://sourcify.dev/server/v2/contract/{chainId}/{address}?fields=abi,proxyResolution",
+    "etherscanV2": "https://api.etherscan.io/v2/api?chainid={chainId}&module=contract&action=getabi&address={address}&apikey={key}",
+    "blockscout": "{explorer}/api/v2/smart-contracts/{address}",
+    "fourbyteSourcify": "https://api.4byte.sourcify.dev/signature-database/v1/lookup?function={selector}&filter=false",
+    "fourbyteDirectory": "https://www.4byte.directory/api/v1/signatures/?hex_signature={selector}"
+  }
+}

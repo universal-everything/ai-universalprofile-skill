@@ -1,0 +1,57 @@
+{
+ "contractName": "ILSP8Mintable",
+ "package": "@lukso/lsp8-contracts",
+ "packageVersion": "0.16.7",
+ "sourceName": "contracts/extensions/LSP8Mintable/ILSP8Mintable.sol",
+ "kind": "interface-or-abstract",
+ "abi": [
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "bool",
+     "name": "enabled",
+     "type": "bool"
+    }
+   ],
+   "name": "MintingStatusChanged",
+   "type": "event"
+  },
+  {
+   "inputs": [],
+   "name": "disableMinting",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "to",
+     "type": "address"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "tokenId",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bool",
+     "name": "force",
+     "type": "bool"
+    },
+    {
+     "internalType": "bytes",
+     "name": "data",
+     "type": "bytes"
+    }
+   ],
+   "name": "mint",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  }
+ ]
+}

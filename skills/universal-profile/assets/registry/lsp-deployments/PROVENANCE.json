@@ -1,0 +1,89 @@
+{
+  "repository": "https://github.com/lukso-network/lsp-smart-contracts",
+  "commit": "16ab2441a79c34da56386c30caa00c33379ce06f",
+  "path": "deployments/",
+  "mirroredAt": "2026-10-10T05:22:51.555Z",
+  "files": {
+    "DEPLOYED_CHAINS.md": {
+      "sha256": "28666d52c28139527e94c071b65591700b350ca5470bf6a87b9530479b73ac55",
+      "bytes": 200071,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/DEPLOYED_CHAINS.md"
+    },
+    "README.md": {
+      "sha256": "c1dd39a617f6c9dc41458b5c33c9040bb4907ccfe46f2052256827c0dc371554",
+      "bytes": 37184,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/README.md"
+    },
+    "chains-mainnet.json": {
+      "sha256": "1365b8f0c420248b73944ea6f48467cb8cfb96b425332bf5f18e6bffdda57143",
+      "bytes": 34625,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/chains-mainnet.json"
+    },
+    "chains-testnet.json": {
+      "sha256": "0958f5f0c52a0f60f90527768dcd27cb09c3b66348de729010d61f1efb53db27",
+      "bytes": 2435,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/chains-testnet.json"
+    },
+    "contracts.json": {
+      "sha256": "21b7f83d5df8d08f57fae4f35a3e2c437c097407e3df2f9ea42cbd1c238bb6fd",
+      "bytes": 1085211,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/contracts.json",
+      "storedAs": "contracts/<ContractName>.json (lossless split; object key order preserved in contracts/INDEX.json)"
+    },
+    "abi/ABI-ERCTokenCallbacks.json": {
+      "sha256": "b6374595cf1ced32e46e97d5702f16d059289a1f2da2fdcca4d86e93b61dbf93",
+      "bytes": 2587,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-ERCTokenCallbacks.json"
+    },
+    "abi/ABI-LSP1UniversalReceiverDelegateUP-v0-14-0.json": {
+      "sha256": "3cd86f27651727984ab730b46fa0ec3eca28dad4ddfaa8dd65e2b0d57a80ae39",
+      "bytes": 1108,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-LSP1UniversalReceiverDelegateUP-v0-14-0.json"
+    },
+    "abi/ABI-LSP23LinkedContractFactory.json": {
+      "sha256": "c7277efd2b749bc33004022b7673dfaa4258fc8036ad6f0c85ac0b0548e1111d",
+      "bytes": 13081,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-LSP23LinkedContractFactory.json"
+    },
+    "abi/ABI-LSP6KeyManagerInit-v0-14-0.json": {
+      "sha256": "30494633b5381d9f55d63a2c04a948b073a3239d570d4473108443e98311ecfd",
+      "bytes": 9372,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-LSP6KeyManagerInit-v0-14-0.json"
+    },
+    "abi/ABI-LSP7CustomizableTokenInit-v0-18-1.json": {
+      "sha256": "825e2da66ec25f08ea3ff2e6a8adfed8631700afc8c6535268704e3d63f7efbe",
+      "bytes": 27392,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-LSP7CustomizableTokenInit-v0-18-1.json"
+    },
+    "abi/ABI-LSP7MintableInit-v0-19-0.json": {
+      "sha256": "d4b2c41d9ec4ffbcb37ec1ba85fb4f627a134bbbfe086c3bab610953de52d4d0",
+      "bytes": 20506,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-LSP7MintableInit-v0-19-0.json"
+    },
+    "abi/ABI-LSP8CustomizableTokenInit-v0-18-1.json": {
+      "sha256": "1e9b4ff3f30c9dad9aa6fe664773e16d226ca0ff0640d0a9114f83e71079c6e5",
+      "bytes": 29418,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-LSP8CustomizableTokenInit-v0-18-1.json"
+    },
+    "abi/ABI-LSP8MintableInit-v0-19-0.json": {
+      "sha256": "51c014e2703b06861a7b914b50153738c3fe3cac50d724c02f8e7fa622fe6bb9",
+      "bytes": 22570,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-LSP8MintableInit-v0-19-0.json"
+    },
+    "abi/ABI-UniversalProfileInit-v0-14-0.json": {
+      "sha256": "bb6a6903f84cf7307e6813736f5147c0f50df4a0ab3afe981872444699a41dce",
+      "bytes": 11752,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-UniversalProfileInit-v0-14-0.json"
+    },
+    "abi/ABI-UniversalProfileInitPostDeploymentModule.json": {
+      "sha256": "28b23b981938e0978449a96fe092413ef16216bfc6c19ccae189dc09b4f551b7",
+      "bytes": 12279,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-UniversalProfileInitPostDeploymentModule.json"
+    },
+    "abi/ABI-UniversalProfilePostDeploymentModule.json": {
+      "sha256": "55b41ac582aca9ad8e87172db46bb413618561b12764c7a1f4aa10875c455bae",
+      "bytes": 11837,
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-UniversalProfilePostDeploymentModule.json"
+    }
+  }
+}

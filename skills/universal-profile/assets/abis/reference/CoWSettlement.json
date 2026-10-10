@@ -1,0 +1,75 @@
+{
+ "contractName": "CoWSettlement",
+ "source": "CoW Protocol GPv2Settlement (subset)",
+ "abi": [
+  {
+   "name": "setPreSignature",
+   "type": "function",
+   "stateMutability": "nonpayable",
+   "inputs": [
+    {
+     "type": "bytes",
+     "name": "orderUid"
+    },
+    {
+     "type": "bool",
+     "name": "signed"
+    }
+   ],
+   "outputs": []
+  },
+  {
+   "name": "preSignature",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "bytes"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ]
+  },
+  {
+   "name": "domainSeparator",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [],
+   "outputs": [
+    {
+     "type": "bytes32"
+    }
+   ]
+  },
+  {
+   "name": "filledAmount",
+   "type": "function",
+   "stateMutability": "view",
+   "inputs": [
+    {
+     "type": "bytes"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ]
+  },
+  {
+   "name": "invalidateOrder",
+   "type": "function",
+   "stateMutability": "nonpayable",
+   "inputs": [
+    {
+     "type": "bytes",
+     "name": "orderUid"
+    }
+   ],
+   "outputs": []
+  }
+ ]
+}

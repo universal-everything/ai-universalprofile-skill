@@ -1,0 +1,2685 @@
+{
+  "generatedAt": "2026-10-10T05:22:51.555Z",
+  "sources": {
+    "lspRepo": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/chains-mainnet.json",
+    "chainlist": {
+      "url": "https://chainlist.org/rpcs.json",
+      "fetchedAt": "2026-10-10T05:22:51.555Z",
+      "ok": true,
+      "sha256": "9a65fe433447762699dacb448db02587597ad8340eb3be7cd5257a05d1fbadef",
+      "chains": 2974
+    }
+  },
+  "rpcs": {
+    "1": [
+      {
+        "url": "https://eth.drpc.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://xrpc.cl/eth",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://one.valve.city/rpc/vk_demo/evm/1",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/eth/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://ethereum-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/eth",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.mevblocker.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.flashbots.net",
+        "source": "chainlist",
+        "tracking": "none"
+      }
+    ],
+    "10": [
+      {
+        "url": "https://mainnet.optimism.io",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://xrpc.cl/optimism",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/op/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/op",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://optimism-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://optimism.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://api.stateless.solutions/optimism/v1/demo",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://op.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      }
+    ],
+    "14": [
+      {
+        "url": "https://flare-api.flare.network/ext/C/rpc",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://flare.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/14",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://flare-bundler.etherspot.io",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.ankr.com/flare",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.au.cc/flare",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://flare.enosys.global/ext/C/rpc",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://flare.solidifi.app/ext/C/rpc",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      }
+    ],
+    "25": [
+      {
+        "url": "https://cronos-evm-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/cronos/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/cro",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://cronos.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/cronos/mainnet/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/25",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.owlracle.info/cro/70d38ce1826c4a60bb2a8e05a6c8b20f",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://cronos.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "40": [
+      {
+        "url": "https://telos.drpc.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://public.1rpc.io/telos/evm",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/40",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.telos.net",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.ankr.com/telos",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://40.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "42": [
+      {
+        "url": "https://rpc.mainnet.lukso.network",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.lukso.sigmacore.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/42",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://42.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://public-lukso.nownodes.io",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "50": [
+      {
+        "url": "https://erpc.xdcrpc.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/50",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.ankr.com/xdc",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api-xdc-mainnet.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.xdcrpc.com",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc1.xinfin.network",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://erpc.xinfin.network",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.xdc.org",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      }
+    ],
+    "56": [
+      {
+        "url": "https://bsc-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://xrpc.cl/bsc",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/bnb/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/bnb",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://bsc.meowrpc.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://bsc.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.polysplit.cloud/v1/chain/56",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://bsc.blockrazor.xyz",
+        "source": "chainlist",
+        "tracking": "none"
+      }
+    ],
+    "61": [
+      {
+        "url": "https://0xrpc.io/etc",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.etcmc.xyz",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://ethereum-classic-mainnet.gateway.tatum.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/61",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.swiftnodes.io/rpc/etc",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://etc.etcdesktop.com",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://etc.rivet.link",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://besu-at.etc-network.info",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      }
+    ],
+    "100": [
+      {
+        "url": "https://gnosis-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://gnosis.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/gnosis/mainnet/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/gnosis",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://gnosis.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public-gno-mainnet.fastnode.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/100",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://gnosis-public.nodies.app",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "130": [
+      {
+        "url": "https://unichain-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/unichain/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://unichain.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/130",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://unichain.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://unichain.therpc.io",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api-unichain-mainnet.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://unichain-mainnet.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "137": [
+      {
+        "url": "https://polygon-bor-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://xrpc.cl/polygon",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.blazingnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/polygon/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/matic",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://polygon.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://polygon.meowrpc.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/matic/mainnet/public",
+        "source": "chainlist",
+        "tracking": "none"
+      }
+    ],
+    "143": [
+      {
+        "url": "https://rpc.monad.xyz",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://monad-mainnet.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://infra.originstake.com/monad/evm",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://monad-rpc.huginn.tech",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://gm.monad.at.htw.tech",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/143",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://monad-mainnet.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://monad-mainnet.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "146": [
+      {
+        "url": "https://sonic-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/sonic/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://sonic.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://sonic-json-rpc.stakely.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://sonic.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/146",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.ankr.com/sonic_mainnet",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://sonic.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "177": [
+      {
+        "url": "https://mainnet.hsk.xyz",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://hashkey.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://177.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "196": [
+      {
+        "url": "https://rpc.xlayer.tech",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/xlayer/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/xlayer/mainnet/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://xlayer.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.ankr.com/xlayer",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/196",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://xlayer-mainnet.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://xlayerrpc.okx.com",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      }
+    ],
+    "204": [
+      {
+        "url": "https://opbnb-mainnet-rpc.bnbchain.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://opbnb.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://opbnb-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/opbnb",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://opbnb.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/204",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://opbnb-mainnet.4everland.org/v1/37fa9972c1b1cd5fab542c7bdd4cde2f",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://opbnb.therpc.io",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "232": [
+      {
+        "url": "https://rpc.lens.xyz",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lens.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/232",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://light-icy-dinghy.lens-mainnet.quiknode.pro",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://232.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "300": [
+      {
+        "url": "https://rpc.ankr.com/zksync_era_sepolia",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/zksync-era/sepolia/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/300",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://zksync-sepolia.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://sepolia.era.zksync.dev",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://zksync-sepolia.drpc.org",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      }
+    ],
+    "324": [
+      {
+        "url": "https://mainnet.era.zksync.io",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://zksync.meowrpc.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://zksync.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/zksync2-era",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/zksync-era/mainnet/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.ankr.com/zksync_era",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://zksync-era.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/324",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "369": [
+      {
+        "url": "https://rpc.pulsechain.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.degenprotocol.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://one.valve.city/rpc/vk_demo/evm/369",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://pulsechain-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.pulsechainrpc.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.hairylabs.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.pulseheartbeat.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.levko.io",
+        "source": "chainlist",
+        "tracking": "none"
+      }
+    ],
+    "480": [
+      {
+        "url": "https://worldchain.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/480",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://worldchain-mainnet.gateway.tenderly.co",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://sparkling-autumn-dinghy.worldchain-mainnet.quiknode.pro",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://480.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "592": [
+      {
+        "url": "https://evm.astar.network",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://getblock.io/nodes/bsc",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/astr",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://astar.public.curie.radiumblock.co/http",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://astar.public.curie.radiumblock.co/ws",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/592",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://astar.public.blastapi.io",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://astar.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "747": [
+      {
+        "url": "https://mainnet.evm.nodes.onflow.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/747",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://flow-mainnet.gateway.tatum.io",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://747.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "988": [
+      {
+        "url": "https://rpc.stable.xyz",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/988",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://stable-mainnet.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://stable.drpc.org",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://988.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "999": [
+      {
+        "url": "https://rpc.hyperliquid.xyz/evm",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/hl/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/999",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://hyperevm.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.hypurrscan.io",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://hyperliquid-json-rpc.stakely.io",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://hyperliquid.drpc.org",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.hyperlend.finance",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      }
+    ],
+    "1030": [
+      {
+        "url": "https://evm.confluxrpc.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/1030",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://conflux-espace.blockpi.network/v1/rpc/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://conflux-espace-public.unifra.io",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      }
+    ],
+    "1111": [
+      {
+        "url": "https://api.wemix.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://wemix.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/1111",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://1111.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "1116": [
+      {
+        "url": "https://core.drpc.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://public.1rpc.io/core",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/1116",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.ankr.com/core",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api.zan.top/core-mainnet",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.coredao.org",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc-core.icecreamswap.com",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://1116.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "1284": [
+      {
+        "url": "https://moonbeam-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://public.1rpc.io/glmr",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://moonbeam.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/moonbeam/mainnet/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://moonbeam.public.curie.radiumblock.co/ws",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://node.histori.xyz/moonbeam-mainnet/8ry9f6t9dct1se2hlagxnd9n2a",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://moonbeam.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/1284",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "1285": [
+      {
+        "url": "https://moonriver-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://moonriver.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://moonriver.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/1285",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.api.moonriver.moonbeam.network",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://moonriver.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://moonriver-rpc.dwellir.com",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.owlracle.info/movr/70d38ce1826c4a60bb2a8e05a6c8b20f",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "1329": [
+      {
+        "url": "https://evm-rpc.sei-apis.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://sei.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://sei-evm-rpc.stakeme.pro",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://sei.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/1329",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://sei-public.nodies.app",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://sei.therpc.io",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.swiftnodes.io/rpc/sei",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "1514": [
+      {
+        "url": "https://mainnet.storyrpc.io",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://evm-rpc.story.mainnet.dteam.tech",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://infra.originstake.com/story/evm",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lightnode-json-rpc-mainnet-story.grandvalleys.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://story-mainnet-evm.itrocket.net",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.ankr.com/story_mainnet",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://story-json-rpc.stakely.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/1514",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "1625": [
+      {
+        "url": "https://rpc.gravity.xyz",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.ankr.com/gravity",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/1625",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://1625.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "1868": [
+      {
+        "url": "https://rpc.soneium.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/soneium/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://soneium.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/1868",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://soneium-mainnet.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.swiftnodes.io/rpc/soneium",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://1868.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "2020": [
+      {
+        "url": "https://api.roninchain.com/rpc",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://ronin.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/2020",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api-ronin-mainnet.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api-gateway.skymavis.com/rpc?apikey=9aqYLBbxSC6LROynQJBvKkEIsioqwHmr",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://ronin-mainnet.gateway.tatum.io",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://ronin.gateway.tenderly.co",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://2020.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "2222": [
+      {
+        "url": "https://evm.kava-rpc.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://kava-evm-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://kava.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://node.histori.xyz/kava-mainnet/8ry9f6t9dct1se2hlagxnd9n2a",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://kava.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/2222",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://kava.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://kava-public.nodies.app",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "4201": [
+      {
+        "url": "https://rpc.testnet.lukso.network",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/4201",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "4217": [
+      {
+        "url": "https://rpc.tempo.xyz",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/4217",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://tempo-mainnet.drpc.org",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.mainnet.tempo.xyz",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      }
+    ],
+    "4326": [
+      {
+        "url": "https://mainnet.megaeth.com/rpc",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://megaeth.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/4326",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc-megaeth-mainnet.globalstake.io",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://megaeth.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "4663": [
+      {
+        "url": "https://rpc.mainnet.chain.robinhood.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://robinhood-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://robinhood.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/robinhood/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc-robinhood.blockmachine.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.ordofi.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc-robinhood.globalstake.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/4663",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "5000": [
+      {
+        "url": "https://rpc.mantle.xyz",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/mantle/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://mantle-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://mantle.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/mantle",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/mantle/mainnet/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://mantle.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc-mantle.blockmachine.io",
+        "source": "chainlist",
+        "tracking": "none"
+      }
+    ],
+    "5031": [
+      {
+        "url": "https://api.infra.mainnet.somnia.network",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://somnia-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.ankr.com/somnia_mainnet",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://5031.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "5042": [
+      {
+        "url": "https://rpc.mainnet.arc.io",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://arc-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.beamrpc.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.blockdaemon.mainnet.arc.io",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.drpc.mainnet.arc.io",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.quicknode.mainnet.arc.io",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://5042.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "7000": [
+      {
+        "url": "https://zetachain-evm.blockpi.network/v1/rpc/public",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://zeta-chain.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/7000",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://zetachain-mainnet.public.blastapi.io",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api-zetachain-mainnet.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://zetachain-mainnet.g.allthatnode.com/archive/evm",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://7000.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "8217": [
+      {
+        "url": "https://public-en.node.kaia.io",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://kaia.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://go.getblock.io/d7094dbd80ab474ba7042603fe912332",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/klay",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://klaytn.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/8217",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://kaia-public.nodies.app",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://klaytn.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "8453": [
+      {
+        "url": "https://mainnet.base.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://xrpc.cl/base",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/base/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/base",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://base.meowrpc.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://base-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://base.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://base.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      }
+    ],
+    "9745": [
+      {
+        "url": "https://rpc.plasma.to",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/plasma/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://plasma.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/9745",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://plasma.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.swiftnodes.io/rpc/plasma",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://plasma-mainnet.gateway.tatum.io",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://9745.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "13371": [
+      {
+        "url": "https://rpc.immutable.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://immutable-zkevm.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/13371",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://immutable.gateway.tenderly.co",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://13371.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "16661": [
+      {
+        "url": "https://evmrpc.0g.ai",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://16661.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "33139": [
+      {
+        "url": "https://rpc.apechain.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://apechain.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/33139",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://33139.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "34443": [
+      {
+        "url": "https://mainnet.mode.network",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/mode/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/mode",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://mode.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/34443",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://mode-mainnet.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://mode.gateway.tenderly.co",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://34443.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "42161": [
+      {
+        "url": "https://arb1.arbitrum.io/rpc",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://xrpc.cl/arbitrum",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/arb/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/arb",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://arbitrum-one-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://arbitrum.meowrpc.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://arbitrum.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://api.stateless.solutions/arbitrum-one/v1/demo",
+        "source": "chainlist",
+        "tracking": "none"
+      }
+    ],
+    "42220": [
+      {
+        "url": "https://forno.celo.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://celo.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://celo-json-rpc.stakely.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/42220",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.ankr.com/celo",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://celo.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api-celo-mainnet-archive.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.swiftnodes.io/rpc/celo",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "42793": [
+      {
+        "url": "https://node.mainnet.etherlink.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.ankr.com/etherlink_mainnet",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/42793",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://42793.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "43114": [
+      {
+        "url": "https://avalanche-c-chain-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://xrpc.cl/avalanche",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/avax/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/avax/c",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/avax/mainnet/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://avax.meowrpc.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://avalanche.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://avax.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      }
+    ],
+    "57073": [
+      {
+        "url": "https://rpc-gel.inkonchain.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/ink/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://ink.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://ink.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://ink-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/57073",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://ink-public.nodies.app",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc-qnd.inkonchain.com",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      }
+    ],
+    "59144": [
+      {
+        "url": "https://rpc.linea.build",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.nodeflare.app/linea/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/linea",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://linea.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://linea.decubate.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://linea.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://linea-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/59144",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "80002": [
+      {
+        "url": "https://polygon-amoy.drpc.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.satelink.network/rpc/amoy",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://polygon-bor-amoy-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://poly-amoy-testnet.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/80002",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://polygon-amoy.blockpi.network/v1/rpc/private",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api.zan.top/polygon-amoy",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://polygon-amoy-public.nodies.app",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "80094": [
+      {
+        "url": "https://berachain-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://berachain.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.berachain-apis.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://bera.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/80094",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://berachain.therpc.io",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api-berachain-mainnet.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://berachain.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "81457": [
+      {
+        "url": "https://blast-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://blast.gasswap.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://blast.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/blast/mainnet/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://blast.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/81457",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.ankr.com/blast",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.owlracle.info/blast/70d38ce1826c4a60bb2a8e05a6c8b20f",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "84532": [
+      {
+        "url": "https://sepolia.base.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://base-sepolia.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://base-testnet.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/84532",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://public.stackup.sh/api/v1/node/base-sepolia",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://base-sepolia-public.nodies.app",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://base-sepolia.therpc.io",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://base-sepolia.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "88888": [
+      {
+        "url": "https://rpc.ankr.com/chiliz",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/88888",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api-chiliz-mainnet-archive.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.swiftnodes.io/rpc/chiliz",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.chiliz.com",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://chiliz.publicnode.com",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://chiliz-mainnet.gateway.tatum.io",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://88888.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "98866": [
+      {
+        "url": "https://rpc.plume.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://plume.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/98866",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://plume-mainnet.gateway.tatum.io",
+        "source": "chainlist",
+        "tracking": "yes"
+      },
+      {
+        "url": "https://98866.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "105105": [
+      {
+        "url": "https://rpc.xertra.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/105105",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://105105.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "167000": [
+      {
+        "url": "https://rpc.mainnet.taiko.xyz",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.ankr.com/taiko",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.taiko.tools",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://taiko.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://taiko-mainnet.rpc.porters.xyz/taiko-public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://taiko-json-rpc.stakely.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://taiko.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/167000",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "421614": [
+      {
+        "url": "https://sepolia-rollup.arbitrum.io/rpc",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/arbitrum/sepolia/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://arbitrum-sepolia.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://arbitrum-sepolia-testnet.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/421614",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://public.stackup.sh/api/v1/node/arbitrum-sepolia",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api.zan.top/arb-sepolia",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://arbitrum-sepolia.api.onfinality.io/public",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "534352": [
+      {
+        "url": "https://rpc.scroll.io",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://public.1rpc.io/scroll",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://scroll.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://scroll.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/scroll/mainnet/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc.ankr.com/scroll",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://rpc-scroll.blockmachine.io",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/534352",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "560048": [
+      {
+        "url": "https://ethereum-hoodi-rpc.publicnode.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://0xrpc.io/hoodi",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/560048",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://hoodi.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.hoodi.ethpandaops.io",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://ethereum-hoodi.gateway.tatum.io",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "660279": [
+      {
+        "url": "https://xai-chain.net/rpc",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://rpc.ankr.com/xai",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/660279",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://660279.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "747474": [
+      {
+        "url": "https://rpc.katanarpc.com",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://katana.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/747474",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.swiftnodes.io/rpc/katana",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://katana.rpc.sentio.xyz",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.katana.network",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://katana.gateway.tenderly.co",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://747474.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "2632500": [
+      {
+        "url": "https://new-york.fullnode.mainnet.coti.io/rpc",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/2632500",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://rpc.poolz.finance/coti",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://coti-rpc.Hyperflow.finance",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://tokyo.fullnode.mainnet.coti.io/rpc",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://virginia.fullnode.mainnet.coti.io/rpc",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://community-enabler-1.fullnode.mainnet.coti.io/rpc",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://mainnet.innovunode.io/rpc",
+        "source": "chainlist",
+        "tracking": "unspecified"
+      }
+    ],
+    "7777777": [
+      {
+        "url": "https://rpc.zora.energy",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://zora.drpc.org",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/7777777",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://api-zora-mainnet.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://7777777.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ],
+    "11155111": [
+      {
+        "url": "https://rpc.sepolia.org",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://xrpc.cl/sepolia",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://ethereum-sepolia-rpc.publicnode.com",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://public.1rpc.io/sepolia",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/eth/sepolia/public",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://0xrpc.io/sep",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://eth-sepolia-testnet.api.pocket.network",
+        "source": "chainlist",
+        "tracking": "none"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/11155111",
+        "source": "chainlist",
+        "tracking": "limited"
+      }
+    ],
+    "666666666": [
+      {
+        "url": "https://rpc.degen.tips",
+        "source": "lsp-repo",
+        "tracking": "unspecified"
+      },
+      {
+        "url": "https://lb.routeme.sh/rpc/evm/666666666",
+        "source": "chainlist",
+        "tracking": "limited"
+      },
+      {
+        "url": "https://666666666.rpc.thirdweb.com",
+        "source": "chainlist",
+        "tracking": "yes"
+      }
+    ]
+  }
+}
