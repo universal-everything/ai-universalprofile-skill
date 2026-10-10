@@ -1,34 +1,34 @@
 {
   "version": "0.1.0",
-  "source": "dbbb0b73c5e6",
+  "source": "b0e9d55a5705",
   "files": {
     "scripts/lib/app.mjs": {
-      "bytes": 1001670,
-      "sha256": "5d7ba45bb0d5a7a31a353803c5bad03b930b59dad69805550019a656cafd3df3"
+      "bytes": 1005140,
+      "sha256": "ac6c9814082c9ea81d58e63744e864c2ec9b3acf5b3ffb231151f49523ebc2dd"
     },
     "scripts/lib/vendor-erc725.mjs": {
       "bytes": 123078,
-      "sha256": "0dc884ae4ca36ef1345bdbebe25cf335a05954725e560efef0536bb4defea994"
+      "sha256": "a6c9c0a686f277c1e956a46a8dfa742f4d9c42bc7f28e139b171b1660f953667"
     },
     "scripts/lib/vendor-qrcode.mjs": {
       "bytes": 145602,
-      "sha256": "d601e37e847ef4f4d8c29a5d87ee27c4e74a5bd7db23004f6a81baaa342493b6"
+      "sha256": "1bf83f59f70dcaca08a752dd65d45499cab4dbcbb12d086ff03fc87f48d9fcc2"
     },
     "scripts/lib/vendor-viem.mjs": {
       "bytes": 943606,
-      "sha256": "dcfb5e9b7aa9cdcce30895f6f034c7d05a256a89dccd7c3840e27237f6298c68"
+      "sha256": "d180ce7ae74533691011c220a4e55a55de50858e6cdb6eb90f0fd7d0586aedbe"
     },
     "scripts/up-doctor.mjs": {
       "bytes": 565,
-      "sha256": "ba238c4cef98df75d76d513e1f9494ab6b597fd7a7309027733978279d32328c"
+      "sha256": "77bd30b7c333bb01713d7af5772a72fb4a8a9b9572cadae152ec2e8671ad6667"
     },
     "scripts/up-mcp.mjs": {
       "bytes": 519,
-      "sha256": "56213c67b14a59f2d5fc949d01f42c2fdc15ddd33383b52d38348d0bbd0c4625"
+      "sha256": "e135252b5244e00cee63e7afa55acc69dddc7339a71e5f4af0baf6422b91b6e6"
     },
     "scripts/up.mjs": {
       "bytes": 543,
-      "sha256": "b1894b4bac4fd59e74ddcb38955335d3e14f58a8ef798ec664af16067bbc249e"
+      "sha256": "478b797a2fedbb9a9316bcd59ecc9758ebe201319944461b4b4d93c4f62366e4"
     }
   }
 }

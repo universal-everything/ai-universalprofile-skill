@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint dbbb0b73c5e6 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint b0e9d55a5705 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -53,6 +53,18 @@ var init_errors = __esm({
 });
 
 // src/core/verbs.ts
+var verbs_exports = {};
+__export(verbs_exports, {
+  GLOBAL_PARAMS: () => GLOBAL_PARAMS,
+  allVerbs: () => allVerbs,
+  coerceArgs: () => coerceArgs,
+  defineVerb: () => defineVerb,
+  getVerb: () => getVerb,
+  inputSchema: () => inputSchema,
+  matchVerb: () => matchVerb,
+  mcpToolName: () => mcpToolName,
+  verbFromToolName: () => verbFromToolName
+});
 function defineVerb(def) {
   if (verbs.has(def.name)) throw new Error(`verb "${def.name}" registered twice`);
   for (const p of def.params) {
@@ -3161,7 +3173,7 @@ async function sendTx(ctx, signer, req) {
   const maxCost = gas * (fee.maxFeePerGas ?? fee.gasPrice ?? 0n) + (req.value ?? 0n);
   if (balance < maxCost) {
     throw new UpError("TX_FAILED", `controller ${from} has insufficient native balance on chain ${req.chainId} (has ${balance} wei, needs up to ${maxCost} wei)`, {
-      hint: `you are out of gas on chain ${req.chainId}: ask the human for a top-up in plain words with dollar values: up funding suggest --chain ${req.chainId} --purpose refill (and show the QR: up display address ${from} --chain ${req.chainId})`,
+      hint: `you are out of gas on chain ${req.chainId}. If a relayer pays for this profile there, send through it instead (--via relay; check: up relayer quota --chain ${req.chainId}). Otherwise ask the human for a top-up in plain words with dollar values: up funding suggest --chain ${req.chainId} --purpose refill (QR: up display address ${from} --chain ${req.chainId})`,
       details: { balance, maxCost }
     });
   }
@@ -7319,6 +7331,22 @@ var init_allowed = __esm({
 });
 
 // src/lsp/profile.ts
+var profile_exports = {};
+__export(profile_exports, {
+  decodeExtensionValue: () => decodeExtensionValue,
+  decodeLsp3: () => decodeLsp3,
+  fetchLsp3: () => fetchLsp3,
+  getData: () => getData,
+  getDataBatch: () => getDataBatch,
+  keyNameHash: () => keyNameHash,
+  readControllerPermissions: () => readControllerPermissions,
+  readControllers: () => readControllers,
+  readExtensions: () => readExtensions,
+  readProfileInfo: () => readProfileInfo,
+  requireKeyManager: () => requireKeyManager,
+  resolveKeyManager: () => resolveKeyManager,
+  supportsInterface: () => supportsInterface
+});
 import { getAddress as getAddress14, isAddress as isAddress11, keccak256 as keccak2568, toBytes, zeroAddress } from "./vendor-viem.mjs";
 import { ERC725 } from "./vendor-erc725.mjs";
 async function resolveKeyManager(ctx, chainId, profile) {
@@ -7501,6 +7529,9 @@ async function readProfileInfo(ctx, chainId, profile, opts = {}) {
     issuedAssetsCount: parseArrayLength(lsp12Len).toString(),
     warnings
   };
+}
+function keyNameHash(name) {
+  return keccak2568(toBytes(name));
 }
 var init_profile = __esm({
   "src/lsp/profile.ts"() {
@@ -7727,6 +7758,13 @@ var init_client = __esm({
 });
 
 // src/relayer/registry.ts
+var registry_exports = {};
+__export(registry_exports, {
+  clientFor: () => clientFor,
+  getCapabilities: () => getCapabilities,
+  listRelayers: () => listRelayers,
+  selectRelayer: () => selectRelayer
+});
 async function listRelayers(ctx, chainId) {
   const cfg = await ctx.config();
   const out = (cfg.relayers ?? []).map((r) => ({ ...r, source: "config" }));
@@ -8153,7 +8191,7 @@ function describeChainStatus(s) {
   else if (!c.isController) parts.push(`this agent's key ${c.address} is not a controller here yet`);
   else parts.push(`the agent${c.scope === "chain" ? ` (chain key ${c.address})` : ""} can act with ${permissionSummary(c)}`);
   if (s.profileBalanceFormatted) parts.push(`profile balance ${s.profileBalanceFormatted}`);
-  if (c?.balanceFormatted) parts.push(`agent key gas ${c.balanceFormatted}${c.lowGas ? " (low)" : ""}`);
+  if (c?.balanceFormatted) parts.push(`agent key gas ${c.balanceFormatted}${s.relayUsable ? " (not needed: the relayer pays gas here)" : c.lowGas ? " (low)" : ""}`);
   if (s.relayer) parts.push(`relayer ${s.relayer.name}${c?.isController && !c.canRelay ? " (needs EXECUTE_RELAY_CALL)" : ""}`);
   return `${where}: ${parts.join("; ")}`;
 }
@@ -8447,6 +8485,32 @@ async function deploymentCostWei(ctx, chainId, from) {
     return void 0;
   }
 }
+async function relayerCoverage(ctx, chainId, key) {
+  try {
+    const { selectRelayer: selectRelayer2 } = await Promise.resolve().then(() => (init_registry2(), registry_exports));
+    const r = await selectRelayer2(ctx, chainId);
+    if (!r) return void 0;
+    const profile = await ctx.profile(void 0, chainId).catch(() => void 0);
+    if (!profile) return void 0;
+    const { readControllerPermissions: readControllerPermissions2 } = await Promise.resolve().then(() => (init_profile(), profile_exports));
+    const { resolveKeyManager: resolveKeyManager2 } = await Promise.resolve().then(() => (init_profile(), profile_exports));
+    const km = await resolveKeyManager2(ctx, chainId, profile).catch(() => void 0);
+    if (!km) return void 0;
+    const perms = await readControllerPermissions2(ctx, chainId, profile, key).catch(() => void 0);
+    if (!perms?.permissions.names.includes("EXECUTE_RELAY_CALL")) return void 0;
+    try {
+      const { getVerb: getVerb2 } = await Promise.resolve().then(() => (init_verbs(), verbs_exports));
+      const q3 = await getVerb2("relayer quota").run(ctx, { chain: String(chainId), relayer: r.name });
+      const d = q3?.data ?? {};
+      if (d.available === false) return { name: r.name, quotaReadable: false };
+      return { name: r.name, quota: d.quota !== void 0 ? String(d.quota) : void 0, unit: d.unit, hasQuota: d.hasQuota, quotaReadable: true };
+    } catch {
+      return { name: r.name, quotaReadable: false };
+    }
+  } catch {
+    return void 0;
+  }
+}
 var PRICE_API, PRICE_TTL_MS, ACTION_GAS, STARTER_ACTIONS, USD_STEPS;
 var init_funding = __esm({
   "src/chain/funding.ts"() {
@@ -8518,6 +8582,16 @@ var init_funding = __esm({
           },
           more: { amount: friendlyAmount(moreWei), usd: usdOf(moreWei) }
         };
+        const relay = await relayerCoverage(ctx, chainId, address);
+        if (relay) {
+          s.relayer = relay;
+          if (relay.hasQuota !== false) {
+            s.gasNotNeeded = true;
+            s.low = false;
+            const quotaText = relay.quotaReadable && relay.quota !== void 0 ? ` (quota left: ${relay.quota}${relay.unit ? ` ${relay.unit}` : ""})` : "";
+            return { data: s, text: `On ${chain.name} the relayer ${relay.name} pays the gas for my actions${quotaText}, so I don't need any coins for gas there.` };
+          }
+        }
         const usd = (v) => v !== void 0 ? ` (about $${v < 10 ? v.toFixed(2) : Math.round(v)})` : "";
         const ask = s.starter.range ? `about ${s.starter.range.min}–${s.starter.range.max} ${symbol} (about $${s.starter.range.usdMin}–$${s.starter.range.usdMax})` : `about ${s.starter.amount} ${symbol}${usd(s.starter.usd)}`;
         const test = chain.testnet ? " (test coins, e.g. from a faucet)" : "";
@@ -9084,7 +9158,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "dbbb0b73c5e6" : "source";
+var SOURCE = true ? "b0e9d55a5705" : "source";
 
 // src/chain/discovery.ts
 init_assets();
