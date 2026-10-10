@@ -63,11 +63,11 @@ The write verbs enforce step 2 themselves: before building any action they check
 
 By default the agent signs with one key on every chain. A chain can get its own key, for example to keep a low-value chain's key apart from the main one:
 
-1. `up key new-candidate` creates a key (inactive) and shows its address.
+1. `up key new-candidate` creates an additional key (not used yet) and shows its address.
 2. The human authorises that address on the chain (`up permissions recommend --chain <id>` for the set).
 3. `up key activate <address> --chain <id>` (human approval) makes it the agent's key on that chain only. Every signature for that chain (transactions, relay calls, relayer quota logins, UserOperations, ERC-1271 signatures, deployments) then uses it; other chains keep theirs. EIP-712 typed data that names a chain (`domain.chainId`) is always signed for that chain, with its key and (as the profile) verified there; a different explicit `--chain` is refused.
 
-`up key address` shows the default key and every chain-specific key (`--chain <id>`: the key used there); `up profile status` shows which key applies per chain. `up key activate <default key address> --chain <id>` returns a chain to the default key. Rotation is per key: `up key rotate-plan` covers the default key and lists chains with their own key, `up key rotate-plan --chain <id>` covers one chain's key. New profile addresses are always derived from the default key, so they stay the same on every chain.
+`up key address` shows the default key and every chain-specific key (`--chain <id>`: the key used there); `up profile status` shows which key applies per chain. `up key activate <default key address> --chain <id>` returns a chain to the default key. Switching never deletes a key: the previous key stays in its store and listed (keys are permanent, `references/security.md`). New profile addresses are always derived from the default key, so they stay the same on every chain.
 
 ### A different address on some chain
 

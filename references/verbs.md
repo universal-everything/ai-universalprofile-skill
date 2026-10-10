@@ -12,7 +12,7 @@ Risk classes: **local** (no chain writes), **read** (chain/HTTP reads), **write*
 - **display**: [`display address`](#display-address), [`identicon`](#identicon), [`qr`](#qr)
 - **erc4337**: [`account 4337 deploy-entrypoint`](#account-4337-deploy-entrypoint), [`account 4337 deploy-extension`](#account-4337-deploy-extension), [`account 4337 deposit`](#account-4337-deposit), [`account 4337 disable`](#account-4337-disable), [`account 4337 enable`](#account-4337-enable), [`account 4337 status`](#account-4337-status), [`account 4337 withdraw`](#account-4337-withdraw), [`bundler set`](#bundler-set)
 - **execute**: [`exec batch`](#exec-batch), [`exec call`](#exec-call), [`exec receipt`](#exec-receipt), [`exec relay`](#exec-relay), [`exec send`](#exec-send), [`exec simulate`](#exec-simulate), [`exec userop`](#exec-userop), [`nonce`](#nonce)
-- **key**: [`init`](#init), [`key activate`](#key-activate), [`key address`](#key-address), [`key backend`](#key-backend), [`key backup`](#key-backup), [`key new-candidate`](#key-new-candidate), [`key rotate-plan`](#key-rotate-plan)
+- **key**: [`init`](#init), [`key activate`](#key-activate), [`key address`](#key-address), [`key backend`](#key-backend), [`key backup`](#key-backup), [`key new-candidate`](#key-new-candidate)
 - **knowledge**: [`docs`](#docs), [`protocols list`](#protocols-list), [`protocols verify`](#protocols-verify), [`standards list`](#standards-list)
 - **permissions**: [`allowed-calls set`](#allowed-calls-set), [`allowed-calls show`](#allowed-calls-show), [`allowed-keys set`](#allowed-keys-set), [`allowed-keys show`](#allowed-keys-show), [`controller add`](#controller-add), [`controller edit`](#controller-edit), [`controller remove`](#controller-remove), [`ownership accept`](#ownership-accept), [`ownership renounce`](#ownership-renounce), [`ownership transfer`](#ownership-transfer), [`permissions decode`](#permissions-decode), [`permissions encode`](#permissions-encode), [`permissions list`](#permissions-list), [`permissions presets`](#permissions-presets), [`permissions recommend`](#permissions-recommend), [`permissions show`](#permissions-show)
 - **relayer**: [`relayer add`](#relayer-add), [`relayer execute`](#relayer-execute), [`relayer list`](#relayer-list), [`relayer quota`](#relayer-quota), [`relayer remove`](#relayer-remove)
@@ -972,7 +972,7 @@ Show the LSP25 relay nonces of a controller (channel 0, default relayer channels
 
 Create the agent's controller key inside a protected key store and show its public address.
 
-Generates a new secp256k1 controller key inside the strongest available key store for this machine (macOS login keychain, systemd-creds, desktop keyring, Windows DPAPI, or a private key file inside a cloud agent VM) and records only its public address in config. The private key is never shown. Safe to run unattended for first-time setup; if a controller already exists nothing changes. Replacing an existing controller requires --force and a human approval.
+Generates a new secp256k1 controller key inside the strongest available key store for this machine (macOS login keychain, systemd-creds, desktop keyring, Windows DPAPI, or a private key file inside a cloud agent VM) and records only its public address in config. The private key is never shown. Safe to run unattended for first-time setup. The key is permanent: if one already exists it is kept and nothing changes (it is never replaced); if it is missing from its store, init says so and points to its backup.
 
 - CLI: `up init [options]`
 - MCP tool: `up_init` · risk: **secret**
@@ -980,33 +980,31 @@ Generates a new secp256k1 controller key inside the strongest available key stor
 | option | type | required | description |
 | --- | --- | --- | --- |
 | `--backend` | string (auto\|macos-keychain\|linux-systemd-creds\|linux-secret-service\|windows-dpapi\|wsl-dpapi\|protected-file\|vm-protected-file\|remote-signer\|memory) |  | Key store to use; 'auto' picks the strongest unattended store for this machine. Default: `"auto"`. |
-| `--force` | boolean |  | Replace an existing controller key (the old one stays in its store and is listed as retired). Needs --approval. Default: `false`. |
 
 Examples:
 
 ```
 up init
 up init --backend protected-file
-up init --force --approval "<human's words>"
 ```
 
 ### key activate
 
-Make another key from the key store the agent's controller key: the default key (rotation or rollback; the previous one is retired), or with --chain the key used on that chain only.
+Choose which of the agent's keys it signs with: the default key, or with --chain the key used on that chain only. The previous key is kept in its store and stays listed; no key is ever deleted.
 
-Without --chain the default key changes (every chain without its own key follows). With --chain <id> only that chain switches to the key; activating the default key's address for a chain removes the chain's own key (it uses the default again). Only the local signing key changes: the key must be a controller of the profile on that chain (check with: up profile status).
+Without --chain the default key changes (every chain without its own key follows). With --chain <id> only that chain switches to the key; activating the default key's address for a chain makes that chain use the default key again. Only the local signing key changes: the key must be a controller of the profile on that chain (check with: up profile status). Keys are permanent: the previous key is never deleted and can be activated again.
 
 - CLI: `up key activate <address> [options]`
 - MCP tool: `up_key_activate` · risk: **secret**
 
 | option | type | required | description |
 | --- | --- | --- | --- |
-| `--address` | string | yes | Address of the key to activate (a candidate, a retired key, or with --chain also the default key). |
-| `--backend` | string (macos-keychain\|linux-systemd-creds\|linux-secret-service\|windows-dpapi\|wsl-dpapi\|protected-file\|vm-protected-file\|remote-signer\|memory) |  | Key store holding that key (default: where the candidate was created, else the active controller's store). |
+| `--address` | string | yes | Address of the key to use (an additional key, a previous key, or with --chain also the default key); up key address lists them all. |
+| `--backend` | string (macos-keychain\|linux-systemd-creds\|linux-secret-service\|windows-dpapi\|wsl-dpapi\|protected-file\|vm-protected-file\|remote-signer\|memory) |  | Key store holding that key (default: where it was created, else the current key's store). |
 
 ### key address
 
-Show the agent's controller address (the default key, or with --chain the key used on that chain) and the key store that protects it; lists chains that use their own key.
+Show the agent's controller address (the default key, or with --chain the key used on that chain) and the key store that protects it; lists chains that use their own key and every other key the agent keeps.
 
 - CLI: `up key address [options]`
 - MCP tool: `up_key_address` · risk: **local**
@@ -1035,21 +1033,12 @@ Only encrypted backups exist; the raw key is never exported. Requires --encrypte
 
 ### key new-candidate
 
-Create an additional, inactive controller key in the same key store (first step of a rotation).
+Create an additional key in the same key store (e.g. a separate key for one network, or a replacement when a key was lost); the agent's current key stays as it is.
 
-Generates a new key next to the active one and returns its public address. Nothing changes on-chain and the active key stays active until `up key activate`.
+Generates a new key next to the agent's current key and returns its public address. Nothing changes on-chain and the agent keeps signing with its current key until `up key activate`. Keys are permanent: no key is ever deleted; the current key stays in its store and stays listed.
 
 - CLI: `up key new-candidate [options]`
 - MCP tool: `up_key_new_candidate` · risk: **secret**
-
-### key rotate-plan
-
-Show the step-by-step plan to rotate the controller key without changing the profile address (the default key, or with --chain the key used on that chain).
-
-Returns the rotation drill as data and text. It does not execute anything; each step names the verb that performs it. Permissions are stored per chain, so the new key is granted, verified and the old one removed on every chain where the rotated key is used; chains with their own key are rotated separately (--chain).
-
-- CLI: `up key rotate-plan [options]`
-- MCP tool: `up_key_rotate_plan` · risk: **local**
 
 ## knowledge
 
