@@ -1,6 +1,6 @@
 # Universal Profile Agent Skill
 
-**Give your AI agent a real account of its own: a smart account that you stay in control of, on LUKSO and 70+ other EVM networks.**
+**Give your AI agent a real account of its own: a smart account that you stay in control of, on LUKSO, Ethereum and 70+ other EVM networks.**
 
 Most "crypto skills" for AI agents hand the agent a raw private key. Whoever holds that key can do *everything*, and if the key leaks or the agent makes a mistake, there is no undo and no limit. This skill takes a different approach. The agent gets a **Universal Profile**, a smart-contract account built on [ERC725Account](https://github.com/lukso-network/LIPs/blob/main/LSPs/LSP-0-ERC725Account.md) and the LUKSO standards. The account itself decides what the agent's key may do, through the **LSP6 Key Manager** at its core.
 
