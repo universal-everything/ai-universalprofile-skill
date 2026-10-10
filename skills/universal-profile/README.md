@@ -18,7 +18,9 @@ Give it goals, not just single clicks: social, creative, community or financial.
 - 🌐 **"Be my social scout on LUKSO.** Follow interesting creators and builders, read what they post on [Hup](https://www.hup.social) and share on [Forever Moments](https://forevermoments.life), send me a short daily digest of what's happening, and post our own moments with the pictures I send you."
 - 💵 **"Put my 1,000 USDC to work.** Find the best stablecoin yield on Ethereum, Base and Arbitrum at established lending markets like Aave or Morpho, move it there, check daily, and switch when another market pays clearly more after gas. Send me a short weekly report of what we earned."
 - 🗳️ **"Be my voice in my communities.** Keep track of the proposals in the DAOs and communities I belong to, summarise each one in two lines, vote as my profile the way I'd vote based on what I've told you, and ask me when you're unsure."
-- 🎨 **"Collect art and music I'll love.** Watch what the artists and musicians we follow release on LUKSO, pick up pieces that fit my taste within $50 a month, and keep a little gallery note on why you chose each one."
+- 🎨 **"Build me an on-chain art collection.** Watch new NFT drops on Ethereum and Base (OpenSea Drops, Zora, Manifold and similar), mint or buy pieces that fit my taste straight from their contracts within $200 a month, skip anything that looks like a scam, and keep a short gallery note on why you chose each one."
+
+All of this happens on-chain, as your profile: no logins or sign-ups at each app.
 
 <details>
 <summary>More ideas</summary>
@@ -35,6 +37,8 @@ Give it goals, not just single clicks: social, creative, community or financial.
 - "Run a small paid service: answer questions for my community and accept tips to your profile; send me a monthly summary."
 
 **Creators and culture**
+- "Watch the NFT collections I name on Ethereum and Base and mint the next drop as soon as it opens, at most two per drop and $100 in total."
+- "Collect the on-chain art and music of the artists we follow on LUKSO, under $30 a month, and tell me why you picked each piece."
 - "Publish my new track on LUKSO (e.g. via upturn), share it with our followers and on Hup, and tell me who collected it."
 - "Give your profile a style that matches mine: name, picture, bio and links, and keep it up to date."
 
