@@ -12,7 +12,7 @@
 import { formatEther, getAddress, type Address, type Hex } from "viem";
 import type { UpConfig, VerbContext } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
-import { profileAddressOn, readProfileRecord, writeProfileRecord } from "../core/profile-record.ts";
+import { profileAddressOn, readProfileRecord, updateProfileRecord } from "../core/profile-record.ts";
 import { controllerFor } from "../signer/select.ts";
 import { selectRelayer } from "../relayer/registry.ts";
 import { ADMIN_PERMISSIONS, ALL_PERMISSIONS, INTERFACE_IDS, PERMISSIONS } from "./constants.ts";
@@ -298,13 +298,16 @@ export function formatProfileStatus(identity: Address, statuses: ChainProfileSta
   return lines.join("\n");
 }
 
-/** Compact per-chain snapshot stored in the profile record (merged; other chains and other keys are kept). */
+/**
+ * Compact per-chain snapshot stored in the profile record. Touches only the record's `status`
+ * key, merged under the record lock with the LATEST on-disk record: other chains' entries and
+ * every other key (manifest, links, joined state) written meanwhile are kept.
+ */
 export async function saveStatusSnapshot(home: string, identity: Address, statuses: ChainProfileStatus[]): Promise<void> {
-  const prev = await readProfileRecord(home, identity);
   const checkedAt = new Date().toISOString();
-  const chains: Record<string, unknown> = { ...(prev.status?.chains ?? {}) };
+  const fresh: Record<string, unknown> = {};
   for (const s of statuses) {
-    chains[String(s.chainId)] = {
+    fresh[String(s.chainId)] = {
       checkedAt,
       chain: s.chain,
       profile: s.profile,
@@ -319,7 +322,7 @@ export async function saveStatusSnapshot(home: string, identity: Address, status
       error: s.error,
     };
   }
-  await writeProfileRecord(home, identity, { status: { checkedAt, chains } });
+  await updateProfileRecord(home, identity, (latest) => ({ status: { checkedAt, chains: { ...(latest.status?.chains ?? {}), ...fresh } } }));
 }
 
 // ---------------------------------------------------------------------------

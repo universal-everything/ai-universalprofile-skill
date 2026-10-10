@@ -21,7 +21,7 @@ Safety stays the same: assets never move between chains by themselves; bridging 
 
 ### The cross-chain overview: `up profile status`
 
-`up profile status` checks every configured chain (plus chains where the profile is known to exist; `--chains 42,8453` or `--chain base` to choose) in parallel. A chain whose RPC is down is reported with its own fix; the other chains are still checked. Per chain it reports:
+`up profile status` checks every configured chain (plus chains where the profile is known to exist: linked, deployed by this agent, or found deployed by `up profile join`; `--chains 42,8453` or `--chain base` to choose) in parallel. A chain whose RPC is down is reported with its own fix; the other chains are still checked. Per chain it reports:
 
 - the profile's address there (`linked` when it differs) and whether it is deployed (code + LSP0 interface), its owner and Key Manager;
 - which key of the agent applies there (default or chain-specific), whether it is a controller there, its permissions, and whether AllowedCalls / AllowedERC725YDataKeys limit it;
@@ -40,7 +40,7 @@ Your Universal Profile 0x9a3…F1 — one account on 3 chains; each chain has it
 Ready on: LUKSO.
 ```
 
-The result is also stored (merged) in the local profile record as the last known state per chain. It is a snapshot: re-check before acting.
+The result is also stored in the local profile record as the last known state per chain (only its own `status` entry, merged under the record lock, so a link or deployment written at the same time is never overwritten). It is a snapshot: re-check before acting.
 
 ### Acting on a chain
 
@@ -64,13 +64,13 @@ By default the agent signs with one key on every chain. A chain can get its own 
 
 1. `up key new-candidate` creates a key (inactive) and shows its address.
 2. The human authorises that address on the chain (`up permissions recommend --chain <id>` for the set).
-3. `up key activate <address> --chain <id>` (human approval) makes it the agent's key on that chain only. Every signature for that chain (transactions, relay calls, relayer quota logins, UserOperations, ERC-1271 signatures, deployments) then uses it; other chains keep theirs.
+3. `up key activate <address> --chain <id>` (human approval) makes it the agent's key on that chain only. Every signature for that chain (transactions, relay calls, relayer quota logins, UserOperations, ERC-1271 signatures, deployments) then uses it; other chains keep theirs. EIP-712 typed data that names a chain (`domain.chainId`) is always signed for that chain, with its key and (as the profile) verified there; a different explicit `--chain` is refused.
 
 `up key address` shows the default key and every chain-specific key (`--chain <id>`: the key used there); `up profile status` shows which key applies per chain. `up key activate <default key address> --chain <id>` returns a chain to the default key. Rotation is per key: `up key rotate-plan` covers the default key and lists chains with their own key, `up key rotate-plan --chain <id>` covers one chain's key. New profile addresses are always derived from the default key, so they stay the same on every chain.
 
 ### A different address on some chain
 
-Rarely a profile exists on some chain at another address (created by another factory or with another salt). After the human confirms it is theirs, `up profile link <address> --chain <id> --approval "<their words>"` links it: on that chain every verb acts as, and shows, the linked address; other chains keep the usual one. The skill checks that the address is a deployed Universal Profile owned by a Key Manager on that chain and warns when the agent's key is not a controller there. `up profile link --unlink --chain <id>` removes the link. Recipients and other counterparties are never re-mapped.
+Rarely a profile exists on some chain at another address (created by another factory or with another salt). After the human confirms it is theirs, `up profile link <address> --chain <id> --approval "<their words>"` links it (linking and unlinking always need the human's own words; a delegated policy with `allowAdmin` does not cover them): on that chain every verb acts as, and shows, the linked address; other chains keep the usual one. The skill checks that the address is a deployed Universal Profile owned by a Key Manager on that chain and warns when the agent's key is not a controller there. `up profile link --unlink --chain <id>` removes the link. Recipients and other counterparties are never re-mapped.
 
 ## The registry
 

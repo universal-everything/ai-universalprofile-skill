@@ -10,7 +10,6 @@ import { getAddress, hashMessage, hashTypedData, isHex, type Address, type Hex, 
 import { defineVerb } from "../core/verbs.ts";
 import { UpError } from "../core/errors.ts";
 import type { VerbContext } from "../core/types.ts";
-import { chainAndProfile } from "../exec/verbs.ts";
 import { ERC1271_ABI } from "./abis.ts";
 import { ERC1271_MAGIC, extensionKey } from "./constants.ts";
 import { hasPermission } from "./permissions.ts";
@@ -86,12 +85,23 @@ async function profilesWith4337(ctx: VerbContext, chainId: number | undefined, p
   return out;
 }
 
+/** EIP-712 domain.chainId as a number (number, decimal or hex string, bigint), or undefined when absent. */
+export function typedDataChainId(td: TypedDataDefinition): number | undefined {
+  const raw = (td.domain as any)?.chainId;
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  let n: bigint;
+  try {
+    n = BigInt(typeof raw === "number" ? Math.trunc(raw) : String(raw));
+  } catch {
+    throw new UpError("BAD_ARGS", `typed-data domain.chainId ${JSON.stringify(raw)} is not a chain id`);
+  }
+  if (n <= 0n || n > BigInt(Number.MAX_SAFE_INTEGER) || (typeof raw === "number" && !Number.isInteger(raw))) throw new UpError("BAD_ARGS", `typed-data domain.chainId ${String(raw)} is not a valid chain id`);
+  return Number(n);
+}
+
 async function signFlow(ctx: VerbContext, a: Record<string, any>, kind: "message" | "typed-data") {
   const as: "profile" | "controller" = a.as ?? "profile";
-  // The agent's key for the chain the signature is for (as profile: the verb's chain; as controller:
-  // --chain / the default chain when set, else the default key).
   await ctx.config();
-  const signer = await ctx.signer(as === "profile" || a.chain ? ctx.chainId(a.chain) : undefined);
   let hash: Hex;
   let td: TypedDataDefinition | undefined;
   let message: string | { raw: Hex } | undefined;
@@ -109,17 +119,29 @@ async function signFlow(ctx: VerbContext, a: Record<string, any>, kind: "message
       throw new UpError("BAD_ARGS", `invalid typed data: ${(e as Error).message}`);
     }
   }
-  let chainId: number | undefined;
+  // The chain the signature is for decides the key (one profile, a key per chain). Typed data that
+  // names its chain (domain.chainId) is signed with that chain's key — never with another chain's —
+  // and a different explicit --chain is refused. Everything below (key, profile, preflight,
+  // consent, ERC-1271 verification) uses this one chain.
+  const explicit = a.chain !== undefined && a.chain !== "" ? ctx.chainId(a.chain) : undefined;
+  const domainChain = td ? typedDataChainId(td) : undefined;
+  if (domainChain !== undefined && explicit !== undefined && explicit !== domainChain) {
+    throw new UpError("BAD_ARGS", `the typed data is for chain ${domainChain} (domain.chainId) but --chain is ${explicit}: refusing to sign it with the key or as the profile of another chain`, {
+      hint: `run it with --chain ${domainChain} (or without --chain), or ask for typed data made for chain ${explicit}`,
+    });
+  }
+  let chainId: number | undefined = domainChain ?? explicit;
+  if (as === "profile") chainId = ctx.chainId(chainId); // validates the chain; falls back to the default chain
+  const signer = await ctx.signer(chainId);
   let profile: Address | undefined;
   const warnings = td ? typedDataWarnings(td) : [];
   if (as === "profile") {
-    ({ chainId, profile } = await chainAndProfile(ctx, a));
+    profile = await ctx.profile(a.profile, chainId);
     // deployed on this chain, Key Manager, this key a controller here (per-chain fix in the hint)
-    const { controller: perms } = await preflightProfileOnChain(ctx, chainId, profile, signer.address);
+    const { controller: perms } = await preflightProfileOnChain(ctx, chainId!, profile, signer.address);
     if (!hasPermission(perms.permissions.value, "SIGN")) {
       throw new UpError("NOT_AUTHORISED", `controller ${signer.address} lacks the SIGN permission on ${profile} (chain ${chainId}): the profile would reject the signature (ERC-1271)`, { hint: `ask the human to add SIGN on this chain: up controller edit ${signer.address} --add SIGN --chain ${chainId} (signing on other chains is unaffected)` });
     }
-    if (td?.domain && (td.domain as any).chainId !== undefined && Number((td.domain as any).chainId) !== chainId) warnings.push(`typed-data domain chainId ${(td.domain as any).chainId} differs from the selected chain ${chainId}`);
   }
   // Blind-hash guard (32-byte personal_sign) and value-moving typed data.
   const blind = kind === "message" && isBlindHashMessage(message!);

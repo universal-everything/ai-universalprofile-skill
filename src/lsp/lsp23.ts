@@ -20,7 +20,7 @@
 import { concat, encodeAbiParameters, encodeFunctionData, encodePacked, getAddress, getContractAddress, keccak256, type Address, type Hex } from "viem";
 import type { Signer, VerbContext } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
-import { readProfileRecord, writeProfileRecord } from "../core/profile-record.ts";
+import { readProfileRecord, updateProfileRecord, writeProfileRecord } from "../core/profile-record.ts";
 import { LSP } from "../chain/registry.ts";
 import { sendTx, simulate } from "../chain/tx.ts";
 import { KM_INIT_ABI, LSP23_ABI, UP_INIT_ABI } from "./abis.ts";
@@ -263,8 +263,13 @@ export async function loadManifest(home: string, profile: Address): Promise<Depl
   return r.deployment as DeploymentManifest | undefined;
 }
 
+/** Saves the manifest; deployments recorded meanwhile on other chains (another process) are kept. */
 export async function saveManifest(home: string, m: DeploymentManifest): Promise<void> {
-  await writeProfileRecord(home, m.profile, { deployment: m });
+  await updateProfileRecord(home, m.profile, (latest) => {
+    const cur = latest.deployment as DeploymentManifest | undefined;
+    if (!cur || cur.profile !== m.profile || cur.deployCalldata !== m.deployCalldata) return { deployment: m };
+    return { deployment: { ...m, chains: [...new Set([...(cur.chains ?? []), ...m.chains])], deployments: { ...(cur.deployments ?? {}), ...m.deployments } } };
+  });
 }
 
 /** Re-derives the addresses from the manifest's stored calldata (tamper/consistency check before replay). */

@@ -21,6 +21,8 @@ import "../../src/relayer/verbs.ts";
 import "../../src/signer/verbs.ts";
 import type { VerbContext } from "../../src/core/types.ts";
 import { paths } from "../../src/core/home.ts";
+import { DEFAULT_POLICY, savePolicy } from "../../src/core/policy.ts";
+import { writeProfileRecord } from "../../src/core/profile-record.ts";
 import { getBackend } from "../../src/signer/index.ts";
 import { resetMemoryBackend } from "../../src/signer/memory.ts";
 import { controllerAddress } from "../../src/exec/verbs.ts";
@@ -247,6 +249,45 @@ describe("two chains, one profile", () => {
   });
 });
 
+describe("EIP-712 typed data is signed with the key of the chain it names (domain.chainId)", () => {
+  const typed = (chainId: number | string) => ({
+    domain: { name: "Multichain test", version: "1", chainId, verifyingContract: "0x00000000000000000000000000000000000000aa" },
+    types: { Mail: [{ name: "contents", type: "string" }] },
+    primaryType: "Mail",
+    message: { contents: `hello on ${chainId}` },
+  });
+
+  it("as profile: domain chain B with default chain A → B's key, the profile on B, verified on B", async () => {
+    const r = await run(ctx, "sign typed-data", { "typed-data": typed(B) });
+    expect(r.data).toMatchObject({ as: "profile", chainId: B, signer: keyB, profile });
+    expect(r.data.verification.valid).toBe(true);
+    // matching explicit --chain is fine; the hex form of the chain id too
+    const same = await run(ctx, "sign typed-data", { "typed-data": typed("0x" + B.toString(16)), chain: String(B) });
+    expect(same.data).toMatchObject({ chainId: B, signer: keyB });
+    const onA = await run(ctx, "sign typed-data", { "typed-data": typed(A), chain: String(A) });
+    expect(onA.data).toMatchObject({ chainId: A, signer: keyA });
+    expect(onA.data.verification.valid).toBe(true);
+  });
+
+  it("as controller: domain chain B → B's key (the signature recovers to it), never the default key", async () => {
+    const td = typed(B);
+    const r = await run(ctx, "sign typed-data", { "typed-data": td, as: "controller" });
+    expect(r.data).toMatchObject({ as: "controller", chainId: B, signer: keyB });
+    const { recoverTypedDataAddress } = await import("viem");
+    expect(await recoverTypedDataAddress({ ...(td as any), signature: r.data.signature })).toBe(keyB);
+  });
+
+  it("a mismatching explicit --chain is refused in both modes before any key is used or consent asked", async () => {
+    for (const as of ["profile", "controller"]) {
+      const e = await run(ctx, "sign typed-data", { "typed-data": typed(B), chain: String(A), as }).catch((x) => x);
+      expect(e.code).toBe("BAD_ARGS");
+      expect(e.message).toContain(`the typed data is for chain ${B} (domain.chainId) but --chain is ${A}`);
+    }
+    const bad = await run(ctx, "sign typed-data", { "typed-data": typed("not-a-chain"), as: "controller" }).catch((x) => x);
+    expect(bad.code).toBe("BAD_ARGS");
+  });
+});
+
 describe("a different address on one chain: profile link", () => {
   let other: Address;
 
@@ -256,6 +297,10 @@ describe("a different address on one chain: profile link", () => {
     expect(other).not.toBe(profile);
     const noApproval = testContext(home, undefined, { yes: true });
     await expect(run(noApproval, "profile link", { address: other, chain: String(B) })).rejects.toMatchObject({ code: "CONSENT_REQUIRED" });
+    // even with admin actions delegated (policy.allowAdmin), linking needs the human's own words
+    await savePolicy(home, { ...DEFAULT_POLICY, allowAdmin: true });
+    await expect(run(noApproval, "profile link", { address: other, chain: String(B) })).rejects.toMatchObject({ code: "CONSENT_REQUIRED" });
+    await savePolicy(home, DEFAULT_POLICY);
     await expect(run(ctx, "profile link", { address: other })).rejects.toMatchObject({ code: "BAD_ARGS" });
     await expect(run(ctx, "profile link", { address: hB.accounts[7], chain: String(B) })).rejects.toMatchObject({ code: "NOT_DEPLOYED" });
     const l = await run(ctx, "profile link", { address: other, chain: String(B) });
@@ -279,13 +324,29 @@ describe("a different address on one chain: profile link", () => {
     expect(s.data.confirmation.calls[0].to).toBe(profile);
   });
 
-  it("unlink restores the usual address on B", async () => {
+  it("unlink restores the usual address on B (and also always needs the human's words)", async () => {
+    await savePolicy(home, { ...DEFAULT_POLICY, allowAdmin: true });
+    await expect(run(testContext(home, undefined, { yes: true }), "profile link", { unlink: true, chain: String(B) })).rejects.toMatchObject({ code: "CONSENT_REQUIRED" });
+    await savePolicy(home, DEFAULT_POLICY);
+    expect(await ctx.profile(undefined, B)).toBe(other);
     const u = await run(ctx, "profile link", { unlink: true, chain: String(B) });
     expect(u.data).toMatchObject({ linked: null, removedLink: other, changed: true });
     expect(await ctx.profile(undefined, B)).toBe(profile);
     const rec = JSON.parse(readFileSync(paths.profile(home, profile), "utf8"));
     expect(rec.chainAddresses).toEqual({});
     expect(rec.deployment.profile).toBe(profile);
+  });
+});
+
+describe("profile status: chains known from profile join", () => {
+  it("includes a chain where join found the profile deployed, even when it is not configured", async () => {
+    const h2 = multiChainHome([hA, hB]);
+    const cfg = JSON.parse(readFileSync(paths.config(h2), "utf8"));
+    writeFileSync(paths.config(h2), JSON.stringify({ ...cfg, chains: [A], controller: { address: keyA, backend: "memory", createdAt: "x" } }), { mode: 0o600 });
+    await writeProfileRecord(h2, profile, { joined: { at: "t", chains: [{ chainId: B, deployed: true, authorised: false }, { chainId: 999_999_001, deployed: false, authorised: false }] } });
+    const r = await run(testContext(h2, undefined, approval), "profile status", { profile });
+    expect(r.data.chains.map((c: any) => c.chainId)).toEqual([A, B]);
+    expect(r.data.chains[1]).toMatchObject({ chainId: B, deployed: true });
   });
 });
 

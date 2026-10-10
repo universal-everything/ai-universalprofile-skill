@@ -8,7 +8,11 @@ import { join } from "node:path";
 import { getAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { createContext } from "../../../src/core/context.ts";
-import { chainAddressesOf, profileAddressOn, readProfileRecord, writeProfileRecord } from "../../../src/core/profile-record.ts";
+import { chainAddressesOf, profileAddressOn, readProfileRecord, updateProfileRecord, writeProfileRecord } from "../../../src/core/profile-record.ts";
+import { withLock } from "../../../src/core/lock.ts";
+import { ALWAYS_HUMAN_VERBS, DEFAULT_POLICY, requireConsent, savePolicy } from "../../../src/core/policy.ts";
+import { saveStatusSnapshot, type ChainProfileStatus } from "../../../src/lsp/multichain.ts";
+import { saveManifest } from "../../../src/lsp/lsp23.ts";
 import type { UpConfig } from "../../../src/core/types.ts";
 import { getBackend, loadSignerFromConfig } from "../../../src/signer/index.ts";
 import { resetMemoryBackend } from "../../../src/signer/memory.ts";
@@ -140,3 +144,73 @@ describe("the profile's address per chain", () => {
     await expect(none.profile()).rejects.toMatchObject({ code: "BAD_ARGS", hint: "pass --profile <address> or set one: up config set default-profile <address>" });
   });
 });
+
+describe("profile record updates are serialised and merge into the latest record", () => {
+  it("concurrent link, manifest, join and status writers never lose each other's keys", async () => {
+    const home = mkdtempSync(join(tmpdir(), "up-mc-"));
+    await writeProfileRecord(home, ID, { deployment: { profile: ID, chains: [42] } });
+    const links = Array.from({ length: 12 }, (_, i) => 1000 + i);
+    await Promise.all([
+      ...links.map((c) => updateProfileRecord(home, ID, (latest) => ({ chainAddresses: { ...chainAddressesOf(latest), [String(c)]: ON_BASE } }))),
+      ...[1, 2, 3, 4].map((c) => saveStatusSnapshot(home, ID, [statusFor(c)])),
+      updateProfileRecord(home, ID, () => ({ joined: { at: "t", chains: [] } })),
+    ]);
+    const rec = await readProfileRecord(home, ID);
+    expect(Object.keys(chainAddressesOf(rec)).sort()).toEqual(links.map(String).sort());
+    expect(Object.keys(rec.status.chains).sort()).toEqual(["1", "2", "3", "4"]);
+    expect(rec.deployment).toEqual({ profile: ID, chains: [42] });
+    expect(rec.joined).toEqual({ at: "t", chains: [] });
+  });
+
+  it("a status snapshot computed before a link was written does not remove the link (it only touches `status`)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "up-mc-"));
+    const computedEarlier = [statusFor(8453)]; // read while no link existed
+    await updateProfileRecord(home, ID, (latest) => ({ chainAddresses: { ...chainAddressesOf(latest), "8453": ON_BASE } }));
+    await saveStatusSnapshot(home, ID, computedEarlier);
+    expect(await profileAddressOn(home, ID, 8453)).toBe(ON_BASE);
+    expect((await readProfileRecord(home, ID)).status.chains["8453"]).toMatchObject({ deployed: false });
+  });
+
+  it("manifest saves keep deployments recorded meanwhile on other chains", async () => {
+    const home = mkdtempSync(join(tmpdir(), "up-mc-"));
+    const base = { profile: ID, deployCalldata: "0x01", chains: [] as number[], deployments: {} as Record<string, unknown> };
+    const onA = { ...base, chains: [42], deployments: { "42": { chainId: 42 } } };
+    const onB = { ...base, chains: [8453], deployments: { "8453": { chainId: 8453 } } };
+    await Promise.all([saveManifest(home, onA as any), saveManifest(home, onB as any)]);
+    const m = (await readProfileRecord(home, ID)).deployment;
+    expect(m.chains.sort()).toEqual([42, 8453]);
+    expect(Object.keys(m.deployments).sort()).toEqual(["42", "8453"]);
+  });
+
+  it("writes wait for the per-profile lock", async () => {
+    const home = mkdtempSync(join(tmpdir(), "up-mc-"));
+    let release!: () => void;
+    const held = withLock(home, `profile-${ID.toLowerCase()}`, () => new Promise<void>((r) => (release = r)));
+    await new Promise((r) => setTimeout(r, 20));
+    let done = false;
+    const w = writeProfileRecord(home, ID, { joined: { at: "x" } }).then(() => (done = true));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(done).toBe(false);
+    expect((await readProfileRecord(home, ID)).joined).toBeUndefined();
+    release();
+    await held;
+    await w;
+    expect((await readProfileRecord(home, ID)).joined).toEqual({ at: "x" });
+  });
+});
+
+describe("profile link always needs the human's own words", () => {
+  it("delegated admin (policy.allowAdmin) + --yes is not enough; --approval is", async () => {
+    const home = mkdtempSync(join(tmpdir(), "up-mc-"));
+    await savePolicy(home, { ...DEFAULT_POLICY, allowAdmin: true });
+    const req = { verb: "profile link", risk: "admin" as const, chainId: 8453, summary: {} };
+    await expect(requireConsent(home, { json: true, dryRun: false, yes: true }, req)).rejects.toMatchObject({ code: "CONSENT_REQUIRED" });
+    await expect(requireConsent(home, { json: true, dryRun: false, yes: true }, { ...req, verb: "controller add" })).resolves.toBeUndefined(); // other admin verbs follow the policy
+    await expect(requireConsent(home, { json: true, dryRun: false, yes: false, approval: "yes, link it" }, req)).resolves.toBeUndefined();
+    expect(ALWAYS_HUMAN_VERBS.has("profile link")).toBe(true);
+  });
+});
+
+function statusFor(chainId: number): ChainProfileStatus {
+  return { chainId, chain: `chain ${chainId}`, chainArg: String(chainId), nativeSymbol: "ETH", profile: ID, linked: false, deployed: false, relayUsable: false, manifest: false, ready: false, nextSteps: [] };
+}

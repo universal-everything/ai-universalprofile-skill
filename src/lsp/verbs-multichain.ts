@@ -4,7 +4,7 @@ import { getAddress, type Address } from "viem";
 import { defineVerb } from "../core/verbs.ts";
 import { UpError } from "../core/errors.ts";
 import type { VerbContext } from "../core/types.ts";
-import { chainAddressesOf, readProfileRecord, writeProfileRecord } from "../core/profile-record.ts";
+import { chainAddressesOf, readProfileRecord, updateProfileRecord } from "../core/profile-record.ts";
 import { chainControllerList, controllerFor } from "../signer/select.ts";
 import { INTERFACE_IDS } from "./constants.ts";
 import { loadManifest } from "./lsp23.ts";
@@ -13,7 +13,7 @@ import { readControllerPermissions, resolveKeyManager, supportsInterface } from 
 import { hasCode } from "./read.ts";
 import { addressArg } from "./verbs-account.ts";
 
-/** --chains, else an explicit --chain, else the configured chains plus every chain the profile is known on. */
+/** --chains, else an explicit --chain, else the configured chains plus every chain the profile is known on (linked, deployed by this agent, found deployed by profile join). */
 async function chainsToCheck(ctx: VerbContext, a: Record<string, any>, identity: Address): Promise<number[]> {
   if (a.chains?.length) return [...new Set((a.chains as string[]).map((c) => ctx.registry.chain(c).chainId))];
   if (a.chain !== undefined && a.chain !== "") return [ctx.chainId(a.chain)];
@@ -23,6 +23,8 @@ async function chainsToCheck(ctx: VerbContext, a: Record<string, any>, identity:
     ...(cfg.chains?.length ? cfg.chains : cfg.defaultChain ? [cfg.defaultChain] : []),
     ...Object.keys(chainAddressesOf(record)).map(Number),
     ...((record.deployment?.chains as number[] | undefined) ?? []),
+    // chains where `profile join` found the profile deployed
+    ...(Array.isArray(record.joined?.chains) ? (record.joined.chains as { chainId?: unknown; deployed?: unknown }[]).filter((c) => c?.deployed === true).map((c) => Number(c.chainId)) : []),
   ].filter((c) => Number.isInteger(c) && c > 0);
   return [...new Set(known)];
 }
@@ -94,9 +96,12 @@ defineVerb({
       if (!previous) return { data: { profile: identity, chainId, linked: null, changed: false }, text: `Your profile ${identity} has no linked address on ${where}; it uses ${identity} there.` };
       await ctx.consent({ verb: "profile link", risk: "admin", chainId, summary: { effect: `stop using ${previous} as your profile on ${where}; use ${identity} there again`, profile: identity, chain: where, removedLink: previous } });
       if (ctx.flags.dryRun) return { data: { dryRun: true, profile: identity, chainId, removedLink: previous }, text: `DRY RUN: the link ${previous} on ${where} would be removed.` };
-      const next = { ...links };
-      delete next[String(chainId)];
-      await writeProfileRecord(ctx.home, identity, { chainAddresses: next });
+      // only this chain's entry changes, against the latest record (a concurrent link elsewhere is kept)
+      await updateProfileRecord(ctx.home, identity, (latest) => {
+        const next = { ...chainAddressesOf(latest) };
+        delete next[String(chainId)];
+        return { chainAddresses: next };
+      });
       return { data: { profile: identity, chainId, linked: null, removedLink: previous, changed: true }, text: `On ${where} your profile is ${identity} again (link to ${previous} removed).` };
     }
 
@@ -128,7 +133,7 @@ defineVerb({
     };
     await ctx.consent({ verb: "profile link", risk: "admin", chainId, summary, target: address });
     if (ctx.flags.dryRun) return { data: { dryRun: true, ...summary }, text: `DRY RUN: on ${where} your profile would be ${address}.`, warnings };
-    await writeProfileRecord(ctx.home, identity, { chainAddresses: { ...links, [String(chainId)]: address } });
+    await updateProfileRecord(ctx.home, identity, (latest) => ({ chainAddresses: { ...chainAddressesOf(latest), [String(chainId)]: address } }));
     return {
       data: { profile: identity, chainId, linked: address, previousLink: previous ?? null, keyManager: km.keyManager, agentKey: agentKey ?? null, agentIsController: agentIsController ?? null, changed: true },
       text: `On ${where} your Universal Profile ${identity} is now the contract ${address} (Key Manager ${km.keyManager}). The agent acts as ${address} there; every other chain keeps ${identity}.`,

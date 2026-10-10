@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source commit df886b4 with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source commit f10666a with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -172,6 +172,7 @@ var init_home = __esm({
 // src/core/policy.ts
 var policy_exports = {};
 __export(policy_exports, {
+  ALWAYS_HUMAN_VERBS: () => ALWAYS_HUMAN_VERBS,
   DEFAULT_POLICY: () => DEFAULT_POLICY,
   VALUE_MOVING_SELECTORS: () => VALUE_MOVING_SELECTORS,
   VALUE_MOVING_SIGNATURES: () => VALUE_MOVING_SIGNATURES,
@@ -273,7 +274,7 @@ var init_policy = __esm({
       "function setPreSignature(bytes,bool)"
     ];
     VALUE_MOVING_SELECTORS = new Set(VALUE_MOVING_SIGNATURES.map((s) => toFunctionSelector(s).toLowerCase()));
-    ALWAYS_HUMAN_VERBS = /* @__PURE__ */ new Set(["policy set"]);
+    ALWAYS_HUMAN_VERBS = /* @__PURE__ */ new Set(["policy set", "profile link"]);
     DEFAULT_POLICY = {
       version: 1,
       chains: ["*"],
@@ -5268,21 +5269,114 @@ var init_registry = __esm({
   }
 });
 
+// src/core/lock.ts
+import { writeFile as writeFile4, link as link2, readFile as readFile5, unlink, mkdir as mkdir2, stat as stat4, open as open2 } from "node:fs/promises";
+import { randomBytes as randomBytes6 } from "node:crypto";
+import { join as join7 } from "node:path";
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e?.code === "EPERM";
+  }
+}
+async function withLock(home, name, fn) {
+  const dir = join7(home, "locks");
+  await mkdir2(dir, { recursive: true, mode: 448 });
+  const file2 = join7(dir, `${name}.lock`);
+  const started = Date.now();
+  let delay = 50;
+  for (; ; ) {
+    const tmp = `${file2}.${process.pid}.${randomBytes6(4).toString("hex")}`;
+    await writeFile4(tmp, JSON.stringify({ pid: process.pid, at: Date.now() }), { mode: 384 });
+    try {
+      await link2(tmp, file2);
+      await unlink(tmp).catch(() => {
+      });
+      break;
+    } catch (e) {
+      await unlink(tmp).catch(() => {
+      });
+      if (["EPERM", "ENOTSUP", "ENOSYS", "EXDEV", "EOPNOTSUPP"].includes(e?.code)) {
+        try {
+          const fh = await open2(file2, "wx", 384);
+          await fh.writeFile(JSON.stringify({ pid: process.pid, at: Date.now() }));
+          await fh.close();
+          break;
+        } catch (e2) {
+          if (e2?.code !== "EEXIST") throw e2;
+        }
+      } else if (e?.code !== "EEXIST") throw e;
+    }
+    let stale = false;
+    try {
+      const info = JSON.parse(await readFile5(file2, "utf8"));
+      stale = !alive(info.pid) || Date.now() - info.at > STALE_MS;
+    } catch {
+      const st = await stat4(file2).catch(() => void 0);
+      stale = st ? Date.now() - st.mtimeMs > 3e4 : true;
+    }
+    if (stale) {
+      const again = await readFile5(file2, "utf8").catch(() => void 0);
+      const st = await stat4(file2).catch(() => void 0);
+      if (again !== void 0 && st && (() => {
+        try {
+          const i = JSON.parse(again);
+          return !alive(i.pid) || Date.now() - i.at > STALE_MS;
+        } catch {
+          return Date.now() - st.mtimeMs > 3e4;
+        }
+      })()) {
+        await unlink(file2).catch(() => {
+        });
+      }
+      continue;
+    }
+    if (Date.now() - started > WAIT_MS) throw new UpError("INTERNAL", `another up process is still sending (lock ${file2})`, { hint: "wait for it to finish, then retry" });
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay * 2, 1e3);
+  }
+  try {
+    return await fn();
+  } finally {
+    await unlink(file2).catch(() => {
+    });
+  }
+}
+var STALE_MS, WAIT_MS;
+var init_lock = __esm({
+  "src/core/lock.ts"() {
+    "use strict";
+    init_errors();
+    STALE_MS = Number(process.env.UP_LOCK_STALE_MS ?? 15 * 6e4);
+    WAIT_MS = Number(process.env.UP_LOCK_WAIT_MS ?? 10 * 6e4);
+  }
+});
+
 // src/core/profile-record.ts
 var profile_record_exports = {};
 __export(profile_record_exports, {
   chainAddressesOf: () => chainAddressesOf,
   profileAddressOn: () => profileAddressOn,
   readProfileRecord: () => readProfileRecord,
+  updateProfileRecord: () => updateProfileRecord,
   writeProfileRecord: () => writeProfileRecord
 });
 import { getAddress as getAddress10, isAddress as isAddress8 } from "./vendor-viem.mjs";
 async function readProfileRecord(home, profile) {
   return readJson(paths.profile(home, profile), {});
 }
+async function updateProfileRecord(home, profile, fn) {
+  return withLock(home, `profile-${getAddress10(profile).toLowerCase()}`, async () => {
+    const cur = await readProfileRecord(home, profile);
+    const next = { ...cur, address: getAddress10(profile), ...await fn(cur) };
+    await writeJson(paths.profile(home, profile), next);
+    return next;
+  });
+}
 async function writeProfileRecord(home, profile, patch) {
-  const cur = await readProfileRecord(home, profile);
-  await writeJson(paths.profile(home, profile), { ...cur, address: getAddress10(profile), ...patch });
+  await updateProfileRecord(home, profile, () => patch);
 }
 function chainAddressesOf(record) {
   const out = {};
@@ -5301,6 +5395,7 @@ var init_profile_record = __esm({
   "src/core/profile-record.ts"() {
     "use strict";
     init_home();
+    init_lock();
   }
 });
 
@@ -5686,11 +5781,10 @@ function formatProfileStatus(identity, statuses, defaultKey) {
   return lines.join("\n");
 }
 async function saveStatusSnapshot(home, identity, statuses) {
-  const prev = await readProfileRecord(home, identity);
   const checkedAt = (/* @__PURE__ */ new Date()).toISOString();
-  const chains = { ...prev.status?.chains ?? {} };
+  const fresh = {};
   for (const s of statuses) {
-    chains[String(s.chainId)] = {
+    fresh[String(s.chainId)] = {
       checkedAt,
       chain: s.chain,
       profile: s.profile,
@@ -5705,7 +5799,7 @@ async function saveStatusSnapshot(home, identity, statuses) {
       error: s.error
     };
   }
-  await writeProfileRecord(home, identity, { status: { checkedAt, chains } });
+  await updateProfileRecord(home, identity, (latest) => ({ status: { checkedAt, chains: { ...latest.status?.chains ?? {}, ...fresh } } }));
 }
 async function preflightProfileOnChain(ctx, chainId, profile, signer) {
   const l = chainLabel(ctx, chainId);
@@ -6102,8 +6196,8 @@ var media_exports = {};
 __export(media_exports, {
   writeMedia: () => writeMedia
 });
-import { randomBytes as randomBytes6 } from "node:crypto";
-import { join as join8 } from "node:path";
+import { randomBytes as randomBytes7 } from "node:crypto";
+import { join as join9 } from "node:path";
 function slug(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "image";
 }
@@ -6111,7 +6205,7 @@ async function writeMedia(home, nameHint, png, description) {
   const dir = paths.media(home);
   await ensureDir(dir, 448);
   const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "");
-  const file2 = join8(dir, `${slug(nameHint)}-${stamp}-${randomBytes6(4).toString("hex")}.png`);
+  const file2 = join9(dir, `${slug(nameHint)}-${stamp}-${randomBytes7(4).toString("hex")}.png`);
   await writeFileAtomic(file2, png, 384);
   return { path: file2, mimeType: "image/png", description };
 }
@@ -6364,7 +6458,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var COMMIT = true ? "df886b4" : "source";
+var COMMIT = true ? "f10666a" : "source";
 
 // src/core/assets.ts
 import { existsSync as existsSync2, readFileSync } from "node:fs";
@@ -8777,7 +8871,7 @@ init_auto();
 // src/exec/inputs.ts
 init_errors();
 import { readFileSync as readFileSync6, existsSync as existsSync11 } from "node:fs";
-import { join as join7 } from "node:path";
+import { join as join8 } from "node:path";
 import { encodeFunctionData as encodeFunctionData7, getAddress as getAddress16, isAddress as isAddress9, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
 init_transport();
 function parseValue(v) {
@@ -8818,7 +8912,7 @@ function loadAbi(spec) {
   }
   const base = s.replace(/\.json$/i, "");
   for (const dir of ["lsp", "reference", "deployed"]) {
-    const f = join7(assetsDir(), "abis", dir, `${base}.json`);
+    const f = join8(assetsDir(), "abis", dir, `${base}.json`);
     if (existsSync11(f)) {
       const j = JSON.parse(readFileSync6(f, "utf8"));
       return { abi: Array.isArray(j) ? j : j.abi, source: `bundled:${dir}/${base}` };
@@ -9161,7 +9255,7 @@ defineVerb({
 });
 
 // src/lsp/verbs-account.ts
-import { randomBytes as randomBytes7 } from "node:crypto";
+import { randomBytes as randomBytes8 } from "node:crypto";
 import { isAbsolute as isAbsolute2, resolve as resolve4 } from "node:path";
 import { getAddress as getAddress19, isAddress as isAddress11 } from "./vendor-viem.mjs";
 init_errors();
@@ -9320,7 +9414,11 @@ async function loadManifest(home, profile) {
   return r.deployment;
 }
 async function saveManifest(home, m) {
-  await writeProfileRecord(home, m.profile, { deployment: m });
+  await updateProfileRecord(home, m.profile, (latest) => {
+    const cur = latest.deployment;
+    if (!cur || cur.profile !== m.profile || cur.deployCalldata !== m.deployCalldata) return { deployment: m };
+    return { deployment: { ...m, chains: [.../* @__PURE__ */ new Set([...cur.chains ?? [], ...m.chains])], deployments: { ...cur.deployments ?? {}, ...m.deployments } } };
+  });
 }
 function verifyManifest(m) {
   const p = m.plan;
@@ -9415,6 +9513,7 @@ async function deployFromManifest(ctx, signer, m, chainId, verb = "account deplo
 }
 
 // src/lsp/verbs-account.ts
+init_profile_record();
 init_profile();
 init_controllers();
 init_constants();
@@ -9478,7 +9577,7 @@ defineVerb({
   async run(ctx, a) {
     const cfg = await ctx.config();
     const controller = a.controller ? addressArg2(a.controller, "controller") : await defaultControllerAddress(ctx);
-    const seed = a.seed ?? "0x" + randomBytes7(32).toString("hex");
+    const seed = a.seed ?? "0x" + randomBytes8(32).toString("hex");
     const salts = a.salt ? [a.salt] : candidateSalts(seed, a.count);
     const candidates = salts.map((salt, index) => {
       const plan = planDeployment(lsp23InputsFrom(a, controller, salt));
@@ -9890,8 +9989,7 @@ defineVerb({
       cfg.aliases = { ...cfg.aliases ?? {}, [a.alias]: profile };
     }
     await ctx.saveConfig(cfg);
-    const prev = await readProfileRecord(ctx.home, profile);
-    await writeProfileRecord(ctx.home, profile, { joined: { at: prev.joined?.at ?? (/* @__PURE__ */ new Date()).toISOString(), checkedAt: (/* @__PURE__ */ new Date()).toISOString(), controller: me, chains: statuses.map((s) => ({ chainId: s.chainId, authorised: s.authorised, deployed: s.deployed, controller: s.controller })) } });
+    await updateProfileRecord(ctx.home, profile, (latest) => ({ joined: { at: latest.joined?.at ?? (/* @__PURE__ */ new Date()).toISOString(), checkedAt: (/* @__PURE__ */ new Date()).toISOString(), controller: me, chains: statuses.map((s) => ({ chainId: s.chainId, authorised: s.authorised, deployed: s.deployed, controller: s.controller })) } }));
     const pending = statuses.filter((s) => s.deployed && !s.authorised);
     const otherKeys = [...new Set(pending.map((s) => s.controller).filter((c) => !!c && c !== me))];
     const label = (id) => onChain(chainLabel(ctx, id));
@@ -9945,7 +10043,9 @@ async function chainsToCheck(ctx, a, identity) {
   const known = [
     ...cfg.chains?.length ? cfg.chains : cfg.defaultChain ? [cfg.defaultChain] : [],
     ...Object.keys(chainAddressesOf(record)).map(Number),
-    ...record.deployment?.chains ?? []
+    ...record.deployment?.chains ?? [],
+    // chains where `profile join` found the profile deployed
+    ...Array.isArray(record.joined?.chains) ? record.joined.chains.filter((c) => c?.deployed === true).map((c) => Number(c.chainId)) : []
   ].filter((c) => Number.isInteger(c) && c > 0);
   return [...new Set(known)];
 }
@@ -10013,9 +10113,11 @@ defineVerb({
       if (!previous) return { data: { profile: identity, chainId, linked: null, changed: false }, text: `Your profile ${identity} has no linked address on ${where}; it uses ${identity} there.` };
       await ctx.consent({ verb: "profile link", risk: "admin", chainId, summary: { effect: `stop using ${previous} as your profile on ${where}; use ${identity} there again`, profile: identity, chain: where, removedLink: previous } });
       if (ctx.flags.dryRun) return { data: { dryRun: true, profile: identity, chainId, removedLink: previous }, text: `DRY RUN: the link ${previous} on ${where} would be removed.` };
-      const next = { ...links };
-      delete next[String(chainId)];
-      await writeProfileRecord(ctx.home, identity, { chainAddresses: next });
+      await updateProfileRecord(ctx.home, identity, (latest) => {
+        const next = { ...chainAddressesOf(latest) };
+        delete next[String(chainId)];
+        return { chainAddresses: next };
+      });
       return { data: { profile: identity, chainId, linked: null, removedLink: previous, changed: true }, text: `On ${where} your profile is ${identity} again (link to ${previous} removed).` };
     }
     if (a.address === void 0) throw new UpError("BAD_ARGS", "pass the profile's address on that chain (or --unlink)");
@@ -10046,7 +10148,7 @@ defineVerb({
     };
     await ctx.consent({ verb: "profile link", risk: "admin", chainId, summary, target: address });
     if (ctx.flags.dryRun) return { data: { dryRun: true, ...summary }, text: `DRY RUN: on ${where} your profile would be ${address}.`, warnings };
-    await writeProfileRecord(ctx.home, identity, { chainAddresses: { ...links, [String(chainId)]: address } });
+    await updateProfileRecord(ctx.home, identity, (latest) => ({ chainAddresses: { ...chainAddressesOf(latest), [String(chainId)]: address } }));
     return {
       data: { profile: identity, chainId, linked: address, previousLink: previous ?? null, keyManager: km.keyManager, agentKey: agentKey ?? null, agentIsController: agentIsController ?? null, changed: true },
       text: `On ${where} your Universal Profile ${identity} is now the contract ${address} (Key Manager ${km.keyManager}). The agent acts as ${address} there; every other chain keeps ${identity}.`,
@@ -10483,10 +10585,21 @@ function isBlindHashMessage(message) {
   if (/^0x[0-9a-fA-F]{64}$/.test(message.trim())) return true;
   return new TextEncoder().encode(message).length === 32;
 }
+function typedDataChainId(td) {
+  const raw = td.domain?.chainId;
+  if (raw === void 0 || raw === null || raw === "") return void 0;
+  let n;
+  try {
+    n = BigInt(typeof raw === "number" ? Math.trunc(raw) : String(raw));
+  } catch {
+    throw new UpError("BAD_ARGS", `typed-data domain.chainId ${JSON.stringify(raw)} is not a chain id`);
+  }
+  if (n <= 0n || n > BigInt(Number.MAX_SAFE_INTEGER) || typeof raw === "number" && !Number.isInteger(raw)) throw new UpError("BAD_ARGS", `typed-data domain.chainId ${String(raw)} is not a valid chain id`);
+  return Number(n);
+}
 async function signFlow(ctx, a, kind) {
   const as = a.as ?? "profile";
   await ctx.config();
-  const signer = await ctx.signer(as === "profile" || a.chain ? ctx.chainId(a.chain) : void 0);
   let hash;
   let td;
   let message;
@@ -10504,16 +10617,24 @@ async function signFlow(ctx, a, kind) {
       throw new UpError("BAD_ARGS", `invalid typed data: ${e.message}`);
     }
   }
-  let chainId;
+  const explicit = a.chain !== void 0 && a.chain !== "" ? ctx.chainId(a.chain) : void 0;
+  const domainChain = td ? typedDataChainId(td) : void 0;
+  if (domainChain !== void 0 && explicit !== void 0 && explicit !== domainChain) {
+    throw new UpError("BAD_ARGS", `the typed data is for chain ${domainChain} (domain.chainId) but --chain is ${explicit}: refusing to sign it with the key or as the profile of another chain`, {
+      hint: `run it with --chain ${domainChain} (or without --chain), or ask for typed data made for chain ${explicit}`
+    });
+  }
+  let chainId = domainChain ?? explicit;
+  if (as === "profile") chainId = ctx.chainId(chainId);
+  const signer = await ctx.signer(chainId);
   let profile;
   const warnings = td ? typedDataWarnings(td) : [];
   if (as === "profile") {
-    ({ chainId, profile } = await chainAndProfile(ctx, a));
+    profile = await ctx.profile(a.profile, chainId);
     const { controller: perms } = await preflightProfileOnChain(ctx, chainId, profile, signer.address);
     if (!hasPermission(perms.permissions.value, "SIGN")) {
       throw new UpError("NOT_AUTHORISED", `controller ${signer.address} lacks the SIGN permission on ${profile} (chain ${chainId}): the profile would reject the signature (ERC-1271)`, { hint: `ask the human to add SIGN on this chain: up controller edit ${signer.address} --add SIGN --chain ${chainId} (signing on other chains is unaffected)` });
     }
-    if (td?.domain && td.domain.chainId !== void 0 && Number(td.domain.chainId) !== chainId) warnings.push(`typed-data domain chainId ${td.domain.chainId} differs from the selected chain ${chainId}`);
   }
   const blind = kind === "message" && isBlindHashMessage(message);
   const valueMoving = kind === "typed-data";
@@ -12869,7 +12990,7 @@ init_error_abis();
 
 // src/abi/bundled.ts
 import { existsSync as existsSync13, readdirSync } from "node:fs";
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 init_errors();
 
 // src/abi/signature.ts
@@ -12924,9 +13045,9 @@ function deployedName(file2) {
 function bundledCatalog() {
   if (catalogCache) return catalogCache;
   const map = /* @__PURE__ */ new Map();
-  const dir = join9(assetsDir(), "abis");
+  const dir = join10(assetsDir(), "abis");
   for (const group of ["lsp", "reference", "deployed"]) {
-    const d = join9(dir, group);
+    const d = join10(dir, group);
     if (!existsSync13(d)) continue;
     for (const f of readdirSync(d).filter((x) => x.endsWith(".json")).sort()) {
       if (group === "deployed") {
@@ -17129,7 +17250,7 @@ EIP-681: ${eip681.content}` : ""}`,
 
 // src/knowledge/verbs.ts
 import { existsSync as existsSync15, readdirSync as readdirSync2, readFileSync as readFileSync9 } from "node:fs";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 init_errors();
 
 // src/knowledge/standards.ts
@@ -17179,7 +17300,7 @@ function findStandards(filter) {
 
 // src/knowledge/verbs.ts
 function referencesDir() {
-  return join10(skillDir(), "references");
+  return join11(skillDir(), "references");
 }
 function describe(text) {
   const lines = text.split(/\r?\n/);
@@ -17199,7 +17320,7 @@ function listDocTopics() {
   const dir = referencesDir();
   if (!existsSync15(dir)) return [];
   return readdirSync2(dir, { withFileTypes: true }).filter((d) => d.isFile() && d.name.endsWith(".md")).map((d) => {
-    const text = readFileSync9(join10(dir, d.name), "utf8");
+    const text = readFileSync9(join11(dir, d.name), "utf8");
     return { topic: d.name.slice(0, -3), file: `references/${d.name}`, ...describe(text), lines: text.split(/\r?\n/).length };
   }).sort((a, b) => a.topic.localeCompare(b.topic));
 }
@@ -17220,7 +17341,7 @@ function readDoc(rawTopic) {
       details: { topics: topics.map((d) => d.topic) }
     });
   }
-  return { doc, content: readFileSync9(join10(skillDir(), doc.file), "utf8") };
+  return { doc, content: readFileSync9(join11(skillDir(), doc.file), "utf8") };
 }
 defineVerb({
   name: "docs",
@@ -17309,84 +17430,8 @@ function parseArgv(argv) {
   return { words, options };
 }
 
-// src/core/lock.ts
-init_errors();
-import { writeFile as writeFile4, link as link2, readFile as readFile5, unlink, mkdir as mkdir2, stat as stat4, open as open2 } from "node:fs/promises";
-import { randomBytes as randomBytes8 } from "node:crypto";
-import { join as join11 } from "node:path";
-var STALE_MS = Number(process.env.UP_LOCK_STALE_MS ?? 15 * 6e4);
-var WAIT_MS = Number(process.env.UP_LOCK_WAIT_MS ?? 10 * 6e4);
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e?.code === "EPERM";
-  }
-}
-async function withLock(home, name, fn) {
-  const dir = join11(home, "locks");
-  await mkdir2(dir, { recursive: true, mode: 448 });
-  const file2 = join11(dir, `${name}.lock`);
-  const started = Date.now();
-  let delay = 50;
-  for (; ; ) {
-    const tmp = `${file2}.${process.pid}.${randomBytes8(4).toString("hex")}`;
-    await writeFile4(tmp, JSON.stringify({ pid: process.pid, at: Date.now() }), { mode: 384 });
-    try {
-      await link2(tmp, file2);
-      await unlink(tmp).catch(() => {
-      });
-      break;
-    } catch (e) {
-      await unlink(tmp).catch(() => {
-      });
-      if (["EPERM", "ENOTSUP", "ENOSYS", "EXDEV", "EOPNOTSUPP"].includes(e?.code)) {
-        try {
-          const fh = await open2(file2, "wx", 384);
-          await fh.writeFile(JSON.stringify({ pid: process.pid, at: Date.now() }));
-          await fh.close();
-          break;
-        } catch (e2) {
-          if (e2?.code !== "EEXIST") throw e2;
-        }
-      } else if (e?.code !== "EEXIST") throw e;
-    }
-    let stale = false;
-    try {
-      const info = JSON.parse(await readFile5(file2, "utf8"));
-      stale = !alive(info.pid) || Date.now() - info.at > STALE_MS;
-    } catch {
-      const st = await stat4(file2).catch(() => void 0);
-      stale = st ? Date.now() - st.mtimeMs > 3e4 : true;
-    }
-    if (stale) {
-      const again = await readFile5(file2, "utf8").catch(() => void 0);
-      const st = await stat4(file2).catch(() => void 0);
-      if (again !== void 0 && st && (() => {
-        try {
-          const i = JSON.parse(again);
-          return !alive(i.pid) || Date.now() - i.at > STALE_MS;
-        } catch {
-          return Date.now() - st.mtimeMs > 3e4;
-        }
-      })()) {
-        await unlink(file2).catch(() => {
-        });
-      }
-      continue;
-    }
-    if (Date.now() - started > WAIT_MS) throw new UpError("INTERNAL", `another up process is still sending (lock ${file2})`, { hint: "wait for it to finish, then retry" });
-    await new Promise((r) => setTimeout(r, delay));
-    delay = Math.min(delay * 2, 1e3);
-  }
-  try {
-    return await fn();
-  } finally {
-    await unlink(file2).catch(() => {
-    });
-  }
-}
+// src/cli/main.ts
+init_lock();
 
 // src/core/output.ts
 init_json();
@@ -17489,6 +17534,7 @@ async function runCli(argv) {
 import { createInterface } from "node:readline";
 import { readdirSync as readdirSync3, readFileSync as readFileSync10, existsSync as existsSync16 } from "node:fs";
 import { join as join12 } from "node:path";
+init_lock();
 init_errors();
 init_json();
 var PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];

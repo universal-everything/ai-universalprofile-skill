@@ -6,6 +6,7 @@ import { UpError } from "../../../src/core/errors.ts";
 import type { RpcManager } from "../../../src/core/types.ts";
 import { chainLabel, describeChainStatus, formatAmount, formatProfileStatus, nextStepsFor, onChain, readChainStatus, withChainContext, type ChainProfileStatus } from "../../../src/lsp/multichain.ts";
 import { writeProfileRecord } from "../../../src/core/profile-record.ts";
+import { typedDataChainId } from "../../../src/lsp/verbs-sign.ts";
 import { fakeCtx, fakeRpc, tmpHome } from "../abi/support/fake.ts";
 
 const P = getAddress("0x1111111111111111111111111111111111111111");
@@ -148,6 +149,19 @@ describe("readChainStatus: per-chain isolation", () => {
     const s = await readChainStatus(ctx, P, 8453);
     expect(s).toMatchObject({ profile: K2, linked: true });
     expect((await readChainStatus(ctx, P, 1)).profile).toBe(P); // invalid entries are ignored
+  });
+});
+
+describe("typedDataChainId: the chain EIP-712 typed data is bound to", () => {
+  const td = (chainId: unknown) => ({ domain: { name: "x", chainId }, types: {}, primaryType: "X", message: {} }) as any;
+  it("parses numbers, decimal and hex strings, bigints; absent = undefined; rejects garbage", () => {
+    expect(typedDataChainId(td(8453))).toBe(8453);
+    expect(typedDataChainId(td("8453"))).toBe(8453);
+    expect(typedDataChainId(td("0x2105"))).toBe(8453);
+    expect(typedDataChainId(td(42n))).toBe(42);
+    expect(typedDataChainId(td(undefined))).toBeUndefined();
+    expect(typedDataChainId({ types: {}, primaryType: "X", message: {} } as any)).toBeUndefined();
+    for (const bad of ["base", 0, -1, 1.5, "0x"]) expect(() => typedDataChainId(td(bad)), String(bad)).toThrow(/chain id/);
   });
 });
 

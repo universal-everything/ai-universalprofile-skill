@@ -73,8 +73,12 @@ export const VALUE_MOVING_SIGNATURES = [
 ] as const;
 export const VALUE_MOVING_SELECTORS: ReadonlySet<string> = new Set(VALUE_MOVING_SIGNATURES.map((s) => toFunctionSelector(s).toLowerCase()));
 
-/** Verbs that always need the human's own words, whatever the policy says. */
-const ALWAYS_HUMAN_VERBS = new Set(["policy set"]);
+/**
+ * Verbs that always need the human's own words, whatever the policy says (allowAdmin included):
+ * the policy itself, and which contract is "your profile" on a chain (profile link / unlink),
+ * because a wrong link would point the human's assets at someone else's contract.
+ */
+export const ALWAYS_HUMAN_VERBS: ReadonlySet<string> = new Set(["policy set", "profile link"]);
 
 export const DEFAULT_POLICY: DelegationPolicy = {
   version: 1,

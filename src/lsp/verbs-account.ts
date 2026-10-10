@@ -15,7 +15,8 @@ import { outcomeText, type ExecRequestExt } from "../exec/common.ts";
 import { PATH_PARAMS, chainAndProfile, controllerAddress, defaultControllerAddress, execOptions } from "../exec/verbs.ts";
 import { DATA_KEYS, extensionKey, parseArrayLength } from "./constants.ts";
 import { decodePermissions, encodePermissions, getPreset, toBytes32 } from "./permissions.ts";
-import { candidateSalts, computeOnChain, deployFromManifest, loadManifest, manifestFromPlan, planDeployment, readProfileRecord, verifyManifest, writeProfileRecord, DEFAULT_IMPL_VERSION, type Lsp23Inputs } from "./lsp23.ts";
+import { candidateSalts, computeOnChain, deployFromManifest, loadManifest, manifestFromPlan, planDeployment, verifyManifest, DEFAULT_IMPL_VERSION, type Lsp23Inputs } from "./lsp23.ts";
+import { updateProfileRecord } from "../core/profile-record.ts";
 import { getData, getDataBatch, readControllerPermissions, readControllers, readProfileInfo, resolveKeyManager, type ControllerInfo } from "./profile.ts";
 import { allowedKeyFor, classifyDataKey, decodeDataValue, encodeDataValue, resolveDataKey } from "./schemas.ts";
 import { recommend, setDataPayload, buildAddController, requireLockApproval, type RecommendationOptions } from "./controllers.ts";
@@ -560,8 +561,7 @@ defineVerb({
       cfg.aliases = { ...(cfg.aliases ?? {}), [a.alias]: profile };
     }
     await ctx.saveConfig(cfg);
-    const prev = await readProfileRecord(ctx.home, profile);
-    await writeProfileRecord(ctx.home, profile, { joined: { at: prev.joined?.at ?? new Date().toISOString(), checkedAt: new Date().toISOString(), controller: me, chains: statuses.map((s) => ({ chainId: s.chainId, authorised: s.authorised, deployed: s.deployed, controller: s.controller })) } });
+    await updateProfileRecord(ctx.home, profile, (latest) => ({ joined: { at: latest.joined?.at ?? new Date().toISOString(), checkedAt: new Date().toISOString(), controller: me, chains: statuses.map((s) => ({ chainId: s.chainId, authorised: s.authorised, deployed: s.deployed, controller: s.controller })) } }));
     const pending = statuses.filter((s) => s.deployed && !s.authorised);
     // chains where the agent signs with its own chain-specific key need that key authorised, not the default one
     const otherKeys = [...new Set(pending.map((s) => s.controller).filter((c): c is Address => !!c && c !== me))];
