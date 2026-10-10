@@ -71,9 +71,9 @@ describe("funding suggest", () => {
     expect(priceCalls).toBe(before);
   });
 
-  it("Ethereum mainnet gets a $2–$5 range; refill mode reports the balance with its dollar value", async () => {
+  it("Ethereum mainnet gets a $2–$10 range; refill mode reports the balance with its dollar value", async () => {
     const { starterUsd } = await import("../../src/chain/funding.ts");
-    expect(starterUsd(1)).toEqual({ min: 2, max: 5 });
+    expect(starterUsd(1)).toEqual({ min: 2, max: 10 });
     expect(starterUsd(42)).toEqual({ min: 1, max: 1 });
     const agent = testSigner(generatePrivateKey());
     const home = h.newHome();

@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 4b926b05443b (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 7fa4c40f2ee1 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -8366,9 +8366,12 @@ var init_transport = __esm({
 // src/chain/funding.ts
 var funding_exports = {};
 __export(funding_exports, {
+  ACTION_GAS: () => ACTION_GAS,
   PRICE_API: () => PRICE_API,
+  STARTER_ACTIONS: () => STARTER_ACTIONS,
   displaySymbol: () => displaySymbol,
   friendlyAmount: () => friendlyAmount,
+  howLong: () => howLong,
   priceIdFor: () => priceIdFor,
   priceUsd: () => priceUsd,
   starterUsd: () => starterUsd
@@ -8416,8 +8419,18 @@ function friendlyAmount(wei) {
   const up = Math.ceil(n / step - 1e-9) * step;
   return up >= 1 ? String(Number(up.toPrecision(2))) : up.toFixed(Math.max(0, 1 - mag));
 }
-function starterUsd(chainId) {
-  return chainId === 1 ? { min: 2, max: 5 } : { min: 1, max: 1 };
+function starterUsd(chainId, needUsd) {
+  const step = (x) => USD_STEPS.find((s) => s >= x) ?? Math.ceil(x);
+  const base = needUsd !== void 0 && Number.isFinite(needUsd) ? step(needUsd) : 1;
+  if (chainId === 1) return { min: Math.max(2, base), max: Math.max(10, base) };
+  return { min: base, max: base };
+}
+function howLong(actions) {
+  if (!Number.isFinite(actions) || actions >= 1e3) return "that's enough for a very long time of normal activity (likely a year or more)";
+  if (actions >= 200) return `that's enough for hundreds of actions, so it lasts a good while`;
+  if (actions >= 20) return `that's enough for roughly ${Math.floor(actions / 10) * 10} actions afterwards`;
+  if (actions >= 3) return `that's only enough for a few actions afterwards (about ${Math.floor(actions)}), because gas is expensive here`;
+  return "that leaves very little for actions afterwards, because gas is expensive here";
 }
 function usdToWei(usd, priceUsd2) {
   return parseEther((usd / priceUsd2).toFixed(18));
@@ -8434,7 +8447,7 @@ async function deploymentCostWei(ctx, chainId, from) {
     return void 0;
   }
 }
-var PRICE_API, PRICE_TTL_MS;
+var PRICE_API, PRICE_TTL_MS, ACTION_GAS, STARTER_ACTIONS, USD_STEPS;
 var init_funding = __esm({
   "src/chain/funding.ts"() {
     "use strict";
@@ -8445,6 +8458,9 @@ var init_funding = __esm({
     init_tx();
     PRICE_API = "https://api.coingecko.com/api/v3/simple/price";
     PRICE_TTL_MS = 10 * 6e4;
+    ACTION_GAS = 150000n;
+    STARTER_ACTIONS = 20;
+    USD_STEPS = [1, 2, 5, 10, 20, 50];
     defineVerb({
       name: "funding suggest",
       group: "chains",
@@ -8461,15 +8477,21 @@ var init_funding = __esm({
         const chain = ctx.registry.chain(chainId);
         const address = a.address ? a.address : (await ctx.signer(chainId)).address;
         const symbol = displaySymbol(chain.nativeSymbol);
-        const [price, deployCost, balanceHex] = await Promise.all([
+        const [price, deployCost, balanceHex, gasPriceHex] = await Promise.all([
           chain.testnet ? Promise.resolve(void 0) : priceUsd(ctx, chain.nativeSymbol),
           // test coins have no price
           deploymentCostWei(ctx, chainId, address),
-          ctx.rpc.request(chainId, "eth_getBalance", [address, "latest"])
+          ctx.rpc.request(chainId, "eth_getBalance", [address, "latest"]),
+          ctx.rpc.request(chainId, "eth_gasPrice", []).catch(() => void 0)
         ]);
+        const gasPrice = gasPriceHex ? BigInt(gasPriceHex) : void 0;
+        const weiToUsd = (wei) => price ? Number(formatEther3(wei)) * price : void 0;
+        const actionUsd = gasPrice !== void 0 ? weiToUsd(gasPrice * ACTION_GAS) : void 0;
+        const deployUsd = deployCost !== void 0 ? weiToUsd(deployCost) : void 0;
+        const needUsd = actionUsd !== void 0 && deployUsd !== void 0 ? deployUsd * 1.5 + actionUsd * STARTER_ACTIONS : void 0;
         const floor = deployCost ? deployCost * 3n / 2n : 0n;
         const max = (x, y) => x > y ? x : y;
-        const tier = starterUsd(chainId);
+        const tier = starterUsd(chainId, needUsd);
         const starterMinWei = price ? max(usdToWei(tier.min, price), floor) : floor * 2n;
         const starterWei = price ? max(usdToWei(tier.max, price), floor) : floor * 2n;
         const moreWei = price ? max(usdToWei(10, price), starterWei * 2n) : starterWei * 10n;
@@ -8486,6 +8508,7 @@ var init_funding = __esm({
           deploymentCost: deployCost ? formatEther3(deployCost) : void 0,
           balance: formatEther3(balanceWei),
           balanceUsd: usdOf(balanceWei),
+          actionUsd: actionUsd !== void 0 ? Math.round(actionUsd * 1e4) / 1e4 : void 0,
           // setup: below the suggested start budget; refill: below half of it (a few actions left)
           low: purpose === "refill" ? balanceWei < starterMinWei / 2n : balanceWei < starterMinWei,
           starter: {
@@ -8504,7 +8527,7 @@ var init_funding = __esm({
           `For a bigger buffer, about ${s.more.amount} ${symbol}${usd(s.more.usd)}.`
         ].join(" ") : [
           `Please send ${ask}${test} on ${chain.name} to my address ${address} (QR attached).`,
-          `That covers creating the profile and leaves gas so I can keep acting for you afterwards without running out right away.`,
+          `That covers creating the profile, and ${actionUsd !== void 0 && actionUsd > 0 ? howLong(((price ? tier.min : 0) - (deployUsd ?? 0)) / actionUsd) : "leaves gas so I can keep acting for you afterwards without running out right away"}.`,
           `If you'd like me to do more right away, send about ${s.more.amount} ${symbol}${usd(s.more.usd)} instead.`,
           "This is my own gas money: with it I do everything myself, so you never have to sign anything."
         ].join(" ");
@@ -9061,7 +9084,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "4b926b05443b" : "source";
+var SOURCE = true ? "7fa4c40f2ee1" : "source";
 
 // src/chain/discovery.ts
 init_assets();

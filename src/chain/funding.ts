@@ -63,10 +63,32 @@ export function friendlyAmount(wei: bigint): string {
   return up >= 1 ? String(Number(up.toPrecision(2))) : up.toFixed(Math.max(0, 1 - mag));
 }
 
-/** Suggested starter budget in dollars per network: $1 on cheap networks; Ethereum mainnet gas is pricier,
- *  so $2–$5 there so the agent can still act after creating the profile. */
-export function starterUsd(chainId: number): { min: number; max: number } {
-  return chainId === 1 ? { min: 2, max: 5 } : { min: 1, max: 1 };
+/** Gas of one typical profile action (an execute through the Key Manager, e.g. a token transfer). */
+export const ACTION_GAS = 150_000n;
+/** How many actions the starter budget should cover besides creating the profile. */
+export const STARTER_ACTIONS = 20;
+const USD_STEPS = [1, 2, 5, 10, 20, 50];
+
+/**
+ * Starter budget in dollars. Gas costs differ hugely per network: on LUKSO and most L2s $1 creates the
+ * profile and covers a very long time of activity; Ethereum mainnet is expensive ($2–$10 for a few
+ * actions). Picks the smallest step from $1/$2/$5/$10/… that covers the deployment plus STARTER_ACTIONS
+ * actions at the current gas price; Ethereum mainnet is always at least a $2–$10 range.
+ */
+export function starterUsd(chainId: number, needUsd?: number): { min: number; max: number } {
+  const step = (x: number) => USD_STEPS.find((s) => s >= x) ?? Math.ceil(x);
+  const base = needUsd !== undefined && Number.isFinite(needUsd) ? step(needUsd) : 1;
+  if (chainId === 1) return { min: Math.max(2, base), max: Math.max(10, base) };
+  return { min: base, max: base };
+}
+
+/** Plain words for how far an amount goes, from the number of typical actions it pays for. */
+export function howLong(actions: number): string {
+  if (!Number.isFinite(actions) || actions >= 1000) return "that's enough for a very long time of normal activity (likely a year or more)";
+  if (actions >= 200) return `that's enough for hundreds of actions, so it lasts a good while`;
+  if (actions >= 20) return `that's enough for roughly ${Math.floor(actions / 10) * 10} actions afterwards`;
+  if (actions >= 3) return `that's only enough for a few actions afterwards (about ${Math.floor(actions)}), because gas is expensive here`;
+  return "that leaves very little for actions afterwards, because gas is expensive here";
 }
 
 function usdToWei(usd: number, priceUsd: number): bigint {
@@ -96,6 +118,8 @@ export interface FundingSuggestion {
   deploymentCost?: string;
   balance: string;
   balanceUsd?: number;
+  /** Rough dollar cost of one typical profile action at the current gas price. */
+  actionUsd?: number;
   /** True when the balance is below what the setup suggestion asks for (refill: below a few actions). */
   low: boolean;
   starter: { amount: string; usd?: number; range?: { min: string; max: string; usdMin: number; usdMax: number } };
@@ -119,14 +143,20 @@ defineVerb({
     const chain = ctx.registry.chain(chainId);
     const address = (a.address ? a.address : (await ctx.signer(chainId)).address) as Address;
     const symbol = displaySymbol(chain.nativeSymbol);
-    const [price, deployCost, balanceHex] = await Promise.all([
+    const [price, deployCost, balanceHex, gasPriceHex] = await Promise.all([
       chain.testnet ? Promise.resolve(undefined) : priceUsd(ctx, chain.nativeSymbol), // test coins have no price
       deploymentCostWei(ctx, chainId, address),
       ctx.rpc.request<Hex>(chainId, "eth_getBalance", [address, "latest"]),
+      ctx.rpc.request<Hex>(chainId, "eth_gasPrice", []).catch(() => undefined),
     ]);
+    const gasPrice = gasPriceHex ? BigInt(gasPriceHex) : undefined;
+    const weiToUsd = (wei: bigint) => (price ? Number(formatEther(wei)) * price : undefined);
+    const actionUsd = gasPrice !== undefined ? weiToUsd(gasPrice * ACTION_GAS) : undefined;
+    const deployUsd = deployCost !== undefined ? weiToUsd(deployCost) : undefined;
+    const needUsd = actionUsd !== undefined && deployUsd !== undefined ? deployUsd * 1.5 + actionUsd * STARTER_ACTIONS : undefined;
     const floor = deployCost ? (deployCost * 3n) / 2n : 0n; // the deployment with a 50% margin
     const max = (x: bigint, y: bigint) => (x > y ? x : y);
-    const tier = starterUsd(chainId);
+    const tier = starterUsd(chainId, needUsd);
     const starterMinWei = price ? max(usdToWei(tier.min, price), floor) : floor * 2n;
     const starterWei = price ? max(usdToWei(tier.max, price), floor) : floor * 2n; // the amount to ask for (top of the range)
     const moreWei = price ? max(usdToWei(10, price), starterWei * 2n) : starterWei * 10n;
@@ -143,6 +173,7 @@ defineVerb({
       deploymentCost: deployCost ? formatEther(deployCost) : undefined,
       balance: formatEther(balanceWei),
       balanceUsd: usdOf(balanceWei),
+      actionUsd: actionUsd !== undefined ? Math.round(actionUsd * 10000) / 10000 : undefined,
       // setup: below the suggested start budget; refill: below half of it (a few actions left)
       low: purpose === "refill" ? balanceWei < starterMinWei / 2n : balanceWei < starterMinWei,
       starter: {
@@ -168,7 +199,7 @@ defineVerb({
           ].join(" ")
         : [
             `Please send ${ask}${test} on ${chain.name} to my address ${address} (QR attached).`,
-            `That covers creating the profile and leaves gas so I can keep acting for you afterwards without running out right away.`,
+            `That covers creating the profile, and ${actionUsd !== undefined && actionUsd > 0 ? howLong(((price ? tier.min : 0) - (deployUsd ?? 0)) / actionUsd) : "leaves gas so I can keep acting for you afterwards without running out right away"}.`,
             `If you'd like me to do more right away, send about ${s.more.amount} ${symbol}${usd(s.more.usd)} instead.`,
             "This is my own gas money: with it I do everything myself, so you never have to sign anything.",
           ].join(" ");
