@@ -2,10 +2,11 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+const join_ = join;
 import { getVerb, mcpToolName } from "../../../src/core/verbs.ts";
 import { UNIVERSAL_RELAYER_CHAINS, UNIVERSAL_RELAYER_WEBSITE, onboardingPaths, onboardingText } from "../../../src/knowledge/onboarding.ts";
 import "../../../src/knowledge/onboarding.ts";
-import { testContext } from "../../support/context.ts";
+import { testContext, testSigner } from "../../support/context.ts";
 import type { VerbContext } from "../../../src/core/types.ts";
 
 let ctx: VerbContext;
@@ -63,5 +64,18 @@ describe("onboarding options", () => {
     expect(r.text).toMatch(/1\. Create my own account/);
     expect(r.text).toMatch(/2\. Create it with the Universal Relayer/);
     expect(r.text).toMatch(/3\. Use a Universal Profile you already have/);
+  });
+});
+
+describe("onboarding on a fresh setup", () => {
+  it("profile join without configured networks asks for them instead of checking stale ones", async () => {
+    await import("../../../src/lsp/verbs.ts");
+    const join = getVerb("profile join")!;
+    const fresh = testContext(mkdtempSync(join_(tmpdir(), "up-onboarding-fresh-")), testSigner());
+    await expect(join.run(fresh, { address: "0x0000000000000000000000000000000000000001" })).rejects.toMatchObject({
+      code: "BAD_ARGS",
+      message: "no chain selected",
+      hint: expect.stringMatching(/up config set chains/),
+    });
   });
 });
