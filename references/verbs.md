@@ -250,6 +250,7 @@ J1: the agent's controller becomes the main controller with agent-owner permissi
 | `--preset` | string (agent-owner\|agent-operator\|agent-reader\|human-admin) |  | Permission preset for the initial controller (default agent-owner = ALL_PERMISSIONS). |
 | `--permissions` | string[] |  | Explicit permission names instead of a preset. |
 | `--bits` | string |  | Explicit bytes32 permission value instead of a preset. |
+| `--admin` | string |  | The human's own wallet address as a full co-controller (human-admin) from the start. The agent still deploys and pays; the human signs nothing. Part of the address derivation: pass it to precompute and deploy alike. |
 | `--lsp3` | string |  | Optional encoded LSP3Profile VerifiableURI value set at deployment (changes the address). |
 | `--implementation-version` | string |  | UP/KM/URD implementation version. Default: `"0.14.0"`. |
 
@@ -340,6 +341,7 @@ Candidates differ only by salt: salt_i = keccak256(abi.encodePacked(seed, i)). K
 | `--preset` | string (agent-owner\|agent-operator\|agent-reader\|human-admin) |  | Permission preset for the initial controller (default agent-owner = ALL_PERMISSIONS). |
 | `--permissions` | string[] |  | Explicit permission names instead of a preset. |
 | `--bits` | string |  | Explicit bytes32 permission value instead of a preset. |
+| `--admin` | string |  | The human's own wallet address as a full co-controller (human-admin) from the start. The agent still deploys and pays; the human signs nothing. Part of the address derivation: pass it to precompute and deploy alike. |
 | `--lsp3` | string |  | Optional encoded LSP3Profile VerifiableURI value set at deployment (changes the address). |
 | `--implementation-version` | string |  | UP/KM/URD implementation version. Default: `"0.14.0"`. |
 

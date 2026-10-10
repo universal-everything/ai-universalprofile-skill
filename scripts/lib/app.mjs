@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 9de35b409b75 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint fcb9d8515076 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -8406,7 +8406,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "9de35b409b75" : "source";
+var SOURCE = true ? "fcb9d8515076" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -12171,13 +12171,17 @@ function permissionValueFrom(a, required = true) {
 function lsp23InputsFrom(a, controller, salt) {
   const p = permissionValueFrom({ ...a, preset: a.preset ?? (a.permissions || a.bits !== void 0 ? void 0 : "agent-owner") });
   if (a.lsp3 !== void 0 && !/^0x([0-9a-fA-F]{2})*$/.test(a.lsp3)) throw new UpError("BAD_ARGS", "--lsp3 must be the encoded VerifiableURI hex value");
-  return { salt, controller, permissions: toBytes32(p.value), preset: p.preset, lsp3: a.lsp3, implementationVersion: a["implementation-version"] ?? DEFAULT_IMPL_VERSION };
+  const admin = a.admin ? addressArg2(a.admin, "admin") : void 0;
+  if (admin && admin === controller) throw new UpError("BAD_ARGS", "--admin is already the initial controller");
+  const extraControllers = admin ? [{ address: admin, permissions: toBytes32(getPreset("human-admin").permissions) }] : void 0;
+  return { salt, controller, permissions: toBytes32(p.value), preset: p.preset, lsp3: a.lsp3, implementationVersion: a["implementation-version"] ?? DEFAULT_IMPL_VERSION, ...extraControllers ? { extraControllers } : {} };
 }
 var LSP23_PARAMS = [
   { name: "controller", type: "string", description: "Initial controller (default: this agent's controller address). Part of the address derivation." },
   { name: "preset", type: "string", description: "Permission preset for the initial controller (default agent-owner = ALL_PERMISSIONS).", enum: ["agent-owner", "agent-operator", "agent-reader", "human-admin"] },
   { name: "permissions", type: "string[]", description: "Explicit permission names instead of a preset." },
   { name: "bits", type: "string", description: "Explicit bytes32 permission value instead of a preset." },
+  { name: "admin", type: "string", description: "The human's own wallet address as a full co-controller (human-admin) from the start. The agent still deploys and pays; the human signs nothing. Part of the address derivation: pass it to precompute and deploy alike." },
   { name: "lsp3", type: "string", description: "Optional encoded LSP3Profile VerifiableURI value set at deployment (changes the address)." },
   { name: "implementation-version", type: "string", description: "UP/KM/URD implementation version.", default: DEFAULT_IMPL_VERSION }
 ];
@@ -12313,7 +12317,7 @@ defineVerb({
         cfg.defaultProfile = m.profile;
         await ctx.saveConfig(cfg);
       }
-      if (getAddress24(m.controller) === signer.address) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
+      if (getAddress24(m.controller) === signer.address && !(m.extraControllers ?? []).length) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
     }
     const next = out.status === "deployed" && chainId === metadataHooks().defaultChainId && !m.lsp3 ? ["ask the human whether they want a profile name, description, profile picture and background image (all optional, can be done later): up profile metadata set --dry-run, then with their approval"] : void 0;
     return {
