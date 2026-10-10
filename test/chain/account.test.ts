@@ -43,7 +43,16 @@ describe("J1: precompute → deploy → verify", () => {
     expect(r.data.controller).toBe(signer.address);
     expect(r.data.preset).toBe("agent-owner");
     expect(r.data.onChainCrossCheck.matches).toBe(true);
-    expect(r.text).toMatch(/up identicon/);
+    // One labelled picture and a plain explanation, numbered 1..n (choice n = candidate n-1).
+    const media = (r as any).media;
+    expect(media).toHaveLength(1);
+    expect(media[0].description).toContain(`4 = ${r.data.candidates[3].profile}`);
+    expect(r.data.choices.map((c: any) => [c.choice, c.candidate, c.address])).toEqual(r.data.candidates.map((c: any, i: number) => [i + 1, i, c.profile]));
+    expect(r.data.say).toMatch(/^My profile needs an address\. It's permanent and the same on every network\./);
+    expect(r.data.say).toContain(`1. ${r.data.candidates[0].profile}`);
+    expect(r.data.say).toMatch(/The picture shows each address's pattern, with its number underneath\./);
+    expect(r.data.say).not.toMatch(/\bup |salt|seed|identicon|candidate/i);
+    expect(r.data.next[0]).toMatch(/text first, then the picture/);
     seed = r.data.seed;
     const again = await run(ctx, "account precompute", { count: 4, seed });
     expect(again.data.candidates).toEqual(r.data.candidates);

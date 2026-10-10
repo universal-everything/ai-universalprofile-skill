@@ -92,7 +92,7 @@ defineVerb({
   group: "account",
   summary: "Compute candidate Universal Profile addresses (LSP23, same address on every chain for identical inputs) — nothing is sent.",
   description:
-    "Candidates differ only by salt: salt_i = keccak256(abi.encodePacked(seed, i)). Keep the seed to reproduce the list. Show each candidate to the human with: up identicon <address> (and up qr <address>). Then deploy the chosen one with: up account deploy --seed <seed> --candidate <i> --chain <id>.",
+    "Candidates differ only by salt: salt_i = keccak256(abi.encodePacked(seed, i)). Keep the seed to reproduce the list. Tell the human `data.say` (plain words, numbered choices 1..n) together with the one labelled picture in `media` (every identicon with its number and short address). The human's choice n is candidate n-1: up account deploy --seed <seed> --candidate <n-1> --chain <id>.",
   risk: "read",
   params: [
     { name: "count", type: "integer", description: "Number of candidates (1..100).", default: 5 },
@@ -127,18 +127,31 @@ defineVerb({
       }
     }
     const d = decodePermissions(firstInputs.permissions);
-    // Identicons (blockies, the algorithm LUKSO apps use) so the human can pick visually.
+    // The human picks by number: choice n is candidate n-1. One labelled picture shows every
+    // identicon (blockies, the algorithm LUKSO apps use) with its number and short address.
+    const shown = candidates.slice(0, 10);
+    const { shortAddress } = await import("../display/sheet.ts");
+    const choices = shown.map((c) => ({ choice: c.index + 1, candidate: c.index, address: c.profile, short: shortAddress(c.profile) }));
     const media: MediaFile[] = [];
     try {
-      const { blockiePng, blockieText } = await import("../display/blockies.ts");
+      const { blockieText } = await import("../display/blockies.ts");
+      const { candidateSheetPng } = await import("../display/sheet.ts");
       const { writeMedia } = await import("../display/media.ts");
-      for (const c of candidates.slice(0, 10)) {
-        media.push(await writeMedia(ctx.home, `candidate-${c.index}-${c.profile.slice(2, 10)}`, blockiePng(c.profile), `identicon of candidate [${c.index}] ${c.profile}`));
-        (c as any).identiconText = blockieText(c.profile);
-      }
+      media.push(await writeMedia(ctx.home, `address-choices-${shown[0].profile.slice(2, 10)}`, candidateSheetPng(choices.map((c) => ({ label: String(c.choice), address: c.address }))), `profile address choices: ${choices.map((c) => `${c.choice} = ${c.address}`).join(", ")}`));
+      for (const c of shown) (c as any).identiconText = blockieText(c.profile);
     } catch (e) {
       warnings.push(`identicons not rendered: ${(e as Error).message}`);
     }
+    const say = choices.length === 1
+      ? `This will be my profile's address: ${choices[0].address}. It stays the same on every network.`
+      : [
+          `My profile needs an address. It's permanent and the same on every network. I've prepared ${choices.length} options to choose from:`,
+          "",
+          ...choices.map((c) => `${c.choice}. ${c.address}`),
+          "",
+          (media.length ? "The picture shows each address's pattern, with its number underneath. Apps show that pattern next to an address so it's easy to recognise at a glance. " : "") +
+            "Which number do you like? It's only a matter of taste, everything else is identical. If you don't mind, I'll take number 1. You can still add a real profile picture later.",
+        ].join("\n");
     return {
       media,
       data: {
@@ -150,15 +163,20 @@ defineVerb({
         factory: first.factory,
         postDeploymentModule: first.postDeploymentModule,
         candidates,
+        choices,
+        say,
         onChainCrossCheck: onChain,
         reproduce: a.salt ? undefined : `up account precompute --seed ${seed} --count ${a.count} --controller ${controller}${a.preset ? ` --preset ${a.preset}` : ""}`,
-        next: ["show each candidate: up identicon <address>  (and up qr <address>)", `deploy the chosen one: up account deploy --seed ${seed} --candidate <index> --chain <id>   (or --salt <salt>)`],
+        next: [
+          "Tell the human `say` and attach the one picture in `media` in the same message (text first, then the picture). Never send separate unlabelled identicons and never send a picture without its explanation.",
+          `The human answers with a choice number n: deploy candidate n-1, i.e. up account deploy --seed ${seed} --candidate <n-1> --chain <id>   (or --salt <salt>)`,
+        ],
       },
       text: [
         `${candidates.length} candidate profile address(es) for controller ${controller} (same on every chain with these inputs):`,
-        ...candidates.map((c) => `  [${c.index}] ${c.profile}   salt ${c.salt}`),
+        ...candidates.map((c) => `  choice ${c.index + 1} = candidate [${c.index}] ${c.profile}   salt ${c.salt}`),
         a.salt ? "" : `seed (keep it to reproduce): ${seed}`,
-        "Show them with: up identicon <address>",
+        "Tell the human data.say with the attached picture.",
       ].filter(Boolean).join("\n"),
       warnings,
     };

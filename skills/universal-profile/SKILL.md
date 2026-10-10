@@ -176,7 +176,7 @@ Verb names below are exact; check arguments with `up <verb> --help`.
 | "Do X on <chain>" | `up profile status --chain <id>`, fix what is missing (see "Acting on a chain"), then the verb with `--chain <id>` |
 | "Fund my agent" / gas | `up key address --chain <id>` (the key used on that chain), then `up display address <key> --chain <id>` (or `up qr`); say it pays gas for direct execution and deployment, not the profile's balance |
 | "Set yourself up" / first contact | `up onboarding options` (show the three choices), then the chosen journey |
-| "Create your own profile" (J1) | `up account precompute`, `up identicon`, `up account deploy`, `up account info`, `up account manifest show`; on another chain later: `up account deploy --chain <id>` (same address) |
+| "Create your own profile" (J1) | `up account precompute` (send its `say` with its one labelled picture), `up account deploy`, `up account info`, `up account manifest show`; on another chain later: `up account deploy --chain <id>` (same address) |
 | "Join my profile" (J2) | `up profile join <address>`, `up permissions recommend`, after the human grants it: `up permissions show <controller>`, `up relayer quota` |
 | "Show my balances / assets" | `up token balance`, `up token list` |
 | "Send LYX/ETH" | `up exec send` with `--to` and `--value` (`--dry-run` first) |
