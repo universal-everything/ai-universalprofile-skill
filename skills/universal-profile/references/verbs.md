@@ -327,7 +327,7 @@ Show the deployment manifest of a profile (factory, implementations, salt, init 
 
 Compute candidate Universal Profile addresses (LSP23, same address on every chain for identical inputs) — nothing is sent.
 
-Candidates differ only by salt: salt_i = keccak256(abi.encodePacked(seed, i)). Keep the seed to reproduce the list. Show each candidate to the human with: up identicon <address> (and up qr <address>). Then deploy the chosen one with: up account deploy --seed <seed> --candidate <i> --chain <id>.
+Candidates differ only by salt: salt_i = keccak256(abi.encodePacked(seed, i)). Keep the seed to reproduce the list. Tell the human `data.say` (plain words, numbered choices 1..n) together with the one labelled picture in `media` (every identicon with its number and short address). The human's choice n is candidate n-1: up account deploy --seed <seed> --candidate <n-1> --chain <id>.
 
 - CLI: `up account precompute [options]`
 - MCP tool: `up_account_precompute` · risk: **read**
