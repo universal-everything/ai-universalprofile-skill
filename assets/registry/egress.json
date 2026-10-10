@@ -1,5 +1,5 @@
 {
-  "note": "HTTPS hosts the Universal Profile skill may contact, by category, for egress allowlists (Meta Muse Sentinel, OpenClaw egress proxy, corporate proxies). Generated from assets/registry/{rpcs,chains,sources,protocols}.json. Only HTTPS (port 443) is used; nothing is contacted at install time. Hosts you add yourself (chains rpc set, relayer add, bundler set) are not listed. Approve per category: rpc + explorers for the chains you use are enough for everyday operation.",
+  "note": "HTTPS hosts the Universal Profile skill may contact, by category, for egress allowlists (Meta Muse Sentinel, OpenClaw egress proxy, corporate proxies). Generated from assets/registry/{rpcs,chains,sources,protocols}.json, plus the hand-maintained profileMetadata category. Only HTTPS (port 443) is used; nothing is contacted at install time. Hosts you add yourself (chains rpc set, relayer add, bundler set) are not listed. Approve per category: rpc + explorers for the chains you use are enough for everyday operation.",
   "generatedFrom": [
     "assets/registry/rpcs.json",
     "assets/registry/chains.json",
@@ -526,6 +526,16 @@
         "envio.lukso-testnet.universal.tech"
       ]
     },
+    "profileMetadata": {
+      "purpose": "Profile metadata (LSP3): IPFS uploads of profile images and the metadata JSON (Universal Profile IPFS API by default; Pinata when chosen), the IPFS gateway used to read and verify IPFS content (also token metadata), and profile.link to resolve the profile URL. Maintained by hand (not generated from the registry). A Kubo node you configure is not listed.",
+      "when": "profile metadata show/set, profile url, profile join (metadata check), token metadata --fetch-json",
+      "hosts": [
+        "api.pinata.cloud",
+        "api.universalprofile.cloud",
+        "profile.link",
+        "t.profile.link"
+      ]
+    },
     "protocolApis": {
       "purpose": "Optional third-party APIs the agent may call for quotes or orders (knowledge in references/protocols.md; the skill has no per-protocol code).",
       "when": "only when the user asks for a swap/bridge quote through that service",
@@ -544,5 +554,5 @@
       ]
     }
   },
-  "totalHosts": 481
+  "totalHosts": 484
 }

@@ -25,7 +25,7 @@ Most "crypto skills" for AI agents hand the agent a raw private key. Whoever hol
 
 **⛽ Gas can be someone else's problem.** Besides normal transactions, the agent can send *signed relay calls* ([LSP25](https://github.com/lukso-network/LIPs/blob/main/LSPs/LSP-25-ExecuteRelayCall.md)) through any relayer that speaks the [LSP15](https://github.com/lukso-network/LIPs/blob/main/LSPs/LSP-15-TransactionRelayServiceAPI.md) API, so a relayer pays the gas. [ERC-4337](https://eips.ethereum.org/EIPS/eip-4337) UserOperations are available too, if you switch them on.
 
-**🌍 One identity across many chains.** The Universal Profiles (ERC725Account) base and factory contracts are deployed on 73 networks, including LUKSO, Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Avalanche. A Universal Profile is one account that can be deployed on any of them, usually at the same address, because profiles are deployed deterministically. On each chain it has its own deployment, balances, controllers and permissions, and nothing moves between chains without an explicit bridge. `up profile status` shows the whole picture at once (where the profile is deployed, whether the agent may act there, gas and relayer), every action checks the target chain first and says exactly what is missing there, and the agent can even use a separate key on some chains.
+**🌍 One identity across many chains.** The LUKSO contracts are deployed on 73 networks, including LUKSO, Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Avalanche. A Universal Profile is one account that can be deployed on any of them, usually at the same address, because profiles are deployed deterministically. On each chain it has its own deployment, balances, controllers and permissions, and nothing moves between chains without an explicit bridge. `up profile status` shows the whole picture at once (where the profile is deployed, whether the agent may act there, gas and relayer), every action checks the target chain first and says exactly what is missing there, and the agent can even use a separate key on some chains.
 
 **🧰 It can talk to any contract.** A generic ABI layer finds a contract's interface through Blockscout, Etherscan V2 or Sourcify, labels how trustworthy that interface is, explains the contract before using it, and then calls it *as the profile*. Tokens (LSP7, LSP8, ERC-20, ERC-721, ERC-1155), the LSP26 follower system and ERC-1271 signatures are built in.
 
@@ -44,10 +44,11 @@ Most "crypto skills" for AI agents hand the agent a raw private key. Whoever hol
 - **Hold and move value:** send native coins and tokens, receive assets, and list what the profile owns.
 - **Use any contract:** read, encode, simulate and call any function on any of the supported chains, with decoded results, errors and events.
 - **Sign as the profile:** produce ERC-1271 signatures that apps and other contracts can verify against the profile address.
+- **Give the profile a face:** set its name, description, links, tags, profile picture and background image ([LSP3](https://github.com/lukso-network/LIPs/blob/main/LSPs/LSP-3-Profile-Metadata.md)). Pictures you send in chat are checked, uploaded to IPFS, verified by hash and written on LUKSO after a dry run and your approval; the agent then shares the profile link (`profile.link/<name>`).
 - **Be social:** follow and unfollow profiles, and read followers ([LSP26](https://github.com/lukso-network/LIPs/blob/main/LSPs/LSP-26-FollowerSystem.md)).
 - **Choose how to execute:** directly through the Key Manager, directly on the account, via relayers (gasless), or via ERC-4337.
 
-The skill has 102 commands in total. Each is both a CLI command and an MCP tool. Full reference: [`references/verbs.md`](references/verbs.md).
+The skill has 105 commands in total. Each is both a CLI command and an MCP tool. Full reference: [`references/verbs.md`](references/verbs.md).
 
 ## How it fits together
 
