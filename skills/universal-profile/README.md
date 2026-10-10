@@ -63,7 +63,7 @@ The agent's state (configuration, deployment manifests, caches, audit log) lives
 
 ## Links
 
-- LUKSO standards (LIPs): https://github.com/lukso-network/LIPs
+- LUKSO standards (LIPs, `LSPs/` folder): https://github.com/lukso-network/LIPs/tree/main/LSPs. What the skill uses from each standard: `references/standards.md`
 - Reference contracts and deployments: https://github.com/lukso-network/lsp-smart-contracts
 - LUKSO documentation: https://docs.lukso.tech
 - Agent Skills specification: https://agentskills.io/specification
