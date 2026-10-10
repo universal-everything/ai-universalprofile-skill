@@ -18,7 +18,7 @@
 // Helpers are resolved from system directories only (never $PATH).
 import { UpError } from "../core/errors.ts";
 import type { BackendProbe, Hex, ProtectionInfo } from "../core/types.ts";
-import { KeyBackend, probeResult } from "./base.ts";
+import { KeyBackend, missingKeyHint, probeResult } from "./base.ts";
 import { keystoreService, resolveSystemBinary, runProcess, stderrSummary, type RunFn, type RunOptions, type RunResult, type WhichFn } from "./proc.ts";
 
 export const SECRET_TOOL_BIN = "secret-tool";
@@ -136,7 +136,7 @@ export class LinuxSecretServiceBackend extends KeyBackend {
   protected async readSecret(id: string): Promise<string> {
     await this.requireUnlocked();
     const v = await this.lookupRaw(id);
-    if (!v) throw new UpError("NO_SIGNER", `no keyring item for ${id} (service "${keystoreService()}")`, { hint: "the controller key is missing from the desktop keyring; create a new one with: up init --force (then rotate on-chain)" });
+    if (!v) throw new UpError("NO_SIGNER", `no keyring item for ${id} (service "${keystoreService()}")`, { hint: missingKeyHint("the desktop keyring") });
     return v;
   }
 

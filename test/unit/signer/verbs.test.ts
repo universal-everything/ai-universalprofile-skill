@@ -16,7 +16,6 @@ import {
   keyBackendVerb,
   keyBackupVerb,
   keyNewCandidateVerb,
-  keyRotatePlanVerb,
   readCandidates,
 } from "../../../src/signer/verbs.ts";
 import { assertNoSecret, catchErr, errorText, fakeContext, tempHome } from "./helpers.ts";
@@ -70,30 +69,29 @@ describe("init", () => {
     expect(getConfig().controller!.address).toBe(first.address);
   });
 
-  it("--force needs consent; without it nothing changes", async () => {
-    const { ctx, consents, getConfig } = fakeContext(home.dir);
-    const first = (await run(initVerb, ctx, { backend: "memory" })).data as any;
-    const e = await catchErr(run(initVerb, ctx, { backend: "memory", force: true }));
-    expect(e.code).toBe("CONSENT_REQUIRED");
-    expect(consents[0]).toMatchObject({ verb: "init", risk: "secret" });
-    expect(getConfig().controller!.address).toBe(first.address);
-    expect(getConfig().retiredControllers).toBeUndefined();
-  });
-
-  it("--force with approval replaces the key and retires the old one", async () => {
+  it("has no --force: the agent's key is permanent and is never replaced", async () => {
     const { ctx, getConfig } = fakeContext(home.dir, { approval: "yes, replace the agent key" });
     const first = (await run(initVerb, ctx, { backend: "memory" })).data as any;
-    const r = await run(initVerb, ctx, { backend: "memory", force: true });
-    const data = r.data as any;
-    expect(data.created).toBe(true);
-    expect(data.replaced).toBe(first.address);
-    expect(data.address).not.toBe(first.address);
-    const cfg = getConfig();
-    expect(cfg.controller!.address).toBe(data.address);
-    expect(cfg.retiredControllers).toEqual([{ address: first.address, backend: "memory", retiredAt: expect.any(String) }]);
-    expect(r.warnings!.join(" ")).toMatch(/on-chain/);
-    // old key still in the store
-    expect(await internalBackend("memory").has(first.address)).toBe(true);
+    expect(initVerb.params.map((p) => p.name)).not.toContain("force");
+    expect(() => coerceArgs(initVerb, { backend: "memory", force: true })).toThrow(/unknown option --force/);
+    const again = await run(initVerb, ctx, { backend: "memory" });
+    expect((again.data as any).created).toBe(false);
+    expect(getConfig().controller!.address).toBe(first.address);
+    expect(getConfig().previousControllers).toBeUndefined();
+  });
+
+  it("a key missing from its store is reported plainly; init never offers to replace it", async () => {
+    const { ctx, getConfig } = fakeContext(home.dir);
+    const first = (await run(initVerb, ctx, { backend: "memory" })).data as any;
+    resetMemoryBackend(); // the key is gone from the (in-memory) store
+    const r = await run(initVerb, ctx, { backend: "memory" });
+    const w = r.warnings!.join(" ");
+    expect((r.data as any).created).toBe(false);
+    expect(w).toContain(`${first.address}: the agent's key is missing from memory`);
+    expect(w).toMatch(/up key backup/);
+    expect(w).toMatch(/co-owner or admin wallet adds a new additional key/);
+    expect(w).not.toMatch(/--force|replace it|rotat|delete/i);
+    expect(getConfig().controller!.address).toBe(first.address);
   });
 
   it("--dry-run creates nothing", async () => {
@@ -180,7 +178,7 @@ describe("concurrency", () => {
   });
 
   it("concurrent new-candidate runs keep every candidate recorded", async () => {
-    const { ctx } = fakeContext(home.dir, { approval: "rotate" });
+    const { ctx } = fakeContext(home.dir, { approval: "add keys" });
     await run(initVerb, ctx, { backend: "memory" });
     const results = await Promise.all([1, 2, 3, 4].map(() => run(keyNewCandidateVerb, ctx)));
     const addrs = results.map((r) => (r.data as any).address).sort();
@@ -205,7 +203,7 @@ describe("concurrency", () => {
   });
 });
 
-describe("key address / key backend / key rotate-plan", () => {
+describe("key address / key backend", () => {
   it("key address: NO_SIGNER before init, address after", async () => {
     const { ctx } = fakeContext(home.dir);
     expect((await catchErr(run(keyAddressVerb, ctx))).hint).toBe("run: up init");
@@ -226,17 +224,17 @@ describe("key address / key backend / key rotate-plan", () => {
     expect(r.text).toMatch(/\* memory/);
   });
 
-  it("key rotate-plan: six ordered steps; step 1 done once a candidate exists", async () => {
-    const { ctx } = fakeContext(home.dir, { approval: "rotate" });
-    await run(initVerb, ctx, { backend: "memory" });
-    const before = (await run(keyRotatePlanVerb, ctx)).data as any;
-    expect(before.steps.map((s: any) => s.step)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(before.steps[0].done).toBe(false);
-    const cand = (await run(keyNewCandidateVerb, ctx)).data as any;
-    const after = await run(keyRotatePlanVerb, ctx);
-    expect((after.data as any).candidate).toBe(cand.address);
-    expect((after.data as any).steps[0].done).toBe(true);
-    expect(after.text).toContain(`up key activate ${cand.address}`);
+  it("key address lists every other key the agent keeps (additional and previous keys)", async () => {
+    const { ctx, getConfig } = fakeContext(home.dir, { approval: "ok" });
+    const { address: first } = (await run(initVerb, ctx, { backend: "memory" })).data as any;
+    const cand = ((await run(keyNewCandidateVerb, ctx)).data as any).address;
+    let r = await run(keyAddressVerb, ctx);
+    expect((r.data as any).otherKeys).toEqual([{ address: cand, backend: "memory", kind: "additional" }]);
+    await run(keyActivateVerb, ctx, { address: cand });
+    expect(getConfig().controller!.address).toBe(cand);
+    r = await run(keyAddressVerb, ctx);
+    expect((r.data as any).otherKeys).toEqual([{ address: first, backend: "memory", kind: "previous" }]);
+    expect(r.text).toContain(`Other keys of the agent (kept in their store, never deleted): ${first}`);
   });
 });
 
@@ -252,10 +250,10 @@ describe("key new-candidate / key activate", () => {
     expect(await readCandidates(home.dir)).toEqual([]);
   });
 
-  it("creates an inactive candidate, activation needs consent, then switches and retires", async () => {
+  it("creates an additional key, activation needs consent, then switches and keeps the previous key", async () => {
     const plain = fakeContext(home.dir);
     const { address: first } = (await run(initVerb, plain.ctx, { backend: "memory" })).data as any;
-    const cand = (await run(keyNewCandidateVerb, fakeContext(home.dir, { approval: "rotate" }, plain.getConfig()).ctx)).data as any;
+    const cand = (await run(keyNewCandidateVerb, fakeContext(home.dir, { approval: "add a key" }, plain.getConfig()).ctx)).data as any;
     expect(cand.active).toBe(false);
     expect(plain.getConfig().controller!.address).toBe(first);
     expect((await readCandidates(home.dir)).map((c) => c.address)).toEqual([cand.address]);
@@ -269,14 +267,18 @@ describe("key new-candidate / key activate", () => {
     expect((r.data as any).changed).toBe(true);
     const cfg = approved.getConfig();
     expect(cfg.controller).toMatchObject({ address: cand.address, backend: "memory" });
-    expect(cfg.retiredControllers!.map((x) => x.address)).toEqual([first]);
+    expect(cfg.previousControllers).toEqual([{ address: first, backend: "memory", switchedAt: expect.any(String) }]);
     expect(await readCandidates(home.dir)).toEqual([]);
+    expect(r.text).toContain(`Previous key ${first} is kept in memory and stays listed`);
+    // never deleted: both keys stay in the store
+    expect(await internalBackend("memory").has(first)).toBe(true);
 
-    // Rollback to the retired key.
+    // Switch back to the previous key: the other one is kept in turn.
     await run(keyActivateVerb, approved.ctx, { address: first });
     const cfg2 = approved.getConfig();
     expect(cfg2.controller!.address).toBe(first);
-    expect(cfg2.retiredControllers!.map((x) => x.address)).toEqual([cand.address]);
+    expect(cfg2.previousControllers!.map((x) => x.address)).toEqual([cand.address]);
+    expect(await internalBackend("memory").has(cand.address)).toBe(true);
 
     // Already active → no-op without consent.
     const noop = await run(keyActivateVerb, plain.ctx, { address: plain.getConfig().controller!.address });

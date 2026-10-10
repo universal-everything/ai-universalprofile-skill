@@ -61,6 +61,24 @@ defineVerb({
     // 1) Environment, quietly. Only blocking problems reach the human, in plain words.
     const doctor: any = await getVerb("doctor")!.run(ctx, { offline: true });
     const failed = (doctor.data.checks as { name: string; ok: boolean; detail: string; remedy?: string }[]).filter((c) => !c.ok && c.name !== "controller");
+    // The agent's key is permanent: when it is missing from its store, say so plainly and never replace it.
+    const missing = failed.filter((c) => c.name.startsWith("controller-key"));
+    if (missing.length) {
+      return {
+        data: {
+          stage: "key-missing",
+          ready: false,
+          problems: missing,
+          say: "My signing key is missing from this computer's key store. That key is permanent, so I won't replace it. Do you have a backup of it? If it is truly lost, you (or another owner of the profile) can add a new additional key for me on each network.",
+          next: [
+            "Never create a replacement for the missing key and never remove it from the config.",
+            "If the human has a backup, help them restore it (data.problems[].remedy), then run `up start` again.",
+            "If it is truly lost: create an additional key with `up key new-candidate`, ask a co-owner/admin wallet to add it as a controller on each network, then `up key activate <address>`.",
+          ],
+        },
+        text: `the agent's key is missing: ${missing.map((c) => c.detail).join("; ")}`,
+      };
+    }
     if (failed.length) {
       return {
         data: {
@@ -80,7 +98,7 @@ defineVerb({
     // 2) The agent's own key: created once, locally. No approval needed; nothing is spent.
     let key: any;
     try {
-      key = await getVerb("init")!.run(ctx, { backend: a.backend ?? "auto", force: false });
+      key = await getVerb("init")!.run(ctx, { backend: a.backend ?? "auto" });
     } catch (e) {
       if (e instanceof UpError && e.code === "SIGNER_BACKEND_UNAVAILABLE") {
         return {

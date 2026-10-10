@@ -21,7 +21,7 @@ export interface SelectedController extends ControllerRef {
 
 function checked(c: ControllerRef, where: string): ControllerRef {
   if (!c || typeof c.address !== "string" || !isAddress(c.address, { strict: false }) || typeof c.backend !== "string") {
-    throw new UpError("NO_SIGNER", `${where} is not a valid controller entry`, { hint: "fix it with: up key activate <address> [--chain <id>] (or up init --force)" });
+    throw new UpError("NO_SIGNER", `${where} is not a valid controller entry`, { hint: "fix it with: up key activate <address> [--chain <id>]" });
   }
   return { ...c, address: getAddress(c.address) };
 }

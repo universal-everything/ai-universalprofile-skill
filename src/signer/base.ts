@@ -98,3 +98,16 @@ export interface InternalBackend extends SignerBackend {
 export function probeResult(b: { id: string }, level: ProtectionInfo["level"], available: boolean, reason: string, unattended = available): BackendProbe {
   return { id: b.id, available, unattended: available && unattended, level, reason };
 }
+
+/**
+ * Plain guidance when the agent's configured key is missing from (or unreadable in) its key store.
+ * Keys are permanent: this never suggests replacing or deleting a key; the missing key stays listed.
+ */
+export function missingKeyHint(store: string): string {
+  return (
+    `the agent's key is missing from ${store}; it is permanent and is never replaced. Restore it from its backup ` +
+    `(the encrypted file made with up key backup, or a backup of ${store}). If it is truly gone, a co-owner or admin wallet ` +
+    `adds a new additional key for the agent on each network (the agent creates it with up key new-candidate; after it is ` +
+    `added: up key activate <address>); the missing key stays listed`
+  );
+}

@@ -26,7 +26,16 @@
 - On a locked store the signer fails closed with `SIGNER_LOCKED` and a precise reason. It never shows a dialog, never asks for a password and never falls back to another backend. Relay the hint to the human (e.g. "log in to the Mac once") and retry later.
 - If `up init` lands on `protected-file`, tell the human in one sentence that the key is in a private file that is not encrypted at rest, and recommend adding their wallet as a second controller early. If no backend is available at all, `up init` stops; a key file is then created only if the human explicitly accepts it.
 - Inside dots/Muse VMs do not lecture the user about custody; the one sentence from `up init` is enough.
-- Moving to another machine means rotating to a new key (`references/onboarding.md`), not copying files.
+- Keys are not moved by copying files; see "Your key is permanent" below.
+
+### Your key is permanent
+
+Your key is the private key of a blockchain account. It stays forever: it is never replaced and never deleted, neither from the config nor from its key store.
+
+- The key that created the profile (plus a co-owner wallet added at creation) is part of the profile's address and is the only key with access on networks the profile is deployed to later.
+- Back it up where the host allows: `up key backup` (encrypted keystore v3, run by the human only).
+- If it is missing from its store, say so plainly; restore it from its backup. If it is truly lost, a co-owner or admin wallet adds a new additional key for the agent on each network (`up key new-candidate`, then `up key activate <address>`); the lost key stays listed.
+- Switching the key the agent signs with (`up key activate`, also per chain) keeps the previous key in its store and listed (`up key address`).
 
 ### The honest boundary
 
@@ -42,8 +51,8 @@ Every verb has a risk class (shown in `up <verb> --help` and in MCP tool descrip
 | `read` | balances, permissions, ABI fetch, quota | nothing |
 | `write` | sends, token transfers, contract calls, follows | `--yes` if inside the delegated policy, otherwise `--approval "<human words>"` |
 | `admin` | permissions, controllers, ownership, extensions, ERC-4337 enable, infrastructure deployments | `--approval "<human words>"` (unless the human set `allowAdmin` in the policy) |
-| `secret`, `policy set` and `profile link` | key lifecycle (replace, rotate-activate, new candidate, backup), changes to the delegated policy, and which contract is your profile on a chain | always `--approval "<human words>"`; `allowAdmin` never covers these |
-| `secret` | key creation, rotation, backup | `--approval "<human words>"` |
+| `secret`, `policy set` and `profile link` | key lifecycle (additional key, switching the key in use, backup), changes to the delegated policy, and which contract is your profile on a chain | always `--approval "<human words>"`; `allowAdmin` never covers these |
+| `secret` | additional keys, switching keys, backup (the first key is created without approval) | `--approval "<human words>"` |
 
 - `--dry-run` never signs or sends and needs no consent. Use it to show the human exactly what will happen.
 - The **delegated policy** (`up policy show`; changed only with `up policy set` and the human's approval) lists allowed chains, targets, function selectors, a native-value cap per transaction per chain, a daily action limit and whether admin actions are delegated. By default no native value may move, no token transfer, approval, operator, permit, bridge or withdrawal runs autonomously (`allowTokenMoves: false`; enforced as an allowlist on token contracts, so wrappers such as a token's `batchCalls` are covered), and no admin action runs without approval. Raw profile payloads are decoded so their real value, target and function are checked; payloads that cannot be decoded need approval. Signing a bare 32-byte value is always refused (such a blind signature could authorise an ERC-4337 UserOperation or another protocol action nobody can read), and every EIP-712 typed-data signature needs the human's approval. Autonomous writes to a token contract (any function that is not read-only, revoke/decrease, issuer mint or metadata) need approval unless the token is delegated in the policy. Dry-runs never sign anything. The policy is enforced by the skill on this machine; on-chain only LSP6 permissions are enforced.
@@ -79,7 +88,7 @@ Tokens and NFTs can be sent to the profile by anyone. Never claim, approve, sell
 | Threat | Mitigation |
 | --- | --- |
 | Malware or another program running as the same user | OS key store where available; on-chain least privilege; human co-controller who can revoke the agent; policy limits on autonomous actions |
-| Lost or wiped machine / VM | second controller added early; rotation instead of copying keys |
+| Lost or wiped machine / VM | second controller added early; encrypted backup (`up key backup`); if the key is truly lost, a co-owner adds a new additional key on each network (the lost key stays listed, never deleted) |
 | Locked key store (logged-out Mac, locked keyring) | fail closed with `SIGNER_LOCKED`; no prompts, no fallback |
 | Malicious or wrong RPC endpoint | chain-id check on every endpoint, several ranked endpoints, receipts re-checked, local simulation before sending |
 | Malicious explorer data or ABI | trust labels; value-moving calls need a verified ABI or the human's confirmation of raw calldata |

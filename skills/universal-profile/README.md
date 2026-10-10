@@ -13,11 +13,11 @@ Most "crypto skills" for AI agents hand the agent a raw private key. Whoever hol
 
 ## Why this skill is different
 
-**🏦 An account, not just a key.** Think of a Universal Profile as a bank account and the agent's key as a debit card. The card can be limited, blocked or replaced, and the account and everything in it stays the same. With a plain wallet, the card *is* the account.
+**🏦 An account, not just a key.** Think of a Universal Profile as a bank account and the agent's key as a debit card. The card can be limited or blocked, and the account and everything in it stays the same. With a plain wallet, the card *is* the account.
 
 **🛂 You decide what the agent may do, and the blockchain enforces it.** The Key Manager ([LSP6](https://github.com/lukso-network/LIPs/blob/main/LSPs/LSP-6-KeyManager.md)) checks every action against the permissions you granted. For example: "may transfer tokens, but only to these contracts and only these functions", "may update the profile's data but not add new controllers", or "may sign messages but not move funds". These limits live on-chain, so a confused or manipulated agent cannot step outside them.
 
-**🤝 You can always step in.** Add your own wallet as a second controller and you can change permissions, rotate the agent's key or take over the profile at any time. The address stays the same. No key is ever shared.
+**🤝 You can always step in.** Add your own wallet as a second controller and you can change permissions, add keys or take over the profile at any time. The address stays the same. No key is ever shared.
 
 **🔐 The agent never sees or shares a private key.** The skill generates the agent's key itself and keeps it in the operating system's key store: macOS Keychain, Linux `systemd-creds` or a desktop keyring, Windows DPAPI, or a protected file inside a cloud agent VM. There is no command that exports it. Humans only ever see public addresses.
 
@@ -40,7 +40,7 @@ Most "crypto skills" for AI agents hand the agent a raw private key. Whoever hol
 ## What your agent can do with it
 
 - **Set up:** the agent offers three ways to get started: it creates its own account with gas you provide on each network; you create the profile with the Universal Relayer (gas included on LUKSO, Ethereum, Base, BNB Chain, Arbitrum, Robinhood Chain, Polygon and Avalanche, a separate service with its own terms; link coming soon) and authorise the agent; or you let it use a profile you already have. Then it shows the address, identicon and funding QR code.
-- **Manage control:** add or remove controllers, grant or narrow permissions, limit which contracts and functions it may call ("AllowedCalls") and which data it may write, and rotate its key or hand over ownership.
+- **Manage control:** add or remove controllers, grant or narrow permissions, limit which contracts and functions it may call ("AllowedCalls") and which data it may write, add more keys or hand over ownership.
 - **Hold and move value:** send native coins and tokens, receive assets, and list what the profile owns.
 - **Use any contract:** read, encode, simulate and call any function on any of the supported chains, with decoded results, errors and events.
 - **Sign as the profile:** produce ERC-1271 signatures that apps and other contracts can verify against the profile address.

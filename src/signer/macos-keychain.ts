@@ -18,7 +18,7 @@
 import { existsSync } from "node:fs";
 import { UpError } from "../core/errors.ts";
 import type { BackendProbe, Hex, ProtectionInfo } from "../core/types.ts";
-import { KeyBackend, probeResult } from "./base.ts";
+import { KeyBackend, missingKeyHint, probeResult } from "./base.ts";
 import { keystoreService, runProcess, stderrSummary, type RunFn, type RunResult } from "./proc.ts";
 
 export const SECURITY_BIN = "/usr/bin/security";
@@ -149,6 +149,6 @@ export class MacosKeychainBackend extends KeyBackend {
 
 function notFound(id: string, service: string): UpError {
   return new UpError("NO_SIGNER", `no keychain item for ${id} (service "${service}")`, {
-    hint: "the controller key is missing from the login keychain; if it was deleted, create a new one with: up init --force (then rotate on-chain)",
+    hint: missingKeyHint("the login keychain"),
   });
 }

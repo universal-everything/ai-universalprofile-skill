@@ -24,7 +24,7 @@ import { randomBytes } from "node:crypto";
 import { UpError } from "../core/errors.ts";
 import { ensureDir, paths, upHome, writeFileAtomic } from "../core/home.ts";
 import type { BackendProbe, Hex, ProtectionInfo } from "../core/types.ts";
-import { KeyBackend, probeResult } from "./base.ts";
+import { KeyBackend, missingKeyHint, probeResult } from "./base.ts";
 import { environment, type SignerEnvironment } from "./env.ts";
 import { runProcess, stderrSummary, type RunFn, type RunResult } from "./proc.ts";
 
@@ -217,7 +217,7 @@ export class WindowsDpapiBackend extends KeyBackend {
       blob = (await readFile(this.file(id), "utf8")).trim();
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new UpError("NO_SIGNER", `no DPAPI blob for ${id} in ${this.dirFn()}`, { hint: "the controller key blob is missing; create a new key with: up init --force (then rotate on-chain)" });
+        throw new UpError("NO_SIGNER", `no DPAPI blob for ${id} in ${this.dirFn()}`, { hint: missingKeyHint("its DPAPI blob file") });
       }
       throw new UpError("SIGNER_LOCKED", `cannot read the DPAPI blob for ${id} (${(e as NodeJS.ErrnoException).code ?? "error"})`);
     }
@@ -248,7 +248,7 @@ export class WindowsDpapiBackend extends KeyBackend {
     const detail = psError(r, secrets);
     if (action === "protect") return new UpError("SIGNER_BACKEND_UNAVAILABLE", `DPAPI could not protect the key (${detail})`, { hint: "DPAPI needs an interactive Windows logon (not key-based SSH / S4U); run: up key backend" });
     return new UpError("SIGNER_LOCKED", `DPAPI could not unlock the controller key (${detail})`, {
-      hint: "DPAPI user keys are only available in an interactive Windows logon of the same user (not key-based SSH / S4U); if the Windows password was reset by an administrator the key is unrecoverable — rotate via your second controller",
+      hint: "DPAPI user keys are only available in an interactive Windows logon of the same user (not key-based SSH / S4U); if the Windows password was reset by an administrator it cannot be read: restore the key from its backup (up key backup file), or a co-owner or admin wallet adds a new additional key for the agent on each network (the old key stays listed, never deleted)",
     });
   }
 }

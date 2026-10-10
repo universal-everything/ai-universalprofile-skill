@@ -10,6 +10,24 @@ import { createRpcManager } from "../chain/rpc.ts";
 
 export const DEFAULT_CONFIG: UpConfig = { version: 1 };
 
+/**
+ * Loads older config files unchanged in meaning. Configs written before keys were made
+ * permanent listed the agent's earlier keys under a legacy field name; they now load as
+ * previousControllers (same keys, still listed, nothing dropped). Saved back under the new name.
+ */
+export function upgradeConfig<T>(raw: T): T {
+  if (!raw || typeof raw !== "object") return raw;
+  const { retiredControllers: legacy, ...rest } = raw as Record<string, any>;
+  if (!Array.isArray(legacy)) return raw;
+  const prev: any[] = Array.isArray(rest.previousControllers) ? [...rest.previousControllers] : [];
+  for (const r of legacy) {
+    if (!r || typeof r.address !== "string") continue;
+    if (prev.some((p) => typeof p?.address === "string" && p.address.toLowerCase() === r.address.toLowerCase())) continue;
+    prev.push({ address: r.address, backend: r.backend, switchedAt: r.retiredAt ?? r.switchedAt ?? "", ...(r.chainId !== undefined ? { chainId: r.chainId } : {}) });
+  }
+  return (prev.length ? { ...rest, previousControllers: prev } : rest) as T;
+}
+
 export interface ContextOptions {
   home?: string;
   flags: Flags;
@@ -20,7 +38,7 @@ export interface ContextOptions {
 export function createContext(opts: ContextOptions): VerbContext {
   const home = opts.home ?? upHome();
   let cfgCache: UpConfig | undefined;
-  const config = async () => (cfgCache ??= { ...DEFAULT_CONFIG, ...(await readJson<UpConfig>(paths.config(home), DEFAULT_CONFIG)) });
+  const config = async () => (cfgCache ??= { ...DEFAULT_CONFIG, ...upgradeConfig(await readJson<UpConfig>(paths.config(home), DEFAULT_CONFIG)) });
   const registry = createRegistry(home);
   const rpc = createRpcManager(home, registry, config);
 
@@ -55,7 +73,7 @@ export function createContext(opts: ContextOptions): VerbContext {
       if (v !== undefined && v !== "") return registry.chain(v).chainId;
       if (!cfgCache && existsSync(paths.config(home))) {
         try {
-          cfgCache = { ...DEFAULT_CONFIG, ...JSON.parse(readFileSync(paths.config(home), "utf8")) };
+          cfgCache = { ...DEFAULT_CONFIG, ...upgradeConfig(JSON.parse(readFileSync(paths.config(home), "utf8"))) };
         } catch {}
       }
       if (cfgCache?.defaultChain) return cfgCache.defaultChain;

@@ -226,26 +226,21 @@ describe("two chains, one profile", () => {
     expect(e.hint).toContain(`up controller edit ${keyB} --add SETDATA --chain local-b`);
   });
 
-  it("key activate --chain switches one chain only; activating the default key there removes the chain's own key", async () => {
+  it("key activate --chain switches one chain only; activating the default key there makes the chain use it again; no key is dropped", async () => {
     const back = await run(ctx, "key activate", { address: keyA, chain: String(B) });
     expect(back.data).toMatchObject({ address: keyA, chainId: B, scope: "default", changed: true });
     let cfg = await ctx.config();
     expect(cfg.chainControllers).toBeUndefined();
-    expect(cfg.retiredControllers).toEqual([expect.objectContaining({ address: keyB, chainId: B })]);
+    expect(cfg.previousControllers).toEqual([expect.objectContaining({ address: keyB, chainId: B })]);
     expect((await ctx.signer(B)).address).toBe(keyA);
     const again = await run(ctx, "key activate", { address: keyB, chain: String(B) });
     expect(again.data).toMatchObject({ address: keyB, scope: "chain", changed: true });
     cfg = await ctx.config();
     expect(cfg.chainControllers?.[String(B)].address).toBe(keyB);
     expect(cfg.controller!.address).toBe(keyA);
-    expect(cfg.retiredControllers ?? []).toEqual([]);
+    expect(cfg.previousControllers ?? []).toEqual([]);
     expect((await ctx.signer(B)).address).toBe(keyB);
     expect((await ctx.signer(A)).address).toBe(keyA);
-    const plan = await run(ctx, "key rotate-plan", { chain: String(B) });
-    expect(plan.data).toMatchObject({ controller: keyB, scope: "chain", chainId: B });
-    expect(plan.text).toContain(`up key activate <new-address> --chain ${B}`);
-    const planDefault = await run(ctx, "key rotate-plan", {});
-    expect(planDefault.text).toContain(`up key rotate-plan --chain ${B}`);
   });
 });
 

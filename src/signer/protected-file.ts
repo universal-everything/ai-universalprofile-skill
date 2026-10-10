@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { UpError } from "../core/errors.ts";
 import { ensureDir, paths, upHome, writeFileAtomic } from "../core/home.ts";
 import type { BackendProbe, Hex, ProtectionInfo } from "../core/types.ts";
-import { KeyBackend, probeResult } from "./base.ts";
+import { KeyBackend, missingKeyHint, probeResult } from "./base.ts";
 import { environment, type SignerEnvironment } from "./env.ts";
 
 export type FileVariant = "protected-file" | "vm-protected-file";
@@ -106,7 +106,7 @@ export class ProtectedFileBackend extends KeyBackend {
       st = await lstat(f);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new UpError("NO_SIGNER", `no key file for ${id} in ${this.dirFn()}`, { hint: "the controller key file is missing; restore it or create a new key with: up init --force (then rotate on-chain)" });
+        throw new UpError("NO_SIGNER", `no key file for ${id} in ${this.dirFn()}`, { hint: missingKeyHint("its key file") });
       }
       throw new UpError("SIGNER_LOCKED", `cannot access the key file for ${id} (${(e as NodeJS.ErrnoException).code ?? "error"})`, { hint: "check the permissions of the keys directory" });
     }

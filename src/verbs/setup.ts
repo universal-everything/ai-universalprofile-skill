@@ -52,6 +52,19 @@ defineVerb({
     for (const [id, k] of Object.entries(cfg.chainControllers ?? {})) {
       if (k?.address) checks.push({ name: `controller:${id}`, ok: true, detail: `${k.address} (${k.backend}), the agent's own key on chain ${id}` });
     }
+    // Keys are permanent: a key missing from its store is reported plainly, never replaced.
+    try {
+      const { internalBackend } = await import("../signer/index.ts");
+      const { missingKeyHint } = await import("../signer/base.ts");
+      const probes = Array.isArray(backends) ? (backends as { id?: string; available?: boolean }[]) : [];
+      const inUse = [...(cfg.controller ? [{ name: "controller-key", ...cfg.controller }] : []), ...Object.entries(cfg.chainControllers ?? {}).map(([id, k]) => ({ name: `controller-key:${id}`, ...k }))];
+      for (const k of inUse) {
+        if (!k?.address || typeof k.backend !== "string") continue;
+        if (!probes.find((p) => p.id === k.backend)?.available) continue; // an unavailable store is reported by the probes
+        const b = internalBackend(k.backend);
+        if (!(await b.has(k.address).catch(() => true))) checks.push({ name: k.name, ok: false, detail: `the agent's key ${k.address} is missing from ${k.backend}`, remedy: missingKeyHint(k.backend) });
+      }
+    } catch {}
     const chainReports: unknown[] = [];
     if (!a.offline) {
       for (const id of cfg.chains ?? (cfg.defaultChain ? [cfg.defaultChain] : [])) {

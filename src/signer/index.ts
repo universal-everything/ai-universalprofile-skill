@@ -180,7 +180,7 @@ export async function chooseBackend(preferred?: string, envOverride?: SignerEnvi
  */
 export async function loadSignerFromConfig(cfg: UpConfig, chainId?: number): Promise<Signer> {
   const d = cfg.controller;
-  if (d?.address && !isAddress(d.address, { strict: false })) throw new UpError("NO_SIGNER", "config.controller.address is not a valid address", { hint: "run: up init --force" });
+  if (d?.address && !isAddress(d.address, { strict: false })) throw new UpError("NO_SIGNER", "config.controller.address is not a valid address", { hint: "config.json was edited or damaged: put back the address of the agent's key (the key itself is still in its store), or switch with: up key activate <address>" });
   const c = controllerFor({ ...cfg, controller: d?.address ? d : undefined }, chainId);
   if (!c) throw new UpError("NO_SIGNER", "no controller key is configured", { hint: "run: up init" });
   const backend = getBackend(c.backend);

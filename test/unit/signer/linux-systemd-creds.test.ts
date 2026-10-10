@@ -68,7 +68,8 @@ describe("linux-systemd-creds (mocked)", () => {
     const e = await catchErr(make(fakeCreds({ failDecrypt: `Failed to decrypt credential ${leaky}: Bad message` })).load(address));
     expect(e.code).toBe("SIGNER_LOCKED");
     expect(errorText(e)).not.toContain("ab".repeat(32));
-    expect(e.hint).toMatch(/rotate/);
+    expect(e.hint).toMatch(/restore the key from its backup/);
+    expect(e.hint).not.toMatch(/rotat/);
   });
 
   it("maps encrypt failure to SIGNER_BACKEND_UNAVAILABLE and missing credential to NO_SIGNER", async () => {

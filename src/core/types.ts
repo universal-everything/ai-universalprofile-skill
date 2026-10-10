@@ -41,7 +41,7 @@ export interface ParamDef {
  * - write: sends a transaction/relay call/userop on behalf of the profile
  * - admin: changes who controls the profile or what controllers may do
  *          (permissions, controllers, ownership, extensions, 4337 enable, deployments of infra)
- * - secret: touches key material lifecycle (init, rotate, backup)
+ * - secret: touches key material lifecycle (init, additional keys, key switch, backup)
  */
 export type RiskClass = "local" | "read" | "write" | "admin" | "secret";
 
@@ -164,7 +164,7 @@ export interface SignerBackend {
   probe(): Promise<BackendProbe>;
   /** Generate a new secp256k1 key inside the backend; returns the public address only. */
   create(): Promise<Address>;
-  /** Import an existing private key (tests / rotation tooling). */
+  /** Import an existing private key (tests only). */
   importKey?(privateKey: Hex): Promise<Address>;
   load(address: Address): Promise<Signer>;
   remove(address: Address): Promise<void>;
@@ -262,8 +262,13 @@ export interface UpConfig {
    * <address> --chain <id>). Absent = the default key everywhere.
    */
   chainControllers?: Record<string, { address: Address; backend: string; createdAt: string }>;
-  /** Retired controller keys kept for rotation audit (public data only). chainId set for retired chain-specific keys. */
-  retiredControllers?: { address: Address; backend: string; retiredAt: string; chainId?: number }[];
+  /**
+   * Keys the agent signed with before and no longer uses by default (public data only). Keys are
+   * permanent: they stay in their key store and stay listed here, never deleted. chainId is set
+   * for a key that was used on one chain only. Older configs listed these under a legacy field
+   * name; they load into this one (see upgradeConfig in src/core/context.ts).
+   */
+  previousControllers?: { address: Address; backend: string; switchedAt: string; chainId?: number }[];
   defaultChain?: number;
   defaultProfile?: Address;
   aliases?: Record<string, Address>;

@@ -13,7 +13,7 @@ import { randomBytes } from "node:crypto";
 import { UpError } from "../core/errors.ts";
 import { ensureDir, paths, upHome, writeFileAtomic } from "../core/home.ts";
 import type { BackendProbe, Hex, ProtectionInfo } from "../core/types.ts";
-import { KeyBackend, probeResult } from "./base.ts";
+import { KeyBackend, missingKeyHint, probeResult } from "./base.ts";
 import { parseSystemdVersion } from "./env.ts";
 import { resolveSystemBinary, runProcess, stderrSummary, type RunFn, type RunResult, type WhichFn } from "./proc.ts";
 
@@ -111,7 +111,7 @@ export class LinuxSystemdCredsBackend extends KeyBackend {
       blob = await readFile(f);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new UpError("NO_SIGNER", `no systemd credential for ${id} in ${this.dirFn()}`, { hint: "the controller credential is missing; create a new key with: up init --force (then rotate on-chain)" });
+        throw new UpError("NO_SIGNER", `no systemd credential for ${id} in ${this.dirFn()}`, { hint: missingKeyHint("its systemd credential file") });
       }
       throw new UpError("SIGNER_LOCKED", `cannot read the credential file for ${id} (${(e as NodeJS.ErrnoException).code ?? "error"})`);
     }
@@ -144,7 +144,7 @@ export class LinuxSystemdCredsBackend extends KeyBackend {
     if (r.error?.code === "TIMEOUT") return new UpError("SIGNER_LOCKED", `systemd-creds did not answer (${action})`, { hint: "check that systemd-creds.socket is running: systemctl status systemd-creds.socket" });
     if (action === "encrypt") return new UpError("SIGNER_BACKEND_UNAVAILABLE", `systemd-creds could not encrypt the key (${detail})`, { hint: "run: up key backend" });
     return new UpError("SIGNER_LOCKED", `systemd-creds could not decrypt the controller key (${detail})`, {
-      hint: "the credential is bound to this user, machine and host key/TPM; if those changed the key is unrecoverable here — rotate to a new key via your second controller",
+      hint: "the credential is bound to this user, machine and host key/TPM; if those changed it cannot be read here: restore the key from its backup (up key backup file), or a co-owner or admin wallet adds a new additional key for the agent on each network (the old key stays listed, never deleted)",
     });
   }
 }

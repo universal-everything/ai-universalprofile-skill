@@ -22,6 +22,7 @@ const pk = generatePrivateKey();
 const agentKey = privateKeyToAccount(pk).address as Address;
 const later = privateKeyToAccount(generatePrivateKey()).address as Address; // added on chain A after deployment
 const savedEph = process.env.UP_TEST_EPHEMERAL_KEY;
+let deployed: Address;
 const seed = ("0x" + "5a".repeat(32)) as `0x${string}`;
 
 beforeAll(async () => {
@@ -58,6 +59,7 @@ describe("initial controllers", () => {
   it("on a new chain only the initial controllers have access; controllers added later elsewhere do not carry over", async () => {
     const d: any = await run(ctx, "account deploy", { seed, candidate: 0, chain: String(hA.chainId) });
     const profile = d.data.profile as Address;
+    deployed = profile;
     await run(ctx, "controller add", { address: later, preset: "agent-reader", profile, chain: String(hA.chainId) });
     expect(await controllersOn(hA.chainId, profile)).toEqual(expect.arrayContaining([agentKey, later]));
 
@@ -68,11 +70,16 @@ describe("initial controllers", () => {
     expect(onB).not.toContain(later);
   });
 
-  it("the rotation plan never tells the agent to delete the key that created a profile", async () => {
-    const plan: any = await run(ctx, "key rotate-plan", {});
-    const last = plan.data.steps[plan.data.steps.length - 1];
-    expect(last.title).toMatch(/Keep the old key/);
-    expect(last.detail).toMatch(/Do NOT delete/);
-    expect(JSON.stringify(plan.data.steps)).not.toMatch(/then delete it from the key store/);
+  it("the key that created the profile is permanent: after switching to another key it stays listed and is found as the key with access on the new chain", async () => {
+    const k2 = ((await run(ctx, "key new-candidate", {})) as any).data.address as Address;
+    await run(ctx, "key activate", { address: k2 });
+    expect((await ctx.config()).controller!.address).toBe(k2);
+    const keys: any = await run(ctx, "key address", {});
+    expect(keys.data.otherKeys).toEqual([expect.objectContaining({ address: agentKey, kind: "previous" })]);
+    expect(await getBackend("memory").has(agentKey)).toBe(true);
+    const st: any = await run(ctx, "profile status", { profile: deployed, chains: [String(hB.chainId)] });
+    expect(st.data.chains[0]).toMatchObject({ deployed: true, otherLocalController: { address: agentKey } });
+    await run(ctx, "key activate", { address: agentKey }); // back to the first key; k2 stays listed
+    expect((await ctx.config()).previousControllers!.map((k) => k.address)).toEqual([k2]);
   });
 });

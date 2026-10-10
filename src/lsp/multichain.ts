@@ -9,7 +9,7 @@
 // never failing as a whole) and runs the preflight every write path uses before it builds an
 // action on a chain, so failures are explained in profile language with the exact fix:
 // deploy there (same address), authorise this agent's key there, or fund gas there.
-import { formatEther, getAddress, type Address, type Hex } from "viem";
+import { formatEther, getAddress, isAddress, type Address, type Hex } from "viem";
 import type { UpConfig, VerbContext } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
 import { profileAddressOn, readProfileRecord, updateProfileRecord } from "../core/profile-record.ts";
@@ -209,11 +209,13 @@ export async function readChainStatus(ctx: VerbContext, identity: Address, chain
   return s;
 }
 
-/** Another local key (default or chain-specific) that is a controller of `profile` on `chainId`. */
+/** Another local key (default, chain-specific or a previous key the agent keeps) that is a controller of `profile` on `chainId`. */
 async function otherLocalController(ctx: VerbContext, cfg: UpConfig, chainId: number, profile: Address, except: Address): Promise<{ address: Address; permissions: string[] } | undefined> {
   const candidates = new Set<Address>();
   if (cfg.controller?.address) candidates.add(getAddress(cfg.controller.address));
   for (const c of Object.values(cfg.chainControllers ?? {})) if (c?.address) candidates.add(getAddress(c.address));
+  // e.g. the key that created the profile: on networks deployed later only the first owners have access
+  for (const c of cfg.previousControllers ?? []) if (c?.address && isAddress(c.address, { strict: false })) candidates.add(getAddress(c.address));
   candidates.delete(getAddress(except));
   for (const a of candidates) {
     const p = await readControllerPermissions(ctx, chainId, profile, a).catch(() => undefined);

@@ -98,7 +98,7 @@ What LSP6 cannot enforce: spending amounts, time limits, counts. The skill's del
   - Removing the agent's own controller ends its ability to act; confirm that is intended.
 - **Per chain.** Your profile's permissions live on each chain where it is deployed: a controller added on LUKSO is not a controller on Base, and the agent may sign on some chain with its own key (`up key address` lists them). Grant and verify on every chain where the agent should act (`up permissions show <address> --chain <id>`; `up profile status` shows all chains at once).
 - **Ownership (LSP14)**: `up ownership transfer <newOwner>` starts a two-step transfer; the new owner must call `acceptOwnership` (`up ownership accept`, or for a new Key Manager through that Key Manager). `up ownership renounce` is a two-call, time-windowed process that leaves the profile **without any owner, unrecoverable**; never do it without an explicit, informed human request, and say that plainly.
-- **Key rotation** keeps the profile: add the new key with the same permissions on every chain where the old key is used, test, then remove the old one (`up key rotate-plan`; a chain with its own key: `up key rotate-plan --chain <id>`).
+- **The agent's key is permanent** (never replaced or deleted; `references/security.md`). Only if it is truly lost does a co-owner or admin add a new additional key on each network; the lost key stays listed.
 
 ## Diagnosing permission errors
 
