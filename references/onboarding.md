@@ -1,8 +1,20 @@
 # Onboarding: getting the agent its profile
 
-Step-by-step scripts for the two journeys. J1: the agent creates its own profile and pays its own gas. J2: the agent joins a profile that already exists (created through a relayer website, a wallet, or any other way). Run `up doctor` and `up init` first (SKILL.md "First run"). Check exact arguments with `up <verb> --help`.
+Step-by-step scripts for the three onboarding paths. J1: the agent creates its own profile with gas the human provides. J2-relayer: the human creates the profile on the Universal Relayer website (gas included on several networks) and authorises the agent. J2: the agent joins a profile the human already has (created through a relayer, a wallet, or any other way). Run `up doctor` and `up init` first (SKILL.md "First run"), then offer the choice (below). Check exact arguments with `up <verb> --help`.
 
-## Before either journey
+## Offer the choice first
+
+Run `up onboarding options` and show the three choices from its `text`. You may reword them for the chat, but keep their meaning: who pays the gas, that the Universal Relayer is optional and opens a separate website with its own terms, and which networks it covers.
+
+1. **Create my own account (you provide the gas)**: *"I create my own account on each network you choose. You send a little gas to each network yourself. No outside service needed, but every network has to be funded separately."* → J1.
+2. **Create it with the Universal Relayer (gas included)**: *"One subscription gives gas on LUKSO, Ethereum, Base, BNB Chain, Arbitrum, Robinhood Chain, Polygon and Avalanche. My account is ready on all of them right away. This opens a separate website with its own terms."* → J2-relayer.
+3. **Use a Universal Profile you already have**: *"You give me the profile's address and allow me to act for it, with the permissions you choose. You stay in control."* → J2.
+
+Do not push either of the first two; explain the trade-off if asked. Choice 1 depends on nothing but the networks themselves and costs gas per network. Choice 2 is convenient and gasless for the agent, but depends on the relayer service and its subscription.
+
+> **TODO (product):** the Universal Relayer website link is not published yet (`data.paths[1].todo` in `up onboarding options`; `UNIVERSAL_RELAYER_WEBSITE` in the source). Until it is, say *"The Universal Relayer website is coming soon"* and offer choices 1 and 3. Never guess or search for a URL.
+
+## Before every journey
 
 - You have a controller key: `up key address` prints its public address; `up key backend` says how it is stored.
 - Tell the human, once and briefly: *"I created my own signing key. It stays on this machine in <plain-words protection from `up init`>. I will only ever show you public addresses."*
@@ -55,11 +67,20 @@ Result: the agent deploys its own profile on each chosen chain, at the same addr
 7. **More networks later.** `up profile status` shows, per configured chain, where the profile is deployed and what is missing. `up account manifest show` lists the frozen inputs; `up account deploy --chain <id>` replays them on a new chain (same address; the agent's key for that chain pays the gas). Controllers added after the first deployment must be added again on the new chain; say so: *"On <chain> your profile will start with my key as its only controller; I will add your address there too if you want."*
 8. **Wrap up.** Give the human: the profile address (QR + text), the chains it is deployed on with explorer links, the controllers on each chain, and where assets should be sent (`up profile status` has it all per chain).
 
+## J2-relayer: create the profile with the Universal Relayer
+
+Result: the human creates the profile on the Universal Relayer website, which pays gas on its networks under the human's subscription, and authorises the agent's controller address there. The agent then joins that profile (J2 steps 4–8).
+
+1. **Prepare what the human needs on the website.** `up key address` and `up display address <controller>` (QR + text; no funding needed on this path), and `up permissions recommend` for the recommended permission set. Say: *"On the Universal Relayer website, create your profile and choose the networks. When it asks which agent to authorise, use my address <address> with these permissions: <list>. The website is a separate service with its own terms."* Give the link from `up onboarding options` (or, while it is a TODO, say it is coming soon and offer choices 1 and 3).
+2. **Networks and profile address.** When the human is done, ask which networks they chose on the website and set them: `up config set chains <id,id,...>` and `up config set default-chain <id>` (a fresh setup has none, and `profile join` needs them; `--chains` works too). Then ask for the profile address and run `up profile join <profileAddress>`. It checks every configured network: deployed there, this agent a controller there.
+3. **Relayer API.** The human (or the website) gives the relayer's API address: `up relayer add <baseUrl>`, then `up relayer quota --chain <id>` per network. Execution then goes through the relayer (`--via auto` picks it when quota is available).
+4. **Continue with J2 steps 4–8:** verify the permissions per network, wrap up in profile language, and ask about profile metadata when `metadata.askHuman` is true.
+
 ## J2: join an existing profile (relayer-created or any profile)
 
 Result: the human grants the agent's controller address a scoped permission set on each chain. The human keeps their own control; the agent never assumes it was removed.
 
-1. **Get the profile address.** Ask for it (a public address). `up profile join <profileAddress>` resolves the Key Manager and checks on which configured chains the profile is deployed and whether the agent is already a controller. If the profile has a different address on some chain (rare: created with other inputs there), the human tells you, and you link it: `up profile link <address> --chain <id>` (their approval).
+1. **Networks and profile address.** Ask on which networks the agent should act and set them (`up config set chains <id,id,...>`, `up config set default-chain <id>`; a fresh setup has none). Ask for the profile address (a public address). `up profile join <profileAddress>` resolves the Key Manager and checks on which configured chains the profile is deployed and whether the agent is already a controller. If the profile has a different address on some chain (rare: created with other inputs there), the human tells you, and you link it: `up profile link <address> --chain <id>` (their approval).
 2. **Hand over the controller address and the recommended permissions.** `up permissions recommend` prints the agent's controller address and the recommended set (`agent-operator` preset) as text to paste into the relayer dashboard or wallet, plus a plain-words explanation. Say:
    - *"To let me act for this profile, please authorise my controller address <address> on each network you want me to use. I recommend these permissions: <list from the verb>, limited to <the allowed contracts/functions and data keys from the verb>. With them I can call those contracts and send value to them as the profile, update those profile data keys, sign messages as the profile and use the relayer. I cannot add or remove controllers, change permissions, change ownership or install extensions. You stay in control and can change or remove my permissions at any time."*
    - The non-SUPER permissions (`CALL`, `TRANSFERVALUE`, `STATICCALL`, `SETDATA`) only work together with allow-lists: without AllowedCalls entries no call is allowed (`NoCallsAllowed`), without AllowedERC725YDataKeys no data key can be set (`NoERC725YDataKeysAllowed`). Agree on these lists with the human (which contracts and functions, which data keys); see `references/permissions.md`. If the human prefers to grant `SUPER_CALL`/`SUPER_TRANSFERVALUE`/`SUPER_SETDATA` instead, explain that this removes the lists and lets the agent call anything, then accept their decision.
@@ -71,7 +92,7 @@ Result: the human grants the agent's controller address a scoped permission set 
 7. **Profile metadata (when missing).** `up profile join` reports `data.metadata` for LUKSO mainnet. When `askHuman` is true (the profile is deployed there but has no LSP3 metadata yet), ask once whether the human wants to add a name, description, profile picture and background image, and follow J1 step 6. The agent's key needs `SETDATA` with `LSP3Profile` among its allowed data keys for this (recommend with `up permissions recommend --allowed-keys LSP3Profile`); otherwise the human can add the metadata in their own app.
 8. **Wrap up.** `up profile status`, then report per chain in profile language: *"On LUKSO I can now act for your profile (send to the token contracts you allowed, update your profile data), gaslessly through the relayer. On Base your profile is not deployed yet."* Include permissions as stored, relayer quota or gas status, and which path the agent will use.
 
-## Delegated autonomy (both journeys)
+## Delegated autonomy (every journey)
 
 After onboarding, agree on what the agent may do without asking each time, and store it with the human's approval: `up policy show`, then `up policy set` (admin, `--approval`). The policy lists allowed chains, targets, function selectors, a native-value cap per transaction per chain, a daily action limit and whether admin actions are allowed. The default policy allows no native value transfers and no admin actions without approval.
 

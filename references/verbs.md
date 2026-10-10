@@ -16,7 +16,7 @@ Risk classes: **local** (no chain writes), **read** (chain/HTTP reads), **write*
 - **knowledge**: [`docs`](#docs), [`protocols list`](#protocols-list), [`protocols verify`](#protocols-verify), [`standards list`](#standards-list)
 - **permissions**: [`allowed-calls set`](#allowed-calls-set), [`allowed-calls show`](#allowed-calls-show), [`allowed-keys set`](#allowed-keys-set), [`allowed-keys show`](#allowed-keys-show), [`controller add`](#controller-add), [`controller edit`](#controller-edit), [`controller remove`](#controller-remove), [`ownership accept`](#ownership-accept), [`ownership renounce`](#ownership-renounce), [`ownership transfer`](#ownership-transfer), [`permissions decode`](#permissions-decode), [`permissions encode`](#permissions-encode), [`permissions list`](#permissions-list), [`permissions presets`](#permissions-presets), [`permissions recommend`](#permissions-recommend), [`permissions show`](#permissions-show)
 - **relayer**: [`relayer add`](#relayer-add), [`relayer execute`](#relayer-execute), [`relayer list`](#relayer-list), [`relayer quota`](#relayer-quota), [`relayer remove`](#relayer-remove)
-- **setup**: [`config get`](#config-get), [`config set`](#config-set), [`doctor`](#doctor), [`policy set`](#policy-set), [`policy show`](#policy-show)
+- **setup**: [`config get`](#config-get), [`config set`](#config-set), [`doctor`](#doctor), [`onboarding options`](#onboarding-options), [`policy set`](#policy-set), [`policy show`](#policy-show)
 - **sign**: [`sign message`](#sign-message), [`sign typed-data`](#sign-typed-data), [`verify-1271`](#verify-1271)
 - **social**: [`follow`](#follow), [`follow batch`](#follow-batch), [`followers`](#followers), [`is-following`](#is-following), [`unfollow`](#unfollow)
 - **tokens**: [`token approve`](#token-approve), [`token balance`](#token-balance), [`token list`](#token-list), [`token metadata`](#token-metadata), [`token operators`](#token-operators), [`token transfer`](#token-transfer)
@@ -1442,6 +1442,21 @@ Check runtime, state dir, signer backends, configured chains/RPCs and relayers; 
 | option | type | required | description |
 | --- | --- | --- | --- |
 | `--offline` | boolean |  | Skip network checks. |
+
+### onboarding options
+
+The onboarding choices to offer the human (own account with their gas, Universal Relayer with gas included, or an existing profile), as data and ready-to-show text.
+
+Run after `up init`, before creating or joining a profile. Show `text` (or the same choices in your own words, keeping who pays gas, that the Universal Relayer is an optional separate website with its own terms, and its networks). Then follow the chosen journey in references/onboarding.md. `data.paths[].todo` marks something not available yet (e.g. the Universal Relayer link).
+
+- CLI: `up onboarding options [options]`
+- MCP tool: `up_onboarding_options` · risk: **local**
+
+Examples:
+
+```
+up onboarding options
+```
 
 ### policy set
 
