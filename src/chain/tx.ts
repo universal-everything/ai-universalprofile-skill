@@ -165,7 +165,7 @@ export async function sendTx(ctx: VerbContext, signer: Signer, req: TxRequest): 
   const maxCost = gas * (fee.maxFeePerGas ?? fee.gasPrice ?? 0n) + (req.value ?? 0n);
   if (balance < maxCost) {
     throw new UpError("TX_FAILED", `controller ${from} has insufficient native balance on chain ${req.chainId} (has ${balance} wei, needs up to ${maxCost} wei)`, {
-      hint: `ask the human to fund the controller address for gas: up qr ${from} --chain ${req.chainId}`,
+      hint: `you are out of gas on chain ${req.chainId}: ask the human for a top-up in plain words with dollar values: up funding suggest --chain ${req.chainId} --purpose refill (and show the QR: up display address ${from} --chain ${req.chainId})`,
       details: { balance, maxCost },
     });
   }

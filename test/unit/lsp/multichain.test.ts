@@ -46,7 +46,7 @@ describe("nextStepsFor: one concrete fix per chain state", () => {
 
   it("not deployed + manifest + no gas → fund the agent's key on that chain first", () => {
     const s = nextStepsFor(base({ manifest: true, controller: ctl({ isController: false, lowGas: true }) }));
-    expect(s[0]).toContain(`first fund the agent's key ${K} on Base for gas: up display address ${K} --chain base`);
+    expect(s[0]).toContain(`first fund the agent's key ${K} on Base for gas: up funding suggest --chain base (amounts with dollar values) and up display address ${K} --chain base (QR)`);
   });
 
   it("not deployed, no manifest → the human deploys it (same inputs) or links the address it has there", () => {

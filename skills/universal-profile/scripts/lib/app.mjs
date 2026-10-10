@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint d98555771416 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 4b926b05443b (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -3161,7 +3161,7 @@ async function sendTx(ctx, signer, req) {
   const maxCost = gas * (fee.maxFeePerGas ?? fee.gasPrice ?? 0n) + (req.value ?? 0n);
   if (balance < maxCost) {
     throw new UpError("TX_FAILED", `controller ${from} has insufficient native balance on chain ${req.chainId} (has ${balance} wei, needs up to ${maxCost} wei)`, {
-      hint: `ask the human to fund the controller address for gas: up qr ${from} --chain ${req.chainId}`,
+      hint: `you are out of gas on chain ${req.chainId}: ask the human for a top-up in plain words with dollar values: up funding suggest --chain ${req.chainId} --purpose refill (and show the QR: up display address ${from} --chain ${req.chainId})`,
       details: { balance, maxCost }
     });
   }
@@ -8107,7 +8107,7 @@ function nextStepsFor(s) {
   if (!s.deployed) {
     if (s.lspContracts === false) return [`the LSP contracts are not deployed on ${where}, so your profile cannot be deployed there by this skill (check: up chains verify ${arg})`, keep];
     if (s.manifest) {
-      const gas = s.controller?.lowGas ? `; first fund the agent's key ${s.controller.address} on ${s.chain} for gas: up display address ${s.controller.address} --chain ${arg}` : "";
+      const gas = s.controller?.lowGas ? `; first fund the agent's key ${s.controller.address} on ${s.chain} for gas: up funding suggest --chain ${arg} (amounts with dollar values) and up display address ${s.controller.address} --chain ${arg} (QR)` : "";
       return [`deploy your profile on ${where} at the same address: up account deploy --chain ${arg} --dry-run, then with the human's approval (replays the saved deployment manifest; the agent's key pays the gas)${gas}`, keep];
     }
     return [
@@ -8128,7 +8128,7 @@ function nextStepsFor(s) {
   }
   const steps = [];
   if (c.lowGas && !s.relayUsable) {
-    steps.push(`fund the agent's key ${c.address} on ${where} for gas (it holds ${c.balanceFormatted ?? "nothing"}): up display address ${c.address} --chain ${arg} shows the QR code`);
+    steps.push(`fund the agent's key ${c.address} on ${where} for gas (it holds ${c.balanceFormatted ?? "nothing"}): up funding suggest --chain ${arg} --purpose refill gives the amount with dollar values; up display address ${c.address} --chain ${arg} shows the QR code`);
     if (s.relayer && !c.canRelay) steps.push(`or let it use the relayer ${s.relayer.name} gaslessly: the human adds EXECUTE_RELAY_CALL for ${c.address} on ${s.chain} (up controller edit ${c.address} --add EXECUTE_RELAY_CALL --chain ${arg})`);
     return steps;
   }
@@ -8370,7 +8370,8 @@ __export(funding_exports, {
   displaySymbol: () => displaySymbol,
   friendlyAmount: () => friendlyAmount,
   priceIdFor: () => priceIdFor,
-  priceUsd: () => priceUsd
+  priceUsd: () => priceUsd,
+  starterUsd: () => starterUsd
 });
 import { formatEther as formatEther3, keccak256 as keccak25612, parseEther, toHex as toHex2 } from "./vendor-viem.mjs";
 function displaySymbol(symbol) {
@@ -8415,6 +8416,9 @@ function friendlyAmount(wei) {
   const up = Math.ceil(n / step - 1e-9) * step;
   return up >= 1 ? String(Number(up.toPrecision(2))) : up.toFixed(Math.max(0, 1 - mag));
 }
+function starterUsd(chainId) {
+  return chainId === 1 ? { min: 2, max: 5 } : { min: 1, max: 1 };
+}
 function usdToWei(usd, priceUsd2) {
   return parseEther((usd / priceUsd2).toFixed(18));
 }
@@ -8447,8 +8451,11 @@ var init_funding = __esm({
       summary: "How much native coin to ask the human to send to the agent's address on a network: about $1 worth to create the profile plus some gas, about $10 worth for more actions (never less than the current deployment cost). Plain-language text included.",
       description: "Uses a live price (CoinGecko, cached 10 minutes) and an on-chain estimate of the profile deployment on that network. Without a price it suggests a coin amount only and makes no dollar claim. Show the QR of the address (up display address <address>) together with `text`.",
       risk: "read",
-      params: [{ name: "address", type: "string", description: "Address to fund (default: this agent's key for the chain)." }],
-      examples: ["up funding suggest --chain lukso", "up funding suggest --chain base"],
+      params: [
+        { name: "address", type: "string", description: "Address to fund (default: this agent's key for the chain)." },
+        { name: "purpose", type: "string", description: "setup: first funding (create the profile + some gas); refill: the agent is running low.", enum: ["setup", "refill"], default: "setup" }
+      ],
+      examples: ["up funding suggest --chain lukso", "up funding suggest --chain ethereum", "up funding suggest --chain base --purpose refill"],
       async run(ctx, a) {
         const chainId = ctx.chainId(a.chain);
         const chain = ctx.registry.chain(chainId);
@@ -8461,10 +8468,15 @@ var init_funding = __esm({
           ctx.rpc.request(chainId, "eth_getBalance", [address, "latest"])
         ]);
         const floor = deployCost ? deployCost * 3n / 2n : 0n;
-        const starterWei = price ? [usdToWei(1, price), floor].reduce((x, y) => x > y ? x : y) : floor * 2n;
-        const moreWei = price ? [usdToWei(10, price), starterWei * 2n].reduce((x, y) => x > y ? x : y) : starterWei * 10n;
+        const max = (x, y) => x > y ? x : y;
+        const tier = starterUsd(chainId);
+        const starterMinWei = price ? max(usdToWei(tier.min, price), floor) : floor * 2n;
+        const starterWei = price ? max(usdToWei(tier.max, price), floor) : floor * 2n;
+        const moreWei = price ? max(usdToWei(10, price), starterWei * 2n) : starterWei * 10n;
         if (starterWei === 0n) throw new UpError("NETWORK_ERROR", `could not estimate gas or price on ${chain.name}`, { hint: `retry, or check the network: up chains verify ${chainId}` });
         const usdOf = (wei) => price ? Math.round(Number(formatEther3(wei)) * price * 100) / 100 : void 0;
+        const balanceWei = BigInt(balanceHex);
+        const purpose = a.purpose === "refill" ? "refill" : "setup";
         const s = {
           chainId,
           network: chain.name,
@@ -8472,14 +8484,28 @@ var init_funding = __esm({
           address,
           priceUsd: price,
           deploymentCost: deployCost ? formatEther3(deployCost) : void 0,
-          balance: formatEther3(BigInt(balanceHex)),
-          starter: { amount: friendlyAmount(starterWei), usd: usdOf(starterWei) },
+          balance: formatEther3(balanceWei),
+          balanceUsd: usdOf(balanceWei),
+          // setup: below the suggested start budget; refill: below half of it (a few actions left)
+          low: purpose === "refill" ? balanceWei < starterMinWei / 2n : balanceWei < starterMinWei,
+          starter: {
+            amount: friendlyAmount(starterWei),
+            usd: usdOf(starterWei),
+            ...price && tier.min !== tier.max ? { range: { min: friendlyAmount(starterMinWei), max: friendlyAmount(starterWei), usdMin: tier.min, usdMax: tier.max } } : {}
+          },
           more: { amount: friendlyAmount(moreWei), usd: usdOf(moreWei) }
         };
         const usd = (v) => v !== void 0 ? ` (about $${v < 10 ? v.toFixed(2) : Math.round(v)})` : "";
-        const text = [
-          `Please send about ${s.starter.amount} ${symbol}${usd(s.starter.usd)}${chain.testnet ? " (test coins, e.g. from a faucet)" : ""} on ${chain.name} to my address ${address} (QR attached).`,
-          `That's enough for me to create the profile and still have gas for a few actions. If you'd like me to do more right away, send about ${s.more.amount} ${symbol}${usd(s.more.usd)} instead.`,
+        const ask = s.starter.range ? `about ${s.starter.range.min}–${s.starter.range.max} ${symbol} (about $${s.starter.range.usdMin}–$${s.starter.range.usdMax})` : `about ${s.starter.amount} ${symbol}${usd(s.starter.usd)}`;
+        const test = chain.testnet ? " (test coins, e.g. from a faucet)" : "";
+        const text = purpose === "refill" && !s.low ? `I still have ${friendlyAmount(balanceWei)} ${symbol}${usd(s.balanceUsd)} for gas on ${chain.name}; that's enough for now, no top-up needed.` : purpose === "refill" ? [
+          `I'm running low on gas on ${chain.name}: I have ${friendlyAmount(balanceWei)} ${symbol}${usd(s.balanceUsd)} left.`,
+          `Could you top me up with ${ask}${test} to my address ${address} (QR attached)? Then I can keep acting for you there.`,
+          `For a bigger buffer, about ${s.more.amount} ${symbol}${usd(s.more.usd)}.`
+        ].join(" ") : [
+          `Please send ${ask}${test} on ${chain.name} to my address ${address} (QR attached).`,
+          `That covers creating the profile and leaves gas so I can keep acting for you afterwards without running out right away.`,
+          `If you'd like me to do more right away, send about ${s.more.amount} ${symbol}${usd(s.more.usd)} instead.`,
           "This is my own gas money: with it I do everything myself, so you never have to sign anything."
         ].join(" ");
         return { data: s, text };
@@ -9035,7 +9061,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "d98555771416" : "source";
+var SOURCE = true ? "4b926b05443b" : "source";
 
 // src/chain/discovery.ts
 init_assets();

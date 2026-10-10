@@ -70,4 +70,28 @@ describe("funding suggest", () => {
     expect(r.text).toMatch(/test coins/);
     expect(priceCalls).toBe(before);
   });
+
+  it("Ethereum mainnet gets a $2–$5 range; refill mode reports the balance with its dollar value", async () => {
+    const { starterUsd } = await import("../../src/chain/funding.ts");
+    expect(starterUsd(1)).toEqual({ min: 2, max: 5 });
+    expect(starterUsd(42)).toEqual({ min: 1, max: 1 });
+    const agent = testSigner(generatePrivateKey());
+    const home = h.newHome();
+    const overlay = join(home, "cache", "registry", "overlay.json");
+    const o = JSON.parse(readFileSync(overlay, "utf8"));
+    o.chains = o.chains.map((c: any) => ({ ...c, testnet: false }));
+    writeFileSync(overlay, JSON.stringify(o));
+    const ctx = testContext(home, agent);
+    await h.fund(agent.address, parseEther("0.0001"));
+    const r: any = await run(ctx, "funding suggest", { purpose: "refill" });
+    expect(r.text).toMatch(/^I'm running low on gas on .+: I have .+ ETH \(about \$0\.25\) left\./);
+    expect(r.text).toMatch(/Could you top me up with about .+ ETH \(about \$[0-9.]+\) to my address 0x[0-9a-fA-F]{40} \(QR attached\)/);
+    expect(r.data.balanceUsd).toBe(0.25);
+    expect(r.data.low).toBe(true);
+    await h.fund(agent.address, parseEther("1")); // now plenty
+    const ok: any = await run(ctx, "funding suggest", { purpose: "refill" });
+    expect(ok.data.low).toBe(false);
+    expect(ok.text).toMatch(/that's enough for now, no top-up needed\./);
+    expect(ok.text).not.toMatch(/running low/);
+  });
 });

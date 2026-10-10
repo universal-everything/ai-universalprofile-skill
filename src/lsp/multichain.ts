@@ -250,7 +250,7 @@ export function nextStepsFor(s: ChainProfileStatus): string[] {
   if (!s.deployed) {
     if (s.lspContracts === false) return [`the LSP contracts are not deployed on ${where}, so your profile cannot be deployed there by this skill (check: up chains verify ${arg})`, keep];
     if (s.manifest) {
-      const gas = s.controller?.lowGas ? `; first fund the agent's key ${s.controller.address} on ${s.chain} for gas: up display address ${s.controller.address} --chain ${arg}` : "";
+      const gas = s.controller?.lowGas ? `; first fund the agent's key ${s.controller.address} on ${s.chain} for gas: up funding suggest --chain ${arg} (amounts with dollar values) and up display address ${s.controller.address} --chain ${arg} (QR)` : "";
       return [`deploy your profile on ${where} at the same address: up account deploy --chain ${arg} --dry-run, then with the human's approval (replays the saved deployment manifest; the agent's key pays the gas)${gas}`, keep];
     }
     return [
@@ -271,7 +271,7 @@ export function nextStepsFor(s: ChainProfileStatus): string[] {
   }
   const steps: string[] = [];
   if (c.lowGas && !s.relayUsable) {
-    steps.push(`fund the agent's key ${c.address} on ${where} for gas (it holds ${c.balanceFormatted ?? "nothing"}): up display address ${c.address} --chain ${arg} shows the QR code`);
+    steps.push(`fund the agent's key ${c.address} on ${where} for gas (it holds ${c.balanceFormatted ?? "nothing"}): up funding suggest --chain ${arg} --purpose refill gives the amount with dollar values; up display address ${c.address} --chain ${arg} shows the QR code`);
     if (s.relayer && !c.canRelay) steps.push(`or let it use the relayer ${s.relayer.name} gaslessly: the human adds EXECUTE_RELAY_CALL for ${c.address} on ${s.chain} (up controller edit ${c.address} --add EXECUTE_RELAY_CALL --chain ${arg})`);
     return steps;
   }
