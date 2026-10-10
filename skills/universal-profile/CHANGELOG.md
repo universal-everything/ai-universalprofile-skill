@@ -7,6 +7,7 @@ All notable changes to the Universal Profile Agent Skill. Versions follow Semant
 First version of the skill.
 
 ### Added
+- Onboarding choice (`up onboarding options`): own account with the human's gas per network, Universal Relayer (gas included on several networks, separate website; link to be added), or an existing profile. Journeys J1, J2-relayer and J2 in `references/onboarding.md`.
 - Distribution: the repository's default branch `main` is exactly this skill with `SKILL.md` at the root (`openclaw skills install git:universal-everything/ai-universalprofile-skill`, `npx skills add universal-everything/ai-universalprofile-skill`, or `git clone` into a skills directory); sources and tests live on branch `source`.
 - Agent Skill package `universal-profile`: `SKILL.md`, reference documents (`references/`), bundled ABIs and registry data (`assets/`), single-file Node.js tools (`scripts/up.mjs`, `scripts/up-mcp.mjs`, `scripts/up-doctor.mjs`), MIT-0 license.
 - Controller key generated inside the skill and stored in the strongest available key store: macOS login keychain, `systemd-creds`, desktop keyring, Windows DPAPI (also from WSL2), or a protected key file inside cloud agent VMs; fail-closed status reporting; key rotation with candidate keys; encrypted keystore backup run by the human only.

@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint b44af944496f (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 44527baa7c82 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -8403,7 +8403,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "b44af944496f" : "source";
+var SOURCE = true ? "44527baa7c82" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -19028,6 +19028,76 @@ defineVerb({
       text: rows.length ? rows.map((s) => `${s.id.padEnd(9)} ${s.name} — ${s.summary}
           ${s.url}`).join("\n") : `no standard matches "${a.filter}"`
     };
+  }
+});
+
+// src/knowledge/onboarding.ts
+var UNIVERSAL_RELAYER_WEBSITE = void 0;
+var UNIVERSAL_RELAYER_CHAINS = [42, 1, 8453, 56, 42161, 4663, 137, 43114];
+function chainName4(ctx, id) {
+  try {
+    return ctx.registry.chain(id).name;
+  } catch {
+    return `chain ${id}`;
+  }
+}
+function listWords(items) {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+function onboardingPaths(ctx, website = UNIVERSAL_RELAYER_WEBSITE) {
+  const networks = UNIVERSAL_RELAYER_CHAINS.map((chainId) => ({ chainId, name: chainName4(ctx, chainId) }));
+  return [
+    {
+      id: "self-funded",
+      title: "Create my own account (you provide the gas)",
+      subtitle: "I create my own account on each network you choose. You send a little gas to each network yourself. No outside service needed, but every network has to be funded separately.",
+      gas: "you fund the agent's controller address on each network",
+      journey: "J1",
+      next: ["up chains list", "up account precompute", "up display address <controller> --chain <id>"]
+    },
+    {
+      id: "universal-relayer",
+      title: "Create it with the Universal Relayer (gas included)",
+      subtitle: `One subscription gives gas on several networks: ${listWords(networks.map((n) => n.name))}. My account is ready on all of them right away. This opens a separate website with its own terms.`,
+      gas: "the Universal Relayer pays the gas (subscription)",
+      journey: "J2-relayer",
+      next: ["up permissions recommend", "up display address <controller>", "up profile join <profileAddress>"],
+      networks,
+      ...website ? { url: website } : { todo: "The Universal Relayer website link is not published yet; say it is coming soon and offer the other options." }
+    },
+    {
+      id: "existing-profile",
+      title: "Use a Universal Profile you already have",
+      subtitle: "You give me the profile's address and allow me to act for it, with the permissions you choose. You stay in control.",
+      gas: "a relayer, or you fund the agent's controller address",
+      journey: "J2",
+      next: ["up profile join <profileAddress>", "up permissions recommend"]
+    }
+  ];
+}
+function onboardingText(paths2) {
+  const lines = ["How should I get my Universal Profile? Please pick one:", ""];
+  paths2.forEach((p, i) => {
+    lines.push(`${i + 1}. ${p.title}`);
+    lines.push(`   ${p.subtitle}`);
+    if (p.url) lines.push(`   ${p.url}`);
+    else if (p.todo) lines.push("   (The website link is coming soon.)");
+    lines.push("");
+  });
+  lines.push("You can add more networks later; on every network it stays the same profile.");
+  return lines.join("\n");
+}
+defineVerb({
+  name: "onboarding options",
+  group: "setup",
+  summary: "The onboarding choices to offer the human (own account with their gas, Universal Relayer with gas included, or an existing profile), as data and ready-to-show text.",
+  description: "Run after `up init`, before creating or joining a profile. Show `text` (or the same choices in your own words, keeping who pays gas, that the Universal Relayer is an optional separate website with its own terms, and its networks). Then follow the chosen journey in references/onboarding.md. `data.paths[].todo` marks something not available yet (e.g. the Universal Relayer link).",
+  risk: "local",
+  params: [],
+  examples: ["up onboarding options"],
+  async run(ctx) {
+    const paths2 = onboardingPaths(ctx);
+    return { data: { paths: paths2 }, text: onboardingText(paths2) };
   }
 });
 

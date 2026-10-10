@@ -39,7 +39,7 @@ Most "crypto skills" for AI agents hand the agent a raw private key. Whoever hol
 
 ## What your agent can do with it
 
-- **Set up:** create its own profile (you fund a little gas) or join a profile you already have, then show the address, identicon and funding QR code.
+- **Set up:** the agent offers three ways to get started: it creates its own account with gas you provide on each network; you create the profile with the Universal Relayer (gas included on LUKSO, Ethereum, Base, BNB Chain, Arbitrum, Robinhood Chain, Polygon and Avalanche, a separate service with its own terms; link coming soon) and authorise the agent; or you let it use a profile you already have. Then it shows the address, identicon and funding QR code.
 - **Manage control:** add or remove controllers, grant or narrow permissions, limit which contracts and functions it may call ("AllowedCalls") and which data it may write, and rotate its key or hand over ownership.
 - **Hold and move value:** send native coins and tokens, receive assets, and list what the profile owns.
 - **Use any contract:** read, encode, simulate and call any function on any of the supported chains, with decoded results, errors and events.
