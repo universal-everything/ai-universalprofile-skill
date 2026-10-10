@@ -518,15 +518,18 @@ Add a chain that is not in the LUKSO registry: metadata + working RPCs from chai
 
 ### chains list
 
-List the registry chains (73 LSP-deployed networks + overlay) with LSP status, explorers and RPC counts.
+List the registry networks (LSP status, explorers, RPC counts): recommended ones first (LUKSO, then the top mainnets), mainnets only unless --testnets or --all.
+
+Without flags: mainnets, the recommended networks first and marked (LUKSO first). Testnets are only for humans who explicitly ask for them: --testnets lists only testnets, --all lists both. A filter searches mainnets and testnets.
 
 - CLI: `up chains list [filter] [options]`
 - MCP tool: `up_chains_list` · risk: **local**
 
 | option | type | required | description |
 | --- | --- | --- | --- |
-| `--filter` | string |  | Substring filter on name/slug/id. |
-| `--testnets` | boolean |  | Only testnets. |
+| `--filter` | string |  | Substring filter on name/slug/id (searches mainnets and testnets). |
+| `--testnets` | boolean |  | Only testnets (only when the human asked for a testnet). |
+| `--all` | boolean |  | Mainnets and testnets. |
 
 ### chains refresh
 

@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 2b58a9a82bf5 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 285706ba4230 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -8403,7 +8403,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "2b58a9a82bf5" : "source";
+var SOURCE = true ? "285706ba4230" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -8626,6 +8626,16 @@ var LSP = {
   LSP26: "0xf01103E5a9909Fc0DBe8166dA7085e0285daDDcA"
 };
 
+// src/chain/recommended.ts
+var RECOMMENDED_CHAINS = [42, 1, 8453, 42161, 56, 137];
+function isRecommended(chainId) {
+  return RECOMMENDED_CHAINS.includes(chainId);
+}
+function recommendationRank(chainId) {
+  const i = RECOMMENDED_CHAINS.indexOf(chainId);
+  return i === -1 ? RECOMMENDED_CHAINS.length : i;
+}
+
 // src/verbs/setup.ts
 init_json();
 init_providers();
@@ -8804,16 +8814,21 @@ defineVerb({
 defineVerb({
   name: "chains list",
   group: "chains",
-  summary: "List the registry chains (73 LSP-deployed networks + overlay) with LSP status, explorers and RPC counts.",
+  summary: "List the registry networks (LSP status, explorers, RPC counts): recommended ones first (LUKSO, then the top mainnets), mainnets only unless --testnets or --all.",
+  description: "Without flags: mainnets, the recommended networks first and marked (LUKSO first). Testnets are only for humans who explicitly ask for them: --testnets lists only testnets, --all lists both. A filter searches mainnets and testnets.",
   risk: "local",
   params: [
-    { name: "filter", type: "string", description: "Substring filter on name/slug/id.", positional: 0 },
-    { name: "testnets", type: "boolean", description: "Only testnets." }
+    { name: "filter", type: "string", description: "Substring filter on name/slug/id (searches mainnets and testnets).", positional: 0 },
+    { name: "testnets", type: "boolean", description: "Only testnets (only when the human asked for a testnet)." },
+    { name: "all", type: "boolean", description: "Mainnets and testnets." }
   ],
   async run(ctx, a) {
     const f = a.filter ? String(a.filter).toLowerCase() : void 0;
-    const rows = ctx.registry.chains().filter((c) => a.testnets ? c.testnet : true).filter((c) => !f || c.name.toLowerCase().includes(f) || c.slug.includes(f) || String(c.chainId) === f).map((c) => ({ chainId: c.chainId, name: c.name, slug: c.slug, symbol: c.nativeSymbol, testnet: c.testnet, lspDeployed: c.lsp.deployed, upVersions: c.lsp.versions.UniversalProfileInit ?? [], explorer: c.explorers[0]?.url, explorerFamily: c.explorers[0]?.family, rpcs: c.rpcs.length, relayers: (c.relayers ?? []).map((r) => r.name) }));
-    return { data: { count: rows.length, chains: rows }, text: rows.map((r) => `${String(r.chainId).padEnd(10)} ${r.slug.padEnd(22)} ${r.symbol.padEnd(8)} ${r.lspDeployed ? "LSP✅" : "LSP❌"} ${r.explorer ?? ""}`).join("\n") };
+    const rows = ctx.registry.chains().filter((c) => a.testnets ? c.testnet : a.all || f ? true : !c.testnet).filter((c) => !f || c.name.toLowerCase().includes(f) || c.slug.includes(f) || String(c.chainId) === f).map((c) => ({ chainId: c.chainId, name: c.name, slug: c.slug, symbol: c.nativeSymbol, testnet: c.testnet, recommended: isRecommended(c.chainId), lspDeployed: c.lsp.deployed, upVersions: c.lsp.versions.UniversalProfileInit ?? [], explorer: c.explorers[0]?.url, explorerFamily: c.explorers[0]?.family, rpcs: c.rpcs.length, relayers: (c.relayers ?? []).map((r) => r.name) })).map((r, i) => ({ r, i })).sort((x, y) => recommendationRank(x.r.chainId) - recommendationRank(y.r.chainId) || x.i - y.i).map(({ r }) => r);
+    const line = (r) => `${r.recommended ? "★" : " "} ${String(r.chainId).padEnd(10)} ${r.slug.padEnd(22)} ${r.symbol.padEnd(8)} ${r.lspDeployed ? "LSP✅" : "LSP❌"} ${r.explorer ?? ""}`;
+    const rec = rows.filter((r) => r.recommended);
+    const head = rec.length ? [`★ recommended: ${rec.map((r) => r.name).join(", ")} (LUKSO first)${a.testnets || a.all ? "" : "; testnets only on request (--testnets)"}`] : [];
+    return { data: { count: rows.length, recommended: rec.map((r) => r.chainId), chains: rows }, text: [...head, ...rows.map(line)].join("\n") };
   }
 });
 defineVerb({
@@ -19075,7 +19090,7 @@ function onboardingPaths(ctx, website = UNIVERSAL_RELAYER_WEBSITE) {
     }
   ];
 }
-function onboardingText(paths2) {
+function onboardingText(paths2, recommended) {
   const lines = ["How should I get my Universal Profile? Please pick one:", ""];
   paths2.forEach((p, i) => {
     lines.push(`${i + 1}. ${p.title}`);
@@ -19084,6 +19099,7 @@ function onboardingText(paths2) {
     else if (p.todo) lines.push("   (The website link is coming soon.)");
     lines.push("");
   });
+  if (recommended?.length) lines.push(`Recommended networks: ${listWords(recommended)} (LUKSO first).`);
   lines.push("You can add more networks later; on every network it stays the same profile.");
   return lines.join("\n");
 }
@@ -19097,7 +19113,8 @@ defineVerb({
   examples: ["up onboarding options"],
   async run(ctx) {
     const paths2 = onboardingPaths(ctx);
-    return { data: { paths: paths2 }, text: onboardingText(paths2) };
+    const recommended = RECOMMENDED_CHAINS.map((chainId) => ({ chainId, name: chainName4(ctx, chainId) }));
+    return { data: { paths: paths2, recommendedNetworks: recommended }, text: onboardingText(paths2, recommended.map((n) => n.name)) };
   }
 });
 
