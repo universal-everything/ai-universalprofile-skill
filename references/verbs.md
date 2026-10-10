@@ -610,12 +610,14 @@ Uses a live price (CoinGecko, cached 10 minutes) and an on-chain estimate of the
 | option | type | required | description |
 | --- | --- | --- | --- |
 | `--address` | string |  | Address to fund (default: this agent's key for the chain). |
+| `--purpose` | string (setup\|refill) |  | setup: first funding (create the profile + some gas); refill: the agent is running low. Default: `"setup"`. |
 
 Examples:
 
 ```
 up funding suggest --chain lukso
-up funding suggest --chain base
+up funding suggest --chain ethereum
+up funding suggest --chain base --purpose refill
 ```
 
 ## display
