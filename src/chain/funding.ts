@@ -109,6 +109,39 @@ async function deploymentCostWei(ctx: VerbContext, chainId: number, from: Addres
   }
 }
 
+/**
+ * Does a relayer pay gas for this agent's profile on this chain? Needs a configured/known relayer for the chain,
+ * a profile, and the agent's key holding EXECUTE_RELAY_CALL on it. The quota is read when the relayer allows it
+ * (LSP15 /quota with a signed timestamp); otherwise it stays unknown, which is treated as "covered" (no false
+ * funding requests); the relay path itself reports a real shortage.
+ */
+async function relayerCoverage(ctx: VerbContext, chainId: number, key: Address): Promise<FundingSuggestion["relayer"] | undefined> {
+  try {
+    const { selectRelayer } = await import("../relayer/registry.ts");
+    const r = await selectRelayer(ctx, chainId);
+    if (!r) return undefined;
+    const profile = await ctx.profile(undefined, chainId).catch(() => undefined);
+    if (!profile) return undefined;
+    const { readControllerPermissions } = await import("../lsp/profile.ts");
+    const { resolveKeyManager } = await import("../lsp/profile.ts");
+    const km = await resolveKeyManager(ctx, chainId, profile).catch(() => undefined);
+    if (!km) return undefined;
+    const perms = await readControllerPermissions(ctx, chainId, profile, key).catch(() => undefined);
+    if (!perms?.permissions.names.includes("EXECUTE_RELAY_CALL")) return undefined;
+    try {
+      const { getVerb } = await import("../core/verbs.ts");
+      const q: any = await getVerb("relayer quota")!.run(ctx, { chain: String(chainId), relayer: r.name });
+      const d = q?.data ?? {};
+      if (d.available === false) return { name: r.name, quotaReadable: false };
+      return { name: r.name, quota: d.quota !== undefined ? String(d.quota) : undefined, unit: d.unit, hasQuota: d.hasQuota, quotaReadable: true };
+    } catch {
+      return { name: r.name, quotaReadable: false };
+    }
+  } catch {
+    return undefined;
+  }
+}
+
 export interface FundingSuggestion {
   chainId: number;
   network: string;
@@ -123,6 +156,10 @@ export interface FundingSuggestion {
   /** True when the balance is below what the setup suggestion asks for (refill: below a few actions). */
   low: boolean;
   starter: { amount: string; usd?: number; range?: { min: string; max: string; usdMin: number; usdMax: number } };
+  /** Set when a relayer pays gas for this profile on this chain: then the agent needs no gas of its own. */
+  relayer?: { name: string; quota?: string; unit?: string; hasQuota?: boolean; quotaReadable: boolean };
+  /** True when no gas top-up is needed because the relayer covers this profile here. */
+  gasNotNeeded?: boolean;
   more: { amount: string; usd?: number };
 }
 
@@ -183,6 +220,18 @@ defineVerb({
       },
       more: { amount: friendlyAmount(moreWei), usd: usdOf(moreWei) },
     };
+    // A profile the relayer pays for (e.g. created through the Universal Relayer) needs no gas on the agent's key:
+    // never ask for a top-up there unless the relayer quota is provably used up.
+    const relay = await relayerCoverage(ctx, chainId, address);
+    if (relay) {
+      s.relayer = relay;
+      if (relay.hasQuota !== false) {
+        s.gasNotNeeded = true;
+        s.low = false;
+        const quotaText = relay.quotaReadable && relay.quota !== undefined ? ` (quota left: ${relay.quota}${relay.unit ? ` ${relay.unit}` : ""})` : "";
+        return { data: s, text: `On ${chain.name} the relayer ${relay.name} pays the gas for my actions${quotaText}, so I don't need any coins for gas there.` };
+      }
+    }
     const usd = (v?: number) => (v !== undefined ? ` (about $${v < 10 ? v.toFixed(2) : Math.round(v)})` : "");
     const ask = s.starter.range
       ? `about ${s.starter.range.min}–${s.starter.range.max} ${symbol} (about $${s.starter.range.usdMin}–$${s.starter.range.usdMax})`

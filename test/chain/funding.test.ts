@@ -9,6 +9,9 @@ import { getHarness, type Harness } from "./harness.ts";
 import { testContext, testSigner } from "../support/context.ts";
 import { runVerb as run } from "../support/mock-relayer.ts";
 import "../../src/chain/funding.ts";
+import "../../src/relayer/verbs.ts";
+import "../../src/verbs/setup.ts";
+import { deployProfileFor, startMockRelayer, type MockRelayer } from "../support/mock-relayer.ts";
 
 let h: Harness;
 const realFetch = globalThis.fetch;
@@ -93,5 +96,36 @@ describe("funding suggest", () => {
     expect(ok.data.low).toBe(false);
     expect(ok.text).toMatch(/that's enough for now, no top-up needed\./);
     expect(ok.text).not.toMatch(/running low/);
+  });
+
+  it("a profile the relayer pays for gets no gas request; only a used-up quota falls back to asking for gas", async () => {
+    const agent = testSigner(generatePrivateKey());
+    const ctx = testContext(h.newHome(), agent, { approval: "human: approved for this test" });
+    await h.fund(agent.address, parseEther("1"));
+    const m = await deployProfileFor(ctx, agent, h.chainId); // agent-owner incl. EXECUTE_RELAY_CALL
+    await run(ctx, "config set", { key: "default-profile", value: m.profile });
+    await h.fund(agent.address, 0n); // the key holds no gas at all
+    const relayers: MockRelayer[] = [];
+    try {
+      const withQuota = await startMockRelayer({ request: h.request, chainId: h.chainId, relayerAccount: h.accounts[1] });
+      relayers.push(withQuota);
+      await run(ctx, "relayer add", { url: withQuota.url, name: "paid", chains: [String(h.chainId)] });
+      const r: any = await run(ctx, "funding suggest", { purpose: "refill" });
+      expect(r.data.gasNotNeeded).toBe(true);
+      expect(r.data.low).toBe(false);
+      expect(r.text).toMatch(/the relayer paid pays the gas for my actions/);
+      expect(r.text).not.toMatch(/running low|Please send|top me up/);
+
+      await run(ctx, "relayer remove", { name: "paid" });
+      const empty = await startMockRelayer({ request: h.request, chainId: h.chainId, relayerAccount: h.accounts[1], quota: { quota: 0, unit: "gas", totalQuota: 1000, resetDate: Date.now() + 86_400_000 } });
+      relayers.push(empty);
+      await run(ctx, "relayer add", { url: empty.url, name: "empty", chains: [String(h.chainId)] });
+      const r2: any = await run(ctx, "funding suggest", { purpose: "refill" });
+      expect(r2.data.relayer).toMatchObject({ name: "empty", hasQuota: false });
+      expect(r2.data.gasNotNeeded).toBeUndefined();
+      expect(r2.text).toMatch(/running low on gas/);
+    } finally {
+      for (const x of relayers) await x.close();
+    }
   });
 });

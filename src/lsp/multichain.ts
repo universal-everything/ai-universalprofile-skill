@@ -299,7 +299,7 @@ export function describeChainStatus(s: ChainProfileStatus): string {
   else if (!c.isController) parts.push(`this agent's key ${c.address} is not a controller here yet`);
   else parts.push(`the agent${c.scope === "chain" ? ` (chain key ${c.address})` : ""} can act with ${permissionSummary(c)}`);
   if (s.profileBalanceFormatted) parts.push(`profile balance ${s.profileBalanceFormatted}`);
-  if (c?.balanceFormatted) parts.push(`agent key gas ${c.balanceFormatted}${c.lowGas ? " (low)" : ""}`);
+  if (c?.balanceFormatted) parts.push(`agent key gas ${c.balanceFormatted}${s.relayUsable ? " (not needed: the relayer pays gas here)" : c.lowGas ? " (low)" : ""}`);
   if (s.relayer) parts.push(`relayer ${s.relayer.name}${c?.isController && !c.canRelay ? " (needs EXECUTE_RELAY_CALL)" : ""}`);
   return `${where}: ${parts.join("; ")}`;
 }
