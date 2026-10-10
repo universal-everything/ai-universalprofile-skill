@@ -6,6 +6,7 @@
 // which networks it covers. The step-by-step scripts are in references/onboarding.md.
 import { defineVerb } from "../core/verbs.ts";
 import type { VerbContext } from "../core/types.ts";
+import { RECOMMENDED_CHAINS } from "../chain/recommended.ts";
 
 /**
  * Universal Relayer website where the human creates a profile with gas on several networks
@@ -83,7 +84,7 @@ export function onboardingPaths(ctx: VerbContext, website: string | undefined = 
   ];
 }
 
-export function onboardingText(paths: OnboardingPath[]): string {
+export function onboardingText(paths: OnboardingPath[], recommended?: string[]): string {
   const lines = ["How should I get my Universal Profile? Please pick one:", ""];
   paths.forEach((p, i) => {
     lines.push(`${i + 1}. ${p.title}`);
@@ -92,6 +93,7 @@ export function onboardingText(paths: OnboardingPath[]): string {
     else if (p.todo) lines.push("   (The website link is coming soon.)");
     lines.push("");
   });
+  if (recommended?.length) lines.push(`Recommended networks: ${listWords(recommended)} (LUKSO first).`);
   lines.push("You can add more networks later; on every network it stays the same profile.");
   return lines.join("\n");
 }
@@ -107,6 +109,7 @@ defineVerb({
   examples: ["up onboarding options"],
   async run(ctx) {
     const paths = onboardingPaths(ctx);
-    return { data: { paths }, text: onboardingText(paths) };
+    const recommended = RECOMMENDED_CHAINS.map((chainId) => ({ chainId, name: chainName(ctx, chainId) }));
+    return { data: { paths, recommendedNetworks: recommended }, text: onboardingText(paths, recommended.map((n) => n.name)) };
   },
 });

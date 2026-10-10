@@ -5,6 +5,7 @@ import { join } from "node:path";
 const join_ = join;
 import { getVerb, mcpToolName } from "../../../src/core/verbs.ts";
 import { UNIVERSAL_RELAYER_CHAINS, UNIVERSAL_RELAYER_WEBSITE, onboardingPaths, onboardingText } from "../../../src/knowledge/onboarding.ts";
+import { RECOMMENDED_CHAINS } from "../../../src/chain/recommended.ts";
 import "../../../src/knowledge/onboarding.ts";
 import { testContext, testSigner } from "../../support/context.ts";
 import type { VerbContext } from "../../../src/core/types.ts";
@@ -77,5 +78,35 @@ describe("onboarding on a fresh setup", () => {
       message: "no chain selected",
       hint: expect.stringMatching(/up config set chains/),
     });
+  });
+});
+
+describe("recommended networks", () => {
+  it("chains list: mainnets only by default, recommended first with LUKSO on top; testnets only on request", async () => {
+    await import("../../../src/verbs/setup.ts");
+    const list = getVerb("chains list")!;
+    const r: any = await list.run(ctx, {});
+    const chains = r.data.chains as { chainId: number; testnet: boolean; recommended: boolean }[];
+    expect(chains.every((c) => !c.testnet)).toBe(true);
+    expect(r.data.recommended).toEqual([...RECOMMENDED_CHAINS]);
+    expect(RECOMMENDED_CHAINS[0]).toBe(42);
+    expect(chains.slice(0, RECOMMENDED_CHAINS.length).map((c) => c.chainId)).toEqual([...RECOMMENDED_CHAINS]);
+    expect(chains.filter((c) => c.recommended)).toHaveLength(RECOMMENDED_CHAINS.length);
+    expect(r.text.split("\n")[0]).toMatch(/^★ recommended: LUKSO, Ethereum/);
+    expect(r.text).toMatch(/testnets only on request/);
+    const t: any = await list.run(ctx, { testnets: true });
+    expect(t.data.chains.length).toBeGreaterThan(0);
+    expect(t.data.chains.every((c: any) => c.testnet)).toBe(true);
+    const all: any = await list.run(ctx, { all: true });
+    expect(all.data.count).toBe(r.data.count + t.data.count);
+    const asked: any = await list.run(ctx, { filter: "4201" }); // an explicit request still finds LUKSO Testnet
+    expect(asked.data.chains.map((c: any) => c.chainId)).toEqual([4201]);
+  });
+
+  it("onboarding options names the recommended networks, LUKSO first, and no testnet", async () => {
+    const r: any = await getVerb("onboarding options")!.run(ctx, {});
+    expect(r.data.recommendedNetworks.map((n: any) => n.chainId)).toEqual([...RECOMMENDED_CHAINS]);
+    expect(r.text).toMatch(/Recommended networks: LUKSO, Ethereum, Base, Arbitrum One, BNB Smart Chain and Polygon \(LUKSO first\)\./);
+    expect(r.text.toLowerCase()).not.toContain("testnet");
   });
 });

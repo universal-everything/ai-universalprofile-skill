@@ -8,6 +8,7 @@ import { loadPolicy, savePolicy, DEFAULT_POLICY } from "../core/policy.ts";
 import { VERSION, SOURCE } from "../version.ts";
 import { addChain, findRpcs, refreshRegistry } from "../chain/discovery.ts";
 import { LSP } from "../chain/registry.ts";
+import { isRecommended, recommendationRank } from "../chain/recommended.ts";
 import type { UpConfig } from "../core/types.ts";
 import { SECRET_CONTAINER } from "../core/json.ts";
 import { IPFS_PROVIDERS, normaliseKuboUrl } from "../ipfs/providers.ts";
@@ -197,20 +198,29 @@ defineVerb({
 defineVerb({
   name: "chains list",
   group: "chains",
-  summary: "List the registry chains (73 LSP-deployed networks + overlay) with LSP status, explorers and RPC counts.",
+  summary: "List the registry networks (LSP status, explorers, RPC counts): recommended ones first (LUKSO, then the top mainnets), mainnets only unless --testnets or --all.",
+  description:
+    "Without flags: mainnets, the recommended networks first and marked (LUKSO first). Testnets are only for humans who explicitly ask for them: --testnets lists only testnets, --all lists both. A filter searches mainnets and testnets.",
   risk: "local",
   params: [
-    { name: "filter", type: "string", description: "Substring filter on name/slug/id.", positional: 0 },
-    { name: "testnets", type: "boolean", description: "Only testnets." },
+    { name: "filter", type: "string", description: "Substring filter on name/slug/id (searches mainnets and testnets).", positional: 0 },
+    { name: "testnets", type: "boolean", description: "Only testnets (only when the human asked for a testnet)." },
+    { name: "all", type: "boolean", description: "Mainnets and testnets." },
   ],
   async run(ctx, a) {
     const f = a.filter ? String(a.filter).toLowerCase() : undefined;
     const rows = ctx.registry
       .chains()
-      .filter((c) => (a.testnets ? c.testnet : true))
+      .filter((c) => (a.testnets ? c.testnet : a.all || f ? true : !c.testnet))
       .filter((c) => !f || c.name.toLowerCase().includes(f) || c.slug.includes(f) || String(c.chainId) === f)
-      .map((c) => ({ chainId: c.chainId, name: c.name, slug: c.slug, symbol: c.nativeSymbol, testnet: c.testnet, lspDeployed: c.lsp.deployed, upVersions: c.lsp.versions.UniversalProfileInit ?? [], explorer: c.explorers[0]?.url, explorerFamily: c.explorers[0]?.family, rpcs: c.rpcs.length, relayers: (c.relayers ?? []).map((r) => r.name) }));
-    return { data: { count: rows.length, chains: rows }, text: rows.map((r) => `${String(r.chainId).padEnd(10)} ${r.slug.padEnd(22)} ${r.symbol.padEnd(8)} ${r.lspDeployed ? "LSP✅" : "LSP❌"} ${r.explorer ?? ""}`).join("\n") };
+      .map((c) => ({ chainId: c.chainId, name: c.name, slug: c.slug, symbol: c.nativeSymbol, testnet: c.testnet, recommended: isRecommended(c.chainId), lspDeployed: c.lsp.deployed, upVersions: c.lsp.versions.UniversalProfileInit ?? [], explorer: c.explorers[0]?.url, explorerFamily: c.explorers[0]?.family, rpcs: c.rpcs.length, relayers: (c.relayers ?? []).map((r) => r.name) }))
+      .map((r, i) => ({ r, i }))
+      .sort((x, y) => recommendationRank(x.r.chainId) - recommendationRank(y.r.chainId) || x.i - y.i)
+      .map(({ r }) => r);
+    const line = (r: (typeof rows)[number]) => `${r.recommended ? "★" : " "} ${String(r.chainId).padEnd(10)} ${r.slug.padEnd(22)} ${r.symbol.padEnd(8)} ${r.lspDeployed ? "LSP✅" : "LSP❌"} ${r.explorer ?? ""}`;
+    const rec = rows.filter((r) => r.recommended);
+    const head = rec.length ? [`★ recommended: ${rec.map((r) => r.name).join(", ")} (LUKSO first)${a.testnets || a.all ? "" : "; testnets only on request (--testnets)"}`] : [];
+    return { data: { count: rows.length, recommended: rec.map((r) => r.chainId), chains: rows }, text: [...head, ...rows.map(line)].join("\n") };
   },
 });
 
