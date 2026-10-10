@@ -16,7 +16,7 @@ Risk classes: **local** (no chain writes), **read** (chain/HTTP reads), **write*
 - **knowledge**: [`docs`](#docs), [`protocols list`](#protocols-list), [`protocols verify`](#protocols-verify), [`standards list`](#standards-list)
 - **permissions**: [`allowed-calls set`](#allowed-calls-set), [`allowed-calls show`](#allowed-calls-show), [`allowed-keys set`](#allowed-keys-set), [`allowed-keys show`](#allowed-keys-show), [`controller add`](#controller-add), [`controller edit`](#controller-edit), [`controller remove`](#controller-remove), [`ownership accept`](#ownership-accept), [`ownership renounce`](#ownership-renounce), [`ownership transfer`](#ownership-transfer), [`permissions decode`](#permissions-decode), [`permissions encode`](#permissions-encode), [`permissions list`](#permissions-list), [`permissions presets`](#permissions-presets), [`permissions recommend`](#permissions-recommend), [`permissions show`](#permissions-show)
 - **relayer**: [`relayer add`](#relayer-add), [`relayer execute`](#relayer-execute), [`relayer list`](#relayer-list), [`relayer quota`](#relayer-quota), [`relayer remove`](#relayer-remove)
-- **setup**: [`config get`](#config-get), [`config set`](#config-set), [`doctor`](#doctor), [`onboarding options`](#onboarding-options), [`policy set`](#policy-set), [`policy show`](#policy-show)
+- **setup**: [`config get`](#config-get), [`config set`](#config-set), [`doctor`](#doctor), [`onboarding options`](#onboarding-options), [`policy set`](#policy-set), [`policy show`](#policy-show), [`start`](#start)
 - **sign**: [`sign message`](#sign-message), [`sign typed-data`](#sign-typed-data), [`verify-1271`](#verify-1271)
 - **social**: [`follow`](#follow), [`follow batch`](#follow-batch), [`followers`](#followers), [`is-following`](#is-following), [`unfollow`](#unfollow)
 - **tokens**: [`token approve`](#token-approve), [`token balance`](#token-balance), [`token list`](#token-list), [`token metadata`](#token-metadata), [`token operators`](#token-operators), [`token transfer`](#token-transfer)
@@ -1480,6 +1480,26 @@ Show the delegated-autonomy policy (skill-side limits; on-chain limits are the L
 
 - CLI: `up policy show [options]`
 - MCP tool: `up_policy_show` · risk: **local**
+
+### start
+
+First thing to run: checks this machine, creates the agent's own signing key if needed (local, no approval), and returns `say`, a plain-language message for the human, plus the agent's next steps.
+
+Run it as soon as the skill is installed, when the human asks about a Universal Profile or the agent's account, or when you are unsure what state setup is in. Idempotent: an existing key and configuration are kept. Inside a cloud agent VM (OpenAI dots, Meta Muse, other isolated VMs) pass --host dots|muse|vm so the key is kept in a protected file there. Tell the human `data.say` in your own voice (it contains no commands or jargon) and follow `data.next` yourself; never read `data.next` or this command to the human.
+
+- CLI: `up start [options]`
+- MCP tool: `up_start` · risk: **local**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--host` | string (dots\|muse\|vm) |  | Cloud agent VM type when running inside one. |
+
+Examples:
+
+```
+up start
+up start --host dots
+```
 
 ## sign
 

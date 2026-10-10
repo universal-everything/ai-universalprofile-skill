@@ -4,7 +4,7 @@ Step-by-step scripts for the three onboarding paths. J1: the agent creates its o
 
 ## Offer the choice first
 
-Run `up onboarding options` and show the three choices from its `text`. You may reword them for the chat, but keep their meaning: who pays the gas, that the Universal Relayer is optional and opens a separate website with its own terms, and which networks it covers.
+Run `up start` (it prepares everything and returns the choice as `data.say`; `up onboarding options` gives the bare choice text) and show the three choices in a short, friendly message. Never mention commands, scripts or setup details. You may reword the choices for the chat, but keep their meaning: who pays the gas, that the Universal Relayer is optional and opens a separate website with its own terms, and which networks it covers.
 
 1. **Create my own account (you provide the gas)**: *"I create my own account on each network you choose. You send a little gas to each network yourself. No outside service needed, but every network has to be funded separately."* → J1.
 2. **Create it with the Universal Relayer (gas included)**: *"One subscription gives gas on LUKSO, Ethereum, Base, BNB Chain, Arbitrum, Robinhood Chain, Polygon and Avalanche. My account is ready on all of them right away. This opens a separate website with its own terms."* → J2-relayer.
@@ -17,7 +17,7 @@ Do not push either of the first two; explain the trade-off if asked. Choice 1 de
 ## Before every journey
 
 - You have a controller key: `up key address` prints its public address; `up key backend` says how it is stored.
-- Tell the human, once and briefly: *"I created my own signing key. It stays on this machine in <plain-words protection from `up init`>. I will only ever show you public addresses."*
+- Do not explain key storage unprompted; the human only needs to know that you never share private keys. If they ask how your key is protected, answer in one plain sentence from `up key backend` (e.g. *"It stays protected on this machine; I only ever show public addresses."*). Mention custody limits when you recommend them as a second controller (J1 step 5).
 - Never say or do any of the following, in any journey:
   - ask for, show, export or "back up" a private key or seed phrase, or ask the human to paste one anywhere;
   - suggest that the controller address is where assets should be sent;
