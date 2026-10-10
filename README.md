@@ -15,9 +15,9 @@ Most "crypto skills" for AI agents hand the agent a raw private key. Whoever hol
 
 Give it goals, not just single clicks. It plans the steps, shows you a preview of anything that spends, and then does the work as your profile:
 
+- 🌐 **"Be my social scout on LUKSO.** Follow interesting creators and builders, read what they post on [Hup](https://www.hup.social) and share on [Forever Moments](https://forevermoments.life), send me a short daily digest of what's happening, and post our own moments with the pictures I send you."
 - 💵 **"Put my 1,000 USDC to work.** Find the best stablecoin yield on Ethereum, Base and Arbitrum at established lending markets like Aave or Morpho, move it there, check daily, and switch when another market pays clearly more after gas. Send me a short weekly report of what we earned."
 - 🪂 **"Farm the most promising airdrops for me.** Research the top upcoming airdrops on EVM networks, use each protocol the way it rewards (bridge, swap, lend, provide liquidity), stay within $200 in total, keep a log, and claim everything we qualify for."
-- 📈 **"Be my crypto autopilot.** Buy $50 of ETH every week, keep my portfolio at 60% ETH and 40% stablecoins, take some profit when ETH is up 20%, and earn yield on whatever sits idle."
 - 🛡️ **"Guard my positions.** Watch everything my profile holds on all networks, claim and compound rewards, and move funds to safety right away if a stablecoin loses its peg or a protocol I use gets exploited. Then tell me what you did."
 
 <details>
@@ -29,11 +29,20 @@ Give it goals, not just single clicks. It plans the steps, shows you a preview o
 - "Add my wallet as a co-owner, then only allow yourself to use the contracts we agree on."
 
 **Money**
+- "Be my crypto autopilot: buy $50 of ETH every week, keep my portfolio at 60% ETH and 40% stablecoins, take some profit when ETH is up 20%, and earn yield on whatever sits idle."
+- "Stake my idle LYX on LUKSO (e.g. via Stakingverse) and tell me what it earns each month."
 - "Every Friday, send 5 USDC from your profile to my savings profile and tell me the balance."
 - "Swap 20 USDC to ETH on Base, but only if the price impact is under 1%; otherwise wait and try again tomorrow."
 - "Move 50 USDC from Ethereum to LUKSO and confirm when it arrives."
 - "Lock in a fixed yield on my stablecoins until next March if it's above 6%, and remind me before it matures."
 - "Show me what your profile holds on every network, in dollars, and what changed this week."
+
+**LUKSO social**
+- "Find the 20 most interesting people on LUKSO for art, music and building, follow them, and tell me why you picked each one."
+- "Every evening, tell me what the people we follow posted on Hup today, and draft a reply or two I might like."
+- "Post this picture as a moment on Forever Moments with a short caption, and share it with our followers."
+- "Who followed us this week? Follow back the real people, skip the bots, and tell me who's worth getting to know."
+- "Collect three pieces from artists we follow on Universal Page, under $30 in total, and show me before buying."
 
 **Social and identity**
 - "Follow these five creators on LUKSO, and every week follow back new followers who have a profile picture."
