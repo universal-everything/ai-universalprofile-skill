@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 60b20c86f57a (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 5c51c40ee541 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -9119,6 +9119,101 @@ var init_blockies = __esm({
   }
 });
 
+// src/display/sheet.ts
+var sheet_exports = {};
+__export(sheet_exports, {
+  candidateSheetPng: () => candidateSheetPng,
+  shortAddress: () => shortAddress
+});
+function shortAddress(address) {
+  const a = address.toLowerCase();
+  return `${a.slice(0, 6)}..${a.slice(-4)}`;
+}
+function textWidth(text, scale) {
+  return text.length ? (text.length * (GLYPH_W + 1) - 1) * scale : 0;
+}
+function candidateSheetPng(items) {
+  if (!items.length) throw new Error("no candidates to draw");
+  const iconSize = BLOCKIE_GRID * IDENTICON_SCALE;
+  const colWidth = Math.max(iconSize, ...items.map((it) => Math.max(textWidth(shortAddress(it.address), ADDRESS_SCALE), textWidth(it.label, NUMBER_SCALE))));
+  const numberH = GLYPH_H * NUMBER_SCALE;
+  const addressH = GLYPH_H * ADDRESS_SCALE;
+  const width = 2 * MARGIN + items.length * colWidth + (items.length - 1) * GAP;
+  const height = 2 * MARGIN + iconSize + 14 + numberH + 10 + addressH;
+  const palette2 = [[255, 255, 255, 255], [34, 34, 34, 255]];
+  const colour = (c) => {
+    const i = palette2.findIndex((p) => p[0] === c[0] && p[1] === c[1] && p[2] === c[2]);
+    if (i >= 0) return i;
+    palette2.push([c[0], c[1], c[2], 255]);
+    return palette2.length - 1;
+  };
+  const pixels = new Uint8Array(width * height);
+  const rect = (x0, y0, w, h, v) => {
+    for (let y = y0; y < y0 + h; y++) pixels.fill(v, y * width + x0, y * width + x0 + w);
+  };
+  const text = (s, x0, y0, scale) => {
+    [...s].forEach((ch, n) => {
+      const glyph = FONT[ch];
+      if (!glyph) throw new Error(`no glyph for ${JSON.stringify(ch)}`);
+      const gx = x0 + n * (GLYPH_W + 1) * scale;
+      for (let r = 0; r < GLYPH_H; r++) for (let c = 0; c < GLYPH_W; c++) if (glyph[r][c] === "#") rect(gx + c * scale, y0 + r * scale, scale, scale, 1);
+    });
+  };
+  items.forEach((it, i) => {
+    const x = MARGIN + i * (colWidth + GAP);
+    const b = blockie(it.address);
+    const bg = colour(b.colors.bgcolor);
+    const fg = colour(b.colors.color);
+    const spot = colour(b.colors.spotcolor);
+    const ix = x + Math.floor((colWidth - iconSize) / 2);
+    b.grid.forEach((v, cell) => {
+      const cx = cell % BLOCKIE_GRID;
+      const cy = Math.floor(cell / BLOCKIE_GRID);
+      rect(ix + cx * IDENTICON_SCALE, MARGIN + cy * IDENTICON_SCALE, IDENTICON_SCALE, IDENTICON_SCALE, v ? v === 1 ? fg : spot : bg);
+    });
+    const numberY = MARGIN + iconSize + 14;
+    text(it.label, x + Math.floor((colWidth - textWidth(it.label, NUMBER_SCALE)) / 2), numberY, NUMBER_SCALE);
+    const short2 = shortAddress(it.address);
+    text(short2, x + Math.floor((colWidth - textWidth(short2, ADDRESS_SCALE)) / 2), numberY + numberH + 10, ADDRESS_SCALE);
+  });
+  return encodeIndexedPng({ width, height, palette: palette2, pixels });
+}
+var FONT, GLYPH_W, GLYPH_H, IDENTICON_SCALE, NUMBER_SCALE, ADDRESS_SCALE, MARGIN, GAP;
+var init_sheet = __esm({
+  "src/display/sheet.ts"() {
+    "use strict";
+    init_blockies();
+    init_png();
+    FONT = {
+      "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
+      "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
+      "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
+      "3": ["####.", "....#", "....#", ".###.", "....#", "....#", "####."],
+      "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
+      "5": ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
+      "6": [".###.", "#....", "#....", "####.", "#...#", "#...#", ".###."],
+      "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
+      "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
+      "9": [".###.", "#...#", "#...#", ".####", "....#", "....#", ".###."],
+      a: [".....", ".....", ".###.", "....#", ".####", "#...#", ".####"],
+      b: ["#....", "#....", "####.", "#...#", "#...#", "#...#", "####."],
+      c: [".....", ".....", ".###.", "#....", "#....", "#...#", ".###."],
+      d: ["....#", "....#", ".####", "#...#", "#...#", "#...#", ".####"],
+      e: [".....", ".....", ".###.", "#...#", "#####", "#....", ".###."],
+      f: ["..##.", ".#...", "####.", ".#...", ".#...", ".#...", ".#..."],
+      x: [".....", ".....", "#...#", ".#.#.", "..#..", ".#.#.", "#...#"],
+      ".": [".....", ".....", ".....", ".....", ".....", ".##..", ".##.."]
+    };
+    GLYPH_W = 5;
+    GLYPH_H = 7;
+    IDENTICON_SCALE = 12;
+    NUMBER_SCALE = 4;
+    ADDRESS_SCALE = 2;
+    MARGIN = 24;
+    GAP = 24;
+  }
+});
+
 // src/display/media.ts
 var media_exports = {};
 __export(media_exports, {
@@ -9158,7 +9253,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "60b20c86f57a" : "source";
+var SOURCE = true ? "5c51c40ee541" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -12817,7 +12912,7 @@ defineVerb({
   name: "account precompute",
   group: "account",
   summary: "Compute candidate Universal Profile addresses (LSP23, same address on every chain for identical inputs) — nothing is sent.",
-  description: "Candidates differ only by salt: salt_i = keccak256(abi.encodePacked(seed, i)). Keep the seed to reproduce the list. Show each candidate to the human with: up identicon <address> (and up qr <address>). Then deploy the chosen one with: up account deploy --seed <seed> --candidate <i> --chain <id>.",
+  description: "Candidates differ only by salt: salt_i = keccak256(abi.encodePacked(seed, i)). Keep the seed to reproduce the list. Tell the human `data.say` (plain words, numbered choices 1..n) together with the one labelled picture in `media` (every identicon with its number and short address). The human's choice n is candidate n-1: up account deploy --seed <seed> --candidate <n-1> --chain <id>.",
   risk: "read",
   params: [
     { name: "count", type: "integer", description: "Number of candidates (1..100).", default: 5 },
@@ -12851,17 +12946,26 @@ defineVerb({
       }
     }
     const d = decodePermissions(firstInputs.permissions);
+    const shown = candidates.slice(0, 10);
+    const { shortAddress: shortAddress2 } = await Promise.resolve().then(() => (init_sheet(), sheet_exports));
+    const choices = shown.map((c) => ({ choice: c.index + 1, candidate: c.index, address: c.profile, short: shortAddress2(c.profile) }));
     const media = [];
     try {
-      const { blockiePng: blockiePng2, blockieText: blockieText2 } = await Promise.resolve().then(() => (init_blockies(), blockies_exports));
+      const { blockieText: blockieText2 } = await Promise.resolve().then(() => (init_blockies(), blockies_exports));
+      const { candidateSheetPng: candidateSheetPng2 } = await Promise.resolve().then(() => (init_sheet(), sheet_exports));
       const { writeMedia: writeMedia2 } = await Promise.resolve().then(() => (init_media(), media_exports));
-      for (const c of candidates.slice(0, 10)) {
-        media.push(await writeMedia2(ctx.home, `candidate-${c.index}-${c.profile.slice(2, 10)}`, blockiePng2(c.profile), `identicon of candidate [${c.index}] ${c.profile}`));
-        c.identiconText = blockieText2(c.profile);
-      }
+      media.push(await writeMedia2(ctx.home, `address-choices-${shown[0].profile.slice(2, 10)}`, candidateSheetPng2(choices.map((c) => ({ label: String(c.choice), address: c.address }))), `profile address choices: ${choices.map((c) => `${c.choice} = ${c.address}`).join(", ")}`));
+      for (const c of shown) c.identiconText = blockieText2(c.profile);
     } catch (e) {
       warnings.push(`identicons not rendered: ${e.message}`);
     }
+    const say = choices.length === 1 ? `This will be my profile's address: ${choices[0].address}. It stays the same on every network.` : [
+      `My profile needs an address. It's permanent and the same on every network. I've prepared ${choices.length} options to choose from:`,
+      "",
+      ...choices.map((c) => `${c.choice}. ${c.address}`),
+      "",
+      (media.length ? "The picture shows each address's pattern, with its number underneath. Apps show that pattern next to an address so it's easy to recognise at a glance. " : "") + "Which number do you like? It's only a matter of taste, everything else is identical. If you don't mind, I'll take number 1. You can still add a real profile picture later."
+    ].join("\n");
     return {
       media,
       data: {
@@ -12873,15 +12977,20 @@ defineVerb({
         factory: first.factory,
         postDeploymentModule: first.postDeploymentModule,
         candidates,
+        choices,
+        say,
         onChainCrossCheck: onChain2,
         reproduce: a.salt ? void 0 : `up account precompute --seed ${seed} --count ${a.count} --controller ${controller}${a.preset ? ` --preset ${a.preset}` : ""}`,
-        next: ["show each candidate: up identicon <address>  (and up qr <address>)", `deploy the chosen one: up account deploy --seed ${seed} --candidate <index> --chain <id>   (or --salt <salt>)`]
+        next: [
+          "Tell the human `say` and attach the one picture in `media` in the same message (text first, then the picture). Never send separate unlabelled identicons and never send a picture without its explanation.",
+          `The human answers with a choice number n: deploy candidate n-1, i.e. up account deploy --seed ${seed} --candidate <n-1> --chain <id>   (or --salt <salt>)`
+        ]
       },
       text: [
         `${candidates.length} candidate profile address(es) for controller ${controller} (same on every chain with these inputs):`,
-        ...candidates.map((c) => `  [${c.index}] ${c.profile}   salt ${c.salt}`),
+        ...candidates.map((c) => `  choice ${c.index + 1} = candidate [${c.index}] ${c.profile}   salt ${c.salt}`),
         a.salt ? "" : `seed (keep it to reproduce): ${seed}`,
-        "Show them with: up identicon <address>"
+        "Tell the human data.say with the attached picture."
       ].filter(Boolean).join("\n"),
       warnings
     };
