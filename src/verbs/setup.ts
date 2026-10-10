@@ -5,7 +5,7 @@ import { defineVerb } from "../core/verbs.ts";
 import { UpError } from "../core/errors.ts";
 import { ensureDir } from "../core/home.ts";
 import { loadPolicy, savePolicy, DEFAULT_POLICY } from "../core/policy.ts";
-import { VERSION, COMMIT } from "../version.ts";
+import { VERSION, SOURCE } from "../version.ts";
 import { addChain, findRpcs, refreshRegistry } from "../chain/discovery.ts";
 import { LSP } from "../chain/registry.ts";
 import type { UpConfig } from "../core/types.ts";
@@ -59,7 +59,7 @@ defineVerb({
     }
     const allOk = checks.every((c) => c.ok);
     return {
-      data: { version: VERSION, commit: COMMIT, platform: `${process.platform}-${process.arch}`, home: ctx.home, checks, custodyWarnings, signerBackends: backends, chains: chainReports, ok: allOk },
+      data: { version: VERSION, source: SOURCE, platform: `${process.platform}-${process.arch}`, home: ctx.home, checks, custodyWarnings, signerBackends: backends, chains: chainReports, ok: allOk },
       warnings: custodyWarnings,
       text: [`up ${VERSION} doctor — ${allOk ? "✅ all good" : "⚠️ action needed"}`, ...checks.map((c) => `${c.ok ? "✅" : "❌"} ${c.name}: ${c.detail}${c.remedy ? `\n   → ${c.remedy}` : ""}`)].join("\n"),
     };

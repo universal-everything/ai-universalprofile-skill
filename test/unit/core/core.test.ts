@@ -99,8 +99,12 @@ describe("json + home helpers", () => {
     const home = tmp();
     const f = join(home, "sub", "x.json");
     await writeFileAtomic(f, "{}");
-    expect(statSync(f).mode & 0o777).toBe(0o600);
-    expect(statSync(join(home, "sub")).mode & 0o777).toBe(0o700);
+    expect(statSync(f).isFile()).toBe(true);
+    // Windows has no POSIX modes (key files there are protected by DPAPI / the user profile ACL).
+    if (process.platform !== "win32") {
+      expect(statSync(f).mode & 0o777).toBe(0o600);
+      expect(statSync(join(home, "sub")).mode & 0o777).toBe(0o700);
+    }
   });
 });
 

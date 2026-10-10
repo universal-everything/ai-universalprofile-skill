@@ -1,0 +1,2 @@
+# Check out text with LF on every OS: bundles, fixtures and upstream sources are hashed byte-for-byte.
+* text=auto eol=lf

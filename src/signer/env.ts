@@ -217,7 +217,7 @@ export interface EphemeralCheck {
   reason?: string;
 }
 
-const TMP_PREFIXES = ["/tmp/", "/var/tmp/", "/dev/shm/", "/private/tmp/", "/private/var/tmp/", "/private/var/folders/", "/run/user/"];
+const TMP_PREFIXES = ["/tmp/", "/var/tmp/", "/dev/shm/", "/private/tmp/", "/private/var/tmp/", "/var/folders/", "/private/var/folders/", "/run/user/"];
 const VOLATILE_FS = new Set(["tmpfs", "ramfs", "overlay", "aufs", "devtmpfs"]);
 
 /** Mount point/fstype covering `path` from /proc/mounts content (longest prefix wins). */
@@ -237,11 +237,18 @@ export function mountFor(path: string, procMounts: string): { mount: string; fst
  * Heuristic: does the state directory look like it will not survive (temp
  * directory, tmpfs, or a container's overlay root without a volume)?
  */
-export function checkEphemeralHome(home: string, deps: { tmpdir?: string; procMounts?: string | null } = {}): EphemeralCheck {
-  const p = home.endsWith("/") ? home : `${home}/`;
-  const tmp = deps.tmpdir ? (deps.tmpdir.endsWith("/") ? deps.tmpdir : `${deps.tmpdir}/`) : undefined;
+export function checkEphemeralHome(home: string, deps: { tmpdir?: string; procMounts?: string | null; platform?: NodeJS.Platform } = {}): EphemeralCheck {
+  // Compare with "/" separators; Windows paths (C:\Users\…\Temp) are case-insensitive.
+  const win = (deps.platform ?? process.platform) === "win32";
+  const dir = (s: string) => {
+    const n = s.replace(/\\/g, "/");
+    return n.endsWith("/") ? n : `${n}/`;
+  };
+  const cmp = (s: string) => (win ? s.toLowerCase() : s);
+  const p = dir(home);
+  const tmp = deps.tmpdir ? dir(deps.tmpdir) : undefined;
   for (const prefix of [...TMP_PREFIXES, ...(tmp ? [tmp] : [])]) {
-    if (p.startsWith(prefix)) return { ephemeral: true, reason: `it is inside the temporary directory ${prefix.slice(0, -1)}` };
+    if (cmp(p).startsWith(cmp(prefix))) return { ephemeral: true, reason: `it is inside the temporary directory ${prefix.slice(0, -1)}` };
   }
   if (deps.procMounts) {
     const m = mountFor(home, deps.procMounts);

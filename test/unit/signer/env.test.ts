@@ -91,6 +91,15 @@ describe("detectEnvironment", () => {
     expect(mountFor("/database/x", "/dev/sda1 / ext4 rw 0 0\n/dev/sdb /data ext4 rw 0 0\n")).toEqual({ mount: "/", fstype: "ext4" });
   });
 
+  it("ephemeral UP_HOME on Windows: backslash paths, case-insensitive temp dir", () => {
+    const tmpdir = "C:\\Users\\agent\\AppData\\Local\\Temp";
+    expect(checkEphemeralHome("C:\\Users\\agent\\AppData\\Local\\Temp\\up", { tmpdir, platform: "win32" }).ephemeral).toBe(true);
+    expect(checkEphemeralHome("c:\\users\\AGENT\\appdata\\local\\temp\\up", { tmpdir, platform: "win32" }).ephemeral).toBe(true);
+    expect(checkEphemeralHome("C:\\Users\\agent\\.universal-profile", { tmpdir, platform: "win32" }).ephemeral).toBe(false);
+    // POSIX stays case-sensitive
+    expect(checkEphemeralHome("/TMP/up", { platform: "linux" }).ephemeral).toBe(false);
+  });
+
   it("real detection on this machine does not throw", async () => {
     const e = await detectEnvironment();
     expect(e.platform).toBe(process.platform);

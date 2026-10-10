@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { coerceArgs } from "../../../src/core/verbs.ts";
 import type { VerbDef } from "../../../src/core/types.ts";
 import { PROTECTED_FILE_WARNING, custodyWarnings, internalBackend } from "../../../src/signer/index.ts";
@@ -143,7 +144,7 @@ describe("init", () => {
   it("custodyWarnings: none for a persistent home with an OS store or vm file; ephemeral only for home-stored backends", () => {
     expect(custodyWarnings("vm-protected-file", "/home/agent/.universal-profile")).toEqual([]);
     expect(custodyWarnings("macos-keychain", "/tmp/x")).toEqual([]);
-    expect(custodyWarnings("linux-systemd-creds", "/tmp/x").join(" ")).toMatch(/looks ephemeral/);
+    expect(custodyWarnings("linux-systemd-creds", join(tmpdir(), "x")).join(" ")).toMatch(/looks ephemeral/);
     expect(custodyWarnings("protected-file", "/home/agent/.universal-profile")).toEqual([PROTECTED_FILE_WARNING]);
   });
 

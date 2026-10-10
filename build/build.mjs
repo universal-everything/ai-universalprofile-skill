@@ -16,7 +16,6 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync, statSync, chmodSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const skillDir = join(root, "skills", "universal-profile");
@@ -24,16 +23,22 @@ const outDir = join(skillDir, "scripts");
 const libDir = join(outDir, "lib");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
-let commit = "uncommitted";
-try {
-  commit = execSync("git rev-parse --short HEAD", { cwd: root, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
-} catch {}
+// Source fingerprint: sha256 over the inputs of this build (src/, build script + shims, package
+// manifests), with LF line endings. Unlike a git commit id, it is stable when the built bundles
+// are committed alongside the sources, so CI can check that committed bundles match a fresh build.
+const listFiles = (d) => readdirSync(d).flatMap((n) => (statSync(join(d, n)).isDirectory() ? listFiles(join(d, n)) : [join(d, n)]));
+const sourceInputs = [...listFiles(join(root, "src")), ...listFiles(join(root, "build", "shims")), ...["build/build.mjs", "package.json", "package-lock.json"].map((f) => join(root, f))]
+  .map((f) => relative(root, f).split("\\").join("/"))
+  .sort();
+const sourceHash = createHash("sha256");
+for (const f of sourceInputs) sourceHash.update(`${f}\n`).update(readFileSync(join(root, f), "utf8").replace(/\r\n/g, "\n")).update("\n");
+const source = sourceHash.digest("hex").slice(0, 12);
 
 const REQUIRE_SHIM = `import { createRequire as __upCreateRequire } from "node:module";\nconst require = __upCreateRequire(import.meta.url);\n`;
 const banner = (what) =>
   `// ${what}\n` +
   `// Universal Profile Agent Skill v${pkg.version} — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill\n` +
-  `// Built from source commit ${commit} with \`npm ci && npm run build\` (esbuild, unminified). Do not edit; edit src/ instead.\n` +
+  `// Built from source fingerprint ${source} (sha256 of src/ and build inputs) with \`npm ci && npm run build\` (esbuild, unminified). Do not edit; edit src/ instead.\n` +
   REQUIRE_SHIM;
 
 const VIEM_SPECIFIERS = /^viem(\/(accounts|chains|account-abstraction|utils|actions))?$/;
@@ -104,7 +109,7 @@ await build({
   entryPoints: [join(root, "src", "app.ts")],
   outfile: join(libDir, "app.mjs"),
   plugins: [vendorRewrite(true)],
-  define: { __UP_VERSION__: JSON.stringify(pkg.version), __UP_COMMIT__: JSON.stringify(commit) },
+  define: { __UP_VERSION__: JSON.stringify(pkg.version), __UP_SOURCE__: JSON.stringify(source) },
   banner: { js: banner("Universal Profile skill — application code") },
 });
 
@@ -133,6 +138,6 @@ for (const f of walk(outDir)) {
     failed = true;
   }
 }
-writeFileSync(join(outDir, "BUILD.json"), JSON.stringify({ version: pkg.version, commit, files: manifest }, null, 2) + "\n");
+writeFileSync(join(outDir, "BUILD.json"), JSON.stringify({ version: pkg.version, source, files: manifest }, null, 2) + "\n");
 for (const [f, m] of Object.entries(manifest)) console.log(`${String(m.bytes).padStart(9)}  ${f}`);
 if (failed) process.exit(1);

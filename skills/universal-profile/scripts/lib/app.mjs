@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source commit f10666a with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint db4f4ecb0fd0 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -741,10 +741,16 @@ function mountFor(path, procMounts) {
   return best;
 }
 function checkEphemeralHome(home, deps = {}) {
-  const p = home.endsWith("/") ? home : `${home}/`;
-  const tmp = deps.tmpdir ? deps.tmpdir.endsWith("/") ? deps.tmpdir : `${deps.tmpdir}/` : void 0;
+  const win = (deps.platform ?? process.platform) === "win32";
+  const dir = (s) => {
+    const n = s.replace(/\\/g, "/");
+    return n.endsWith("/") ? n : `${n}/`;
+  };
+  const cmp = (s) => win ? s.toLowerCase() : s;
+  const p = dir(home);
+  const tmp = deps.tmpdir ? dir(deps.tmpdir) : void 0;
   for (const prefix of [...TMP_PREFIXES, ...tmp ? [tmp] : []]) {
-    if (p.startsWith(prefix)) return { ephemeral: true, reason: `it is inside the temporary directory ${prefix.slice(0, -1)}` };
+    if (cmp(p).startsWith(cmp(prefix))) return { ephemeral: true, reason: `it is inside the temporary directory ${prefix.slice(0, -1)}` };
   }
   if (deps.procMounts) {
     const m = mountFor(home, deps.procMounts);
@@ -777,7 +783,7 @@ var init_env = __esm({
       [/bochs/i, "bochs"],
       [/apple virtualization|virtualmac/i, "apple"]
     ];
-    TMP_PREFIXES = ["/tmp/", "/var/tmp/", "/dev/shm/", "/private/tmp/", "/private/var/tmp/", "/private/var/folders/", "/run/user/"];
+    TMP_PREFIXES = ["/tmp/", "/var/tmp/", "/dev/shm/", "/private/tmp/", "/private/var/tmp/", "/var/folders/", "/private/var/folders/", "/run/user/"];
     VOLATILE_FS = /* @__PURE__ */ new Set(["tmpfs", "ramfs", "overlay", "aufs", "devtmpfs"]);
   }
 });
@@ -6458,7 +6464,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var COMMIT = true ? "f10666a" : "source";
+var SOURCE = true ? "db4f4ecb0fd0" : "source";
 
 // src/core/assets.ts
 import { existsSync as existsSync2, readFileSync } from "node:fs";
@@ -6756,7 +6762,7 @@ defineVerb({
     }
     const allOk = checks.every((c) => c.ok);
     return {
-      data: { version: VERSION, commit: COMMIT, platform: `${process.platform}-${process.arch}`, home: ctx.home, checks, custodyWarnings: custodyWarnings2, signerBackends: backends, chains: chainReports, ok: allOk },
+      data: { version: VERSION, source: SOURCE, platform: `${process.platform}-${process.arch}`, home: ctx.home, checks, custodyWarnings: custodyWarnings2, signerBackends: backends, chains: chainReports, ok: allOk },
       warnings: custodyWarnings2,
       text: [`up ${VERSION} doctor — ${allOk ? "✅ all good" : "⚠️ action needed"}`, ...checks.map((c) => `${c.ok ? "✅" : "❌"} ${c.name}: ${c.detail}${c.remedy ? `
    → ${c.remedy}` : ""}`)].join("\n")
