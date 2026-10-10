@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 285706ba4230 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 89811a86f0b3 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -8403,7 +8403,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "285706ba4230" : "source";
+var SOURCE = true ? "89811a86f0b3" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -19068,7 +19068,7 @@ function onboardingPaths(ctx, website = UNIVERSAL_RELAYER_WEBSITE) {
       subtitle: "I create my own account on each network you choose. You send a little gas to each network yourself. No outside service needed, but every network has to be funded separately.",
       gas: "you fund the agent's controller address on each network",
       journey: "J1",
-      next: ["up chains list", "up account precompute", "up display address <controller> --chain <id>"]
+      next: ["up chains list", "up account precompute", "up display address <controller>"]
     },
     {
       id: "universal-relayer",

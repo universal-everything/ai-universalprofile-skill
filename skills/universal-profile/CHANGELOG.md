@@ -7,6 +7,7 @@ All notable changes to the Universal Profile Agent Skill. Versions follow Semant
 First version of the skill.
 
 ### Added
+- Funding in onboarding: the controller address is the same on every network, so the agent shows one QR code plus the amount per network (per-network EIP-681 links optional). README: Development section with the `main`/`source` branch model, publishing and porting rules.
 - Recommended networks: LUKSO first, then Ethereum, Base, Arbitrum One, BNB Smart Chain and Polygon (★ in `up chains list`, named in `up onboarding options`). `chains list` shows mainnets only unless `--testnets`/`--all`; testnets are used only on the human's explicit request.
 - Onboarding choice (`up onboarding options`): own account with the human's gas per network, Universal Relayer (gas included on several networks, separate website; link to be added), or an existing profile. Journeys J1, J2-relayer and J2 in `references/onboarding.md`.
 - Distribution: the repository's default branch `main` is exactly this skill with `SKILL.md` at the root (`openclaw skills install git:universal-everything/ai-universalprofile-skill`, `npx skills add universal-everything/ai-universalprofile-skill`, or `git clone` into a skills directory); sources and tests live on branch `source`.

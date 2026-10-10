@@ -175,9 +175,37 @@ More: `references/security.md`.
 
 The agent's state (configuration, deployment manifests, caches, audit log) lives in `~/.universal-profile/` (or `UP_HOME`), never in this folder.
 
-## Source code
+## Development
 
-The skill's tools are built from TypeScript sources with a full test suite (unit tests plus an in-process EVM with the canonical LSP contracts). They live on the [`source` branch](https://github.com/universal-everything/ai-universalprofile-skill/tree/source); this `main` branch contains only the built skill so that installs stay small (well under the 256-file / 8 MiB limit of skill bundles).
+The tools in `scripts/` are built from TypeScript sources with a full test suite: unit tests, local-chain tests on an in-process EVM with the canonical LSP contracts at their mainnet addresses, and an end-to-end run of this exact bundle as CLI and MCP processes. CI covers Linux, macOS and Windows on Node.js 22 and 24.
+
+**Two branches, two jobs:**
+
+| Branch | Contains | Who uses it |
+| --- | --- | --- |
+| `main` (default) | only the built skill, `SKILL.md` at the root (this page) | everyone who installs the skill; stays well under the 256-file / 8 MiB skill bundle limit |
+| [`source`](https://github.com/universal-everything/ai-universalprofile-skill/tree/source) | TypeScript sources (`src/`), tests (`test/`), build and data generators (`build/`), docs (`docs/`), CI, and the skill folder as `skills/universal-profile/` | developers |
+
+**Rules that keep the branches from getting in each other's way:**
+
+- Develop on `source` (or feature branches from it). Open pull requests against `source`, never against `main`.
+- **Never merge between `main` and `source`, in either direction.** They have different layouts on purpose. `main` only ever receives publish commits.
+- Publishing: `npm run publish:main -- --push` on a clean, pushed `source` checkout adds one normal commit to `main` whose content is exactly `skills/universal-profile/`. It never rewrites history. A version tag `v*` on `source` does the same in the release workflow and also creates a GitHub release with `universal-profile-<version>.tar.gz` and `SHA256SUMS`.
+- Small fixes directly on `main` (for example a README edit in the GitHub web editor) are fine. The publish script refuses to publish until they are ported into `source`: `git diff <last publish> origin/main | git apply --directory=skills/universal-profile`, then commit to `source`.
+- Switching branches in one checkout works (`node_modules/` is ignored and stays). Separate folders are more comfortable: `git worktree add ../ai-universalprofile-skill-main main`.
+- After changing anything in `src/`, run `npm run build` and commit the rebuilt `skills/universal-profile/scripts/` with the source change. CI checks that they match a fresh build byte for byte.
+
+```bash
+git clone -b source https://github.com/universal-everything/ai-universalprofile-skill && cd ai-universalprofile-skill
+npm ci
+npm run typecheck && npm test   # unit + local-chain + bundle end-to-end tests
+npm run build                   # rebuilds skills/universal-profile/scripts/ (unminified, reproducible)
+node build/gen-verb-docs.mjs    # regenerates references/verbs.md
+npm run verify:skill            # package gate: spec, sizes, file count, no secrets or local paths
+npm run publish:main            # dry run; add -- --push to publish to main
+```
+
+Architecture: [`docs/ARCHITECTURE.md`](https://github.com/universal-everything/ai-universalprofile-skill/blob/source/docs/ARCHITECTURE.md). Every requirement mapped to code and tests: [`docs/REQUIREMENTS-COVERAGE.md`](https://github.com/universal-everything/ai-universalprofile-skill/blob/source/docs/REQUIREMENTS-COVERAGE.md).
 
 ## License
 
