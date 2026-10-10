@@ -65,7 +65,12 @@ export function permissionValueFrom(a: Record<string, any>, required = true): { 
 function lsp23InputsFrom(a: Record<string, any>, controller: Address, salt: Hex): Lsp23Inputs {
   const p = permissionValueFrom({ ...a, preset: a.preset ?? (a.permissions || a.bits !== undefined ? undefined : "agent-owner") });
   if (a.lsp3 !== undefined && !/^0x([0-9a-fA-F]{2})*$/.test(a.lsp3)) throw new UpError("BAD_ARGS", "--lsp3 must be the encoded VerifiableURI hex value");
-  return { salt, controller, permissions: toBytes32(p.value!), preset: p.preset, lsp3: a.lsp3, implementationVersion: a["implementation-version"] ?? DEFAULT_IMPL_VERSION };
+  // --admin: the human's own wallet as a full co-controller from the first block. The agent's key still
+  // sends (and pays for) the deployment; the human signs nothing. Part of the address derivation.
+  const admin = a.admin ? addressArg(a.admin, "admin") : undefined;
+  if (admin && admin === controller) throw new UpError("BAD_ARGS", "--admin is already the initial controller");
+  const extraControllers = admin ? [{ address: admin, permissions: toBytes32(getPreset("human-admin").permissions) }] : undefined;
+  return { salt, controller, permissions: toBytes32(p.value!), preset: p.preset, lsp3: a.lsp3, implementationVersion: a["implementation-version"] ?? DEFAULT_IMPL_VERSION, ...(extraControllers ? { extraControllers } : {}) };
 }
 
 const LSP23_PARAMS = [
@@ -73,6 +78,7 @@ const LSP23_PARAMS = [
   { name: "preset", type: "string" as const, description: "Permission preset for the initial controller (default agent-owner = ALL_PERMISSIONS).", enum: ["agent-owner", "agent-operator", "agent-reader", "human-admin"] },
   { name: "permissions", type: "string[]" as const, description: "Explicit permission names instead of a preset." },
   { name: "bits", type: "string" as const, description: "Explicit bytes32 permission value instead of a preset." },
+  { name: "admin", type: "string" as const, description: "The human's own wallet address as a full co-controller (human-admin) from the start. The agent still deploys and pays; the human signs nothing. Part of the address derivation: pass it to precompute and deploy alike." },
   { name: "lsp3", type: "string" as const, description: "Optional encoded LSP3Profile VerifiableURI value set at deployment (changes the address)." },
   { name: "implementation-version", type: "string" as const, description: "UP/KM/URD implementation version.", default: DEFAULT_IMPL_VERSION },
 ];
@@ -222,7 +228,7 @@ defineVerb({
         cfg.defaultProfile = m.profile;
         await ctx.saveConfig(cfg);
       }
-      if (getAddress(m.controller) === signer.address) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
+      if (getAddress(m.controller) === signer.address && !(m.extraControllers ?? []).length) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
     }
     // a new profile on the metadata chain (LUKSO mainnet) has no name or pictures yet: offer them (optional)
     const next = out.status === "deployed" && chainId === metadataHooks().defaultChainId && !m.lsp3 ? ["ask the human whether they want a profile name, description, profile picture and background image (all optional, can be done later): up profile metadata set --dry-run, then with their approval"] : undefined;

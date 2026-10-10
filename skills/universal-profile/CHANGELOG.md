@@ -7,6 +7,7 @@ All notable changes to the Universal Profile Agent Skill. Versions follow Semant
 First version of the skill.
 
 ### Added
+- `--admin <wallet>` for `account precompute` / `account deploy`: the human's wallet becomes a full co-controller in the same deployment transaction that the agent's key sends and pays for (the human signs nothing). Onboarding asks for it before computing addresses; SKILL.md: always attach QR images when the human must send, scan or sign, and never tell the human to sign a deployment.
 - Guided start (`up start`): one command that silently checks the machine, creates the agent's key if needed (local, no approval), and returns a plain-language opening message (`data.say`) with the onboarding choice, plus agent-only next steps. SKILL.md now starts with conversation rules: take the lead, one question at a time, never mention commands, scripts or internals.
 - Funding in onboarding: the controller address is the same on every network, so the agent shows one QR code plus the amount per network (per-network EIP-681 links optional). README: Development section with the `main`/`source` branch model, publishing and porting rules.
 - Recommended networks: LUKSO first, then Ethereum, Base, Arbitrum One, BNB Smart Chain and Polygon (★ in `up chains list`, named in `up onboarding options`). `chains list` shows mainnets only unless `--testnets`/`--all`; testnets are used only on the human's explicit request.
