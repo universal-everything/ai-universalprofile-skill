@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 445aa7f31b20 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint fe854225b554 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -2845,6 +2845,18 @@ function explorerTxUrl(ctx, chainId, hash) {
   } catch {
     return void 0;
   }
+}
+async function gasCheck(ctx, from, req) {
+  const est = BigInt(
+    await ctx.rpc.request(req.chainId, "eth_estimateGas", [{ from, to: req.to, data: req.data ?? "0x", value: req.value ? `0x${req.value.toString(16)}` : void 0 }])
+  );
+  const gas = req.gas ?? est * 125n / 100n + 10000n;
+  const fee = await fees(ctx, req.chainId);
+  const maxCostWei = gas * (fee.maxFeePerGas ?? fee.gasPrice ?? 0n) + (req.value ?? 0n);
+  const balanceWei = BigInt(await ctx.rpc.request(req.chainId, "eth_getBalance", [from, "latest"]));
+  const shortfallWei = balanceWei >= maxCostWei ? 0n : maxCostWei - balanceWei;
+  const suggestedFundingWei = shortfallWei === 0n ? 0n : shortfallWei + maxCostWei / 2n;
+  return { gas, maxCostWei, balanceWei, shortfallWei, suggestedFundingWei, enough: shortfallWei === 0n };
 }
 async function sendTx(ctx, signer, req) {
   const from = signer.address;
@@ -8406,7 +8418,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "445aa7f31b20" : "source";
+var SOURCE = true ? "fe854225b554" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -11275,7 +11287,7 @@ init_permissions();
 // src/lsp/lsp23.ts
 init_errors();
 init_profile_record();
-import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData11, encodePacked as encodePacked3, getAddress as getAddress21, getContractAddress, keccak256 as keccak25612 } from "./vendor-viem.mjs";
+import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData11, encodePacked as encodePacked3, formatEther as formatEther3, getAddress as getAddress21, getContractAddress, keccak256 as keccak25612 } from "./vendor-viem.mjs";
 init_tx();
 init_abis();
 init_constants();
@@ -11505,8 +11517,24 @@ async function deployFromManifest(ctx, signer, m, chainId, verb = "account deplo
     return { chainId, profile: m.profile, keyManager: m.keyManager, status: "already-deployed", verified: verified2, onChainCompute, prerequisites, confirmation };
   }
   await simulate(ctx, { chainId, from: signer.address, to: m.plan.factory, data: m.deployCalldata });
+  const g = await gasCheck(ctx, signer.address, { chainId, to: m.plan.factory, data: m.deployCalldata });
+  const symbol = (() => {
+    try {
+      return ctx.registry.chain(chainId).nativeSymbol;
+    } catch {
+      return "native";
+    }
+  })();
+  const gasInfo = { payer: signer.address, symbol, maxCost: formatEther3(g.maxCostWei), balance: formatEther3(g.balanceWei), enough: g.enough, ...g.enough ? {} : { missing: formatEther3(g.shortfallWei), suggestedFunding: formatEther3(g.suggestedFundingWei) } };
+  confirmation.gas = gasInfo;
+  if (!g.enough && !ctx.flags.dryRun) {
+    throw new UpError("TX_FAILED", `the agent's key ${signer.address} needs gas on chain ${chainId}: it has ${gasInfo.balance} ${symbol}, the deployment may cost up to ${gasInfo.maxCost} ${symbol}`, {
+      hint: `ask the human to send about ${gasInfo.suggestedFunding} ${symbol} to ${signer.address} (show it as a QR: up display address ${signer.address} --chain ${chainId}); then deploy`,
+      details: { reason: "needs-gas", gas: gasInfo }
+    });
+  }
   await ctx.consent({ verb, risk: "write", chainId, summary: confirmation, value: 0n, target: m.plan.factory, selector: m.deployCalldata.slice(0, 10) });
-  if (ctx.flags.dryRun) return { chainId, profile: m.profile, keyManager: m.keyManager, status: "dry-run", onChainCompute, prerequisites, confirmation };
+  if (ctx.flags.dryRun) return { chainId, profile: m.profile, keyManager: m.keyManager, status: "dry-run", onChainCompute, prerequisites, confirmation, gas: gasInfo };
   const tx = await sendTx(ctx, signer, { chainId, to: m.plan.factory, data: m.deployCalldata });
   const verified = await verifyDeployment(ctx, chainId, m);
   const allOk = Object.values(verified).every(Boolean);
