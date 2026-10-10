@@ -19,9 +19,11 @@ function segment(marker: number, body: number[]): number[] {
 }
 
 /** JPEG: SOI, APP0 (JFIF), optional APP1 EXIF orientation, DQT, DHT, SOF0 (or `sof`), SOS, EOI. */
-export function jpegBytes(width: number, height: number, opts: { orientation?: number; bigEndian?: boolean; sof?: number; fill?: boolean } = {}): Uint8Array {
+export function jpegBytes(width: number, height: number, opts: { orientation?: number; bigEndian?: boolean; sof?: number; fill?: boolean; exifAfterSof?: boolean } = {}): Uint8Array {
   const out: number[] = [0xff, 0xd8];
   out.push(...segment(0xe0, [...ascii("JFIF"), 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]));
+  const sofSeg = segment(opts.sof ?? 0xc0, [8, ...be16(height), ...be16(width), 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]);
+  if (opts.exifAfterSof) out.push(...sofSeg); // legal: APPn segments may follow the frame header before the scan
   if (opts.orientation !== undefined) {
     const be = opts.bigEndian === true;
     const u16 = be ? be16 : le16;
@@ -36,7 +38,7 @@ export function jpegBytes(width: number, height: number, opts: { orientation?: n
   out.push(...segment(0xdb, [0, ...new Array(64).fill(1)]));
   out.push(...segment(0xc4, [0x00, ...new Array(16).fill(0)]));
   if (opts.fill) out.push(0xff, 0xff); // fill bytes before a marker are legal
-  out.push(...segment(opts.sof ?? 0xc0, [8, ...be16(height), ...be16(width), 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]));
+  if (!opts.exifAfterSof) out.push(...sofSeg);
   out.push(...segment(0xda, [3, 1, 0, 2, 0x11, 3, 0x11, 0, 63, 0]), 0x12, 0x34, 0xff, 0xd9);
   return Uint8Array.from(out);
 }
@@ -57,9 +59,9 @@ export function webpLossy(width: number, height: number): Uint8Array {
   return riff("VP8 ", [0x50, 0x02, 0x00, 0x9d, 0x01, 0x2a, ...le16(width), ...le16(height), ...new Array(16).fill(0)]);
 }
 
-export function webpLossless(width: number, height: number): Uint8Array {
+export function webpLossless(width: number, height: number, padding = 16): Uint8Array {
   const bits = ((width - 1) & 0x3fff) | (((height - 1) & 0x3fff) << 14);
-  return riff("VP8L", [0x2f, ...le32(bits >>> 0), ...new Array(16).fill(0)]);
+  return riff("VP8L", [0x2f, ...le32(bits >>> 0), ...new Array(padding).fill(0)]);
 }
 
 export function webpExtended(width: number, height: number, animated = false): Uint8Array {

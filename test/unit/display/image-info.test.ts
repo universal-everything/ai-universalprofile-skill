@@ -29,6 +29,11 @@ describe("image header parsing (pure JS)", () => {
     expect(imageInfo(jpegBytes(400, 300, { orientation: 8, bigEndian: true }))).toMatchObject({ width: 300, height: 400, orientation: 8 });
   });
 
+  it("JPEG: an EXIF segment AFTER the frame header (before the scan) still rotates the size (4x3 stored, 3x4 displayed)", () => {
+    expect(imageInfo(jpegBytes(400, 300, { orientation: 6, exifAfterSof: true }))).toMatchObject({ width: 300, height: 400, orientation: 6 });
+    expect(imageInfo(jpegBytes(400, 300, { orientation: 1, exifAfterSof: true }))).toMatchObject({ width: 400, height: 300 });
+  });
+
   it("GIF: logical screen size; animation detected", () => {
     expect(imageInfo(gifBytes(320, 200))).toEqual({ format: "gif", mimeType: "image/gif", width: 320, height: 200 });
     expect(imageInfo(gifBytes(16, 16, 3)).animated).toBe(true);
@@ -38,6 +43,11 @@ describe("image header parsing (pure JS)", () => {
     expect(imageInfo(webpLossy(1024, 768))).toEqual({ format: "webp", mimeType: "image/webp", width: 1024, height: 768 });
     expect(imageInfo(webpLossless(500, 333))).toMatchObject({ format: "webp", width: 500, height: 333 });
     expect(imageInfo(webpLossless(16384, 1))).toMatchObject({ width: 16384, height: 1 });
+    // a valid minimal lossless file is only 28 bytes: chunk-specific minimum, not a blanket 30
+    const tiny = webpLossless(1, 1, 3);
+    expect(tiny.length).toBe(28);
+    expect(imageInfo(tiny)).toMatchObject({ format: "webp", width: 1, height: 1 });
+    expect(() => imageInfo(webpLossless(1, 1, 0).subarray(0, 24))).toThrow(/truncated/);
     expect(imageInfo(webpExtended(1920, 1080))).toMatchObject({ width: 1920, height: 1080 });
     expect(imageInfo(webpExtended(64, 64, true)).animated).toBe(true);
   });

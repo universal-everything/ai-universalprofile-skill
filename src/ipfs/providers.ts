@@ -156,7 +156,8 @@ export function normaliseKuboUrl(raw: string): string {
   try {
     u = new URL(raw);
   } catch {
-    throw new UpError("BAD_ARGS", `kubo-url is not a URL: ${raw.slice(0, 80)}`, { hint: "e.g. http://127.0.0.1:5001 (the IPFS RPC API, not the gateway)" });
+    // the raw value is never echoed: it may contain a password or a token
+    throw new UpError("BAD_ARGS", "kubo-url is not a valid URL", { hint: "e.g. http://127.0.0.1:5001 (the IPFS RPC API, not the gateway)" });
   }
   if (u.protocol !== "https:" && u.protocol !== "http:") throw new UpError("BAD_ARGS", "kubo-url must be an http(s) URL", { hint: "e.g. http://127.0.0.1:5001" });
   if (u.protocol === "http:" && !/^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u.hostname)) throw new UpError("BAD_ARGS", "kubo-url must use https unless the node runs on this machine (127.0.0.1 / localhost)", { hint: "put a remote Kubo API behind https (e.g. a reverse proxy) so uploads and credentials are encrypted" });

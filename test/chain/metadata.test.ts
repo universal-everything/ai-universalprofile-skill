@@ -278,6 +278,21 @@ describe("fail closed", () => {
     await run(ctx, "account data set", { key: "LSP3Profile", value: before }); // restore for the following tests
   });
 
+  it("merge keeps numbers of untouched fields exactly (lossless), e.g. 9007199254740993", async () => {
+    const before = await lsp3Raw();
+    const text = '{"LSP3Profile":{"name":"Ada","links":[],"tags":[],"avatar":[],"profileImage":[],"backgroundImage":[],"appScore":9007199254740993,"ratio":1.0}}';
+    const bytes = new TextEncoder().encode(text);
+    const { fakeCid } = await import("../support/mock-ipfs.ts");
+    const cid = fakeCid(bytes);
+    ipfs.store.set(cid, bytes);
+    await run(ctx, "account data set", { key: "LSP3Profile", value: { verification: { method: "keccak256(utf8)", data: keccak256(bytes) }, url: `ipfs://${cid}` } });
+    const r: any = await run(ctx, "profile metadata set", { name: "Ada Lovelace" });
+    expect(r.data.changed).toEqual(["name"]);
+    const uploaded = Buffer.from(ipfs.uploads.at(-1)!.files[0].bytes).toString("utf8");
+    expect(uploaded).toBe(text.replace('"name":"Ada"', '"name":"Ada Lovelace"'));
+    await run(ctx, "account data set", { key: "LSP3Profile", value: before }); // restore for the following tests
+  });
+
   it("no upload provider configured: dry-run says so; the real run fails with the configuration options, before any upload", async () => {
     const bare = testContext(h.newHome(), signer, { approval: "human: approved" });
     await run(bare, "config set", { key: "ipfs-gateway", value: ipfs.gateway }); // reads stay on the mock; no upload credentials
@@ -338,7 +353,63 @@ describe("permission to write LSP3Profile", () => {
   });
 });
 
+/** testSigner that counts every signature it produces. */
+function countingSigner(): Signer & { signatures: number } {
+  const base = testSigner(generatePrivateKey());
+  const s: any = { ...base, signatures: 0 };
+  for (const k of ["signMessage", "signIntendedValidator", "signTypedData", "signTransaction"] as const) {
+    s[k] = async (...args: any[]) => {
+      s.signatures++;
+      return (base as any)[k](...args);
+    };
+  }
+  return s;
+}
+
 describe("relay path (gasless for the agent)", () => {
+  it("consent denied: no signature at all (no relayer quota login) and nothing uploaded", async () => {
+    const human = testSigner(generatePrivateKey());
+    await h.fund(human.address, parseEther("5"));
+    const agent = countingSigner();
+    const m = await deployProfileFor(testContext(h.newHome(), human, {}), human, h.chainId, { controller: agent.address });
+    const relayer = await startMockRelayer({ request: h.request, chainId: h.chainId, relayerAccount: h.accounts[1], chainIdRequired: true });
+    try {
+      const home2 = h.newHome();
+      await configureIpfs(testContext(home2, agent, {}));
+      await run(testContext(home2, agent, {}), "relayer add", { url: relayer.url, name: "mock" });
+      const e = await run(testContext(home2, agent, { yes: false }), "profile metadata set", { profile: m.profile, name: "No", "profile-image": files.png }).catch((x) => x);
+      expect(e.code).toBe("CONSENT_REQUIRED");
+      expect(e.details.confirmation.path).toBe("relay");
+      expect(e.details.confirmation.autoDecision.quotaLogin).toMatch(/only after approval/);
+      expect(agent.signatures).toBe(0);
+      expect(relayer.quotaChecks).toHaveLength(0);
+      expect(relayer.requests.filter((x) => /quota/i.test(x.path))).toHaveLength(0);
+      expect(ipfs.uploads).toHaveLength(0);
+    } finally {
+      await relayer.close();
+    }
+  });
+
+  it("relayer quota exhausted: stops after consent, before any upload", async () => {
+    const human = testSigner(generatePrivateKey());
+    await h.fund(human.address, parseEther("5"));
+    const agent = testSigner(generatePrivateKey());
+    const m = await deployProfileFor(testContext(h.newHome(), human, {}), human, h.chainId, { controller: agent.address });
+    const relayer = await startMockRelayer({ request: h.request, chainId: h.chainId, relayerAccount: h.accounts[1], chainIdRequired: true, quota: { quota: 0, unit: "gas", totalQuota: 100, resetDate: 0 } });
+    try {
+      const actx = testContext(h.newHome(), agent, { approval: "human: yes" });
+      await configureIpfs(actx);
+      await run(actx, "relayer add", { url: relayer.url, name: "mock" });
+      const e = await run(actx, "profile metadata set", { profile: m.profile, name: "No quota" }).catch((x) => x);
+      expect(e.code).toBe("RELAYER_ERROR");
+      expect(e.hint).toMatch(/--via km/);
+      expect(relayer.quotaChecks.length).toBeGreaterThan(0);
+      expect(ipfs.uploads).toHaveLength(0);
+    } finally {
+      await relayer.close();
+    }
+  });
+
   it("auto picks the relayer; one consent; the unfunded agent pays nothing", async () => {
     const human = testSigner(generatePrivateKey());
     await h.fund(human.address, parseEther("5"));

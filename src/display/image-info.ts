@@ -83,8 +83,10 @@ function gif(b: Uint8Array): ImageInfo {
 }
 
 function webp(b: Uint8Array): ImageInfo {
-  need(b, 30, "WebP");
+  need(b, 16, "WebP");
   const chunk = ascii(b, 12, 4);
+  // chunk-specific minimum: the size fields end at byte 30 (VP8 / VP8X) or 25 (VP8L)
+  need(b, chunk === "VP8L" ? 25 : 30, "WebP");
   let width: number;
   let height: number;
   let animated = false;
@@ -137,6 +139,7 @@ function exifOrientation(b: Uint8Array, start: number, end: number): number | un
 function jpeg(b: Uint8Array): ImageInfo {
   need(b, 4, "JPEG");
   let orientation: number | undefined;
+  let frame: { width: number; height: number } | undefined;
   let p = 2;
   while (p < b.length) {
     // markers start with 0xFF; any number of 0xFF fill bytes may precede the marker code
@@ -146,23 +149,24 @@ function jpeg(b: Uint8Array): ImageInfo {
     const marker = b[p++];
     // standalone markers without a length: TEM, RSTn, SOI
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd8)) continue;
-    if (marker === 0xd9 || marker === 0xda) break; // EOI / start of scan before any frame header
+    if (marker === 0xd9 || marker === 0xda) break; // EOI / start of scan: no metadata segments follow
     if (p + 2 > b.length) break;
     const len = u16be(b, p);
     if (len < 2 || p + len > b.length) throw new ImageFormatError("JPEG segment runs past the end of the file", "the file is incomplete or corrupt; export it again");
     if (marker === 0xe1 && orientation === undefined) orientation = exifOrientation(b, p + 2, p + len);
     // SOF0..SOF15 except DHT (C4), JPG (C8) and DAC (CC)
-    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+    // (the frame size is recorded and scanning continues: an APP1/EXIF segment may still follow before the scan)
+    if (!frame && marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
       if (len < 7) throw new ImageFormatError("JPEG frame header too short", "the file is corrupt; export it again");
-      let height = u16be(b, p + 3);
-      let width = u16be(b, p + 5);
-      checkSize("jpeg", width, height);
-      if (orientation !== undefined && orientation >= 5) [width, height] = [height, width];
-      return { format: "jpeg", mimeType: IMAGE_MIME.jpeg, width, height, ...(orientation !== undefined ? { orientation } : {}) };
+      frame = { height: u16be(b, p + 3), width: u16be(b, p + 5) };
+      checkSize("jpeg", frame.width, frame.height);
     }
     p += len;
   }
-  throw new ImageFormatError("JPEG without a frame header (SOF)", "the file is incomplete or corrupt; export it again");
+  if (!frame) throw new ImageFormatError("JPEG without a frame header (SOF)", "the file is incomplete or corrupt; export it again");
+  let { width, height } = frame;
+  if (orientation !== undefined && orientation >= 5) [width, height] = [height, width];
+  return { format: "jpeg", mimeType: IMAGE_MIME.jpeg, width, height, ...(orientation !== undefined ? { orientation } : {}) };
 }
 
 /** Detects the format and reads the pixel size. Throws ImageFormatError (with a hint) for anything else. */

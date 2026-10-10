@@ -12,6 +12,7 @@ import { ERC725 } from "@erc725/erc725.js";
 import { LSP3Schema } from "@erc725/erc725.js/schemas";
 import { keccak256, toBytes, type Hex } from "viem";
 import { UpError } from "../core/errors.ts";
+import { safeUrlText } from "../core/json.ts";
 import { DATA_KEYS } from "./constants.ts";
 
 export interface Lsp3Link {
@@ -86,7 +87,7 @@ function checkLinkUrl(url: string): string {
   try {
     parsed = new URL(u);
   } catch {
-    throw new UpError("BAD_ARGS", `link URL is not a valid URL: ${u.slice(0, 120)}`, { hint: "links are title=https://… pairs" });
+    throw new UpError("BAD_ARGS", `link URL is not a valid URL: ${safeUrlText(u)}`, { hint: "links are title=https://… pairs" });
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new UpError("BAD_ARGS", `link URL must start with https:// or http:// (got ${parsed.protocol})`);
   if (parsed.username || parsed.password) throw new UpError("BAD_ARGS", "link URLs must not contain credentials");
@@ -171,6 +172,74 @@ export function assetEntry(fileType: string, url: string, hash: Hex): Lsp3AssetE
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
+// ---------------------------------------------------------------------------
+// Lossless JSON for merging: fields the human did not touch must keep their exact numbers.
+// JSON.parse turns 9007199254740993 into 9007199254740992; with JSON.rawJSON (ES2025, Node
+// >= 21) every number whose text is not the canonical JS form is kept as its original text.
+// Without it, such numbers are reported so the merge can be refused instead of corrupting them.
+// ---------------------------------------------------------------------------
+
+const RAW = JSON as unknown as { rawJSON?: (text: string) => object; isRawJSON?: (v: unknown) => boolean };
+
+/** True when `tok` (a JSON number) does not survive Number() exactly. */
+function numberLosesValue(tok: string): boolean {
+  if (/^-?\d+$/.test(tok)) return !Number.isSafeInteger(Number(tok));
+  const digits = tok.replace(/[eE].*$/, "").replace(/[-.]/g, "").replace(/^0+/, "").replace(/0+$/, "");
+  return digits.length > 15 || !Number.isFinite(Number(tok));
+}
+
+/** Number tokens of a JSON text (outside strings). */
+function numberTokens(text: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      for (i++; i < text.length && text[i] !== '"'; i++) if (text[i] === "\\") i++;
+      continue;
+    }
+    if (c === "-" || (c >= "0" && c <= "9")) {
+      const m = /^-?\d+(\.\d+)?([eE][+-]?\d+)?/.exec(text.slice(i, i + 400));
+      if (m) {
+        out.push(m[0]);
+        i += m[0].length - 1;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Parses JSON keeping every number exactly: non-canonical number texts become JSON.rawJSON
+ * values (re-serialised byte-for-byte). `lossyNumbers` lists numbers that could NOT be kept
+ * (only when JSON.rawJSON is unavailable or disabled).
+ */
+export function parseJsonLossless(text: string, opts: { useRaw?: boolean } = {}): { value: unknown; lossyNumbers: string[] } {
+  const useRaw = opts.useRaw !== false && typeof RAW.rawJSON === "function";
+  let sawSource = false;
+  const value = JSON.parse(text, function (this: unknown, _k: string, v: unknown, ctx?: { source?: string }) {
+    if (typeof v !== "number" || typeof ctx?.source !== "string") return v;
+    sawSource = true;
+    return useRaw && JSON.stringify(v) !== ctx.source ? RAW.rawJSON!(ctx.source) : v;
+  } as any);
+  const lossyNumbers = useRaw && sawSource ? [] : numberTokens(text).filter(numberLosesValue);
+  return { value, lossyNumbers };
+}
+
+/** Deep copy of parsed JSON that keeps JSON.rawJSON values (immutable) as they are. */
+function cloneJson<T>(v: T): T {
+  if (Array.isArray(v)) return v.map(cloneJson) as T;
+  if (v && typeof v === "object") {
+    if (RAW.isRawJSON?.(v)) return v;
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cloneJson(x)])) as T;
+  }
+  return v;
+}
+
+/** Plain JSON view of a document that may contain JSON.rawJSON values (for output only; huge numbers may round). */
+export function plainJson(v: unknown): unknown {
+  return v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+}
+
 /**
  * Applies `changes` to the existing document (or to an empty one with replace). Returns the
  * new document and the properties whose value changed. Pure; never mutates `existing`.
@@ -182,11 +251,11 @@ export function mergeLsp3(existing: unknown, changes: Lsp3Changes, opts: { repla
     if (!isObject(existing) || !isObject(existing.LSP3Profile)) {
       throw new UpError("BAD_ARGS", "the current LSP3 metadata is not a valid LSP3 document ({ \"LSP3Profile\": { … } }), so it cannot be merged", { hint: "start from an empty document with --replace (the fields you pass become the whole profile metadata)" });
     }
-    base = structuredClone(existing);
+    base = cloneJson(existing);
     profile = base.LSP3Profile as Record<string, unknown>;
   }
   const before = JSON.stringify(profile);
-  const prev = structuredClone(profile);
+  const prev = cloneJson(profile);
   for (const f of changes.remove ?? []) delete profile[FIELD_PROP[f]];
   if (changes.name !== undefined) profile.name = changes.name;
   if (changes.description !== undefined) profile.description = changes.description;

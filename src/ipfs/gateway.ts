@@ -8,6 +8,7 @@
 // content URLs found on-chain are untrusted data (public https hosts only, see safe-fetch.ts).
 import { keccak256, type Hex } from "viem";
 import { UpError } from "../core/errors.ts";
+import { scrubUrls } from "../core/json.ts";
 import type { UpConfig } from "../core/types.ts";
 import type { FetchLike } from "../abi/http.ts";
 import { readCapped } from "../abi/http.ts";
@@ -28,11 +29,16 @@ export function normaliseGateway(raw: string): string {
   try {
     u = new URL(raw);
   } catch {
-    throw new UpError("BAD_ARGS", `IPFS gateway is not a URL: ${raw.slice(0, 80)}`, { hint: `e.g. ${DEFAULT_IPFS_GATEWAY}` });
+    // the raw value is never echoed: it may contain a password or a token
+    throw new UpError("BAD_ARGS", "the IPFS gateway is not a valid URL", { hint: `e.g. ${DEFAULT_IPFS_GATEWAY}` });
   }
   const loopback = /^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u.hostname);
   if (u.protocol !== "https:" && !(u.protocol === "http:" && loopback)) throw new UpError("BAD_ARGS", "the IPFS gateway must be an https URL (http only for a local node on 127.0.0.1)", { hint: `e.g. ${DEFAULT_IPFS_GATEWAY}` });
   if (u.username || u.password || u.search || u.hash) throw new UpError("BAD_ARGS", "the IPFS gateway URL must not contain credentials, a query or a fragment");
+  // A local Kubo gateway on "localhost" redirects path requests to its subdomain gateway
+  // (<cid>.ipfs.localhost), which the redirect guard refuses only after an upload is public.
+  // On 127.0.0.1 Kubo serves the path gateway directly, so local configs use that.
+  if (u.protocol === "http:" && u.hostname.toLowerCase() === "localhost") u.hostname = "127.0.0.1";
   return u.toString().replace(/\/?$/, "/");
 }
 
@@ -170,7 +176,7 @@ export async function fetchVerifiable(url: string, verification: { method?: stri
       return out;
     }
   } catch (e) {
-    out.error = (e as Error).message;
+    out.error = scrubUrls((e as Error).message);
     return out;
   }
   out.hash = keccakBytes(out.bytes);

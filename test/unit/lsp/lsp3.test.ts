@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ERC725 } from "@erc725/erc725.js";
 import { LSP3Schema } from "@erc725/erc725.js/schemas";
 import { keccak256, toBytes, type Hex } from "viem";
-import { assetEntry, decodeLsp3Value, describeImageEntry, displayText, encodeLsp3Value, imageEntry, mergeLsp3, parseDescription, parseLinks, parseName, parseRemove, parseTags, serialiseLsp3, viewLsp3, LIMITS } from "../../../src/lsp/lsp3.ts";
+import { assetEntry, decodeLsp3Value, describeImageEntry, displayText, parseJsonLossless, encodeLsp3Value, imageEntry, mergeLsp3, parseDescription, parseLinks, parseName, parseRemove, parseTags, serialiseLsp3, viewLsp3, LIMITS } from "../../../src/lsp/lsp3.ts";
 import { DATA_KEYS, PERMISSIONS } from "../../../src/lsp/constants.ts";
 import { canWriteDataKey, metadataChain, metadataHooks, setMetadataHooksForTests, METADATA_DEFAULT_CHAIN_ID } from "../../../src/lsp/metadata.ts";
 
@@ -105,6 +105,22 @@ describe("merge semantics", () => {
     expect(displayText("x".repeat(500), 10)).toBe(`"${"x".repeat(10)}…"`);
     expect(describeImageEntry({ width: 1, height: 1, url: "ipfs://a\u001b[2Jb", verification: { method: "keccak256(bytes)" } })).toBe("1x1 ipfs://a\\u001b[2Jb (keccak256(bytes))");
     expect(describeImageEntry({ address: "0xabc", tokenId: "0x01" })).toBe("NFT 0xabc token 0x01");
+  });
+
+  it("merge keeps untouched numbers exactly (no 9007199254740993 → 9007199254740992), and reports only the real change", () => {
+    const text = '{"LSP3Profile":{"name":"a","big":9007199254740993,"f":1.0,"e":1e3,"n":2,"profileImage":[{"width":512,"height":512,"url":"ipfs://x","verification":{"method":"keccak256(bytes)","data":"0x00"}}],"s":"9007199254740993 \\" 1.0"},"top":12345678901234567890}';
+    const p = parseJsonLossless(text);
+    expect(p.lossyNumbers).toEqual([]);
+    const r = mergeLsp3(p.value, { name: "b" });
+    expect(r.changed).toEqual(["name"]);
+    const out = serialiseLsp3(r.json).text;
+    expect(out).toBe('{"LSP3Profile":{"name":"b","big":9007199254740993,"f":1.0,"e":1e3,"n":2,"profileImage":[{"width":512,"height":512,"url":"ipfs://x","verification":{"method":"keccak256(bytes)","data":"0x00"}}],"s":"9007199254740993 \\" 1.0","links":[],"tags":[],"avatar":[],"backgroundImage":[]},"top":12345678901234567890}');
+    expect(out).toContain('"big":9007199254740993');
+    expect(out).toContain('"f":1.0');
+    expect(out).toContain('"top":12345678901234567890');
+    expect(viewLsp3(r.json)!.profileImage[0]).toMatchObject({ width: 512 }); // canonical numbers stay plain numbers
+    // without JSON.rawJSON the unsafe numbers are reported (the verb then refuses to merge)
+    expect(parseJsonLossless(text, { useRaw: false }).lossyNumbers).toEqual(["9007199254740993", "12345678901234567890"]);
   });
 
   it("viewLsp3 is tolerant of foreign data", () => {

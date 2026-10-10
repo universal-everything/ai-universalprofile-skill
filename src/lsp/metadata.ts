@@ -12,13 +12,14 @@ import { basename, isAbsolute, resolve } from "node:path";
 import { getAddress, type Address, type Hex } from "viem";
 import type { VerbContext } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
+import { safeUrlText, scrubUrls } from "../core/json.ts";
 import type { FetchLike } from "../abi/http.ts";
 import { safeFetchBytes, type LookupFn } from "../tokens/safe-fetch.ts";
 import { ImageFormatError, imageInfo, type ImageInfo } from "../display/image-info.ts";
 import { fetchFromGateway, fetchVerifiable, keccakBytes, parseIpfsUrl, type FetchedVerifiable } from "../ipfs/gateway.ts";
 import { isDataKeyAllowed } from "./allowed.ts";
 import { DATA_KEYS, PERMISSIONS } from "./constants.ts";
-import { decodeLsp3Value, viewLsp3, type Lsp3View } from "./lsp3.ts";
+import { decodeLsp3Value, parseJsonLossless, viewLsp3, type Lsp3View } from "./lsp3.ts";
 import { chainLabel, onChain } from "./multichain.ts";
 import { getData } from "./profile.ts";
 import { hasCode } from "./read.ts";
@@ -100,10 +101,12 @@ const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "
 
 async function readSource(input: string, opts: { gateway: string; fetch?: FetchLike; lookup?: LookupFn }): Promise<{ bytes: Uint8Array; source: LoadedFile["source"]; display: string; existingUrl?: string }> {
   const s = input.trim();
-  const tooBig = (n: number) => new UpError("BAD_ARGS", `${s.replace(/[?#].*$/, "").slice(0, 80)} is ${formatBytes(n)}; the limit is ${formatBytes(MAX_FILE_BYTES)}`, { hint: "resize or compress the image (e.g. at most 2000 pixels per side as JPEG or WebP) and try again" });
+  const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(s) && !isAbsolute(s);
+  const label = isUrl ? safeUrlText(s) : s;
+  const tooBig = (n: number) => new UpError("BAD_ARGS", `${label.slice(0, 120)} is ${formatBytes(n)}; the limit is ${formatBytes(MAX_FILE_BYTES)}`, { hint: "resize or compress the image (e.g. at most 2000 pixels per side as JPEG or WebP) and try again" });
   if (/^ipfs:\/\//i.test(s)) {
     const p = parseIpfsUrl(s);
-    if (!p) throw new UpError("BAD_ARGS", `not a valid ipfs:// URL: ${s.slice(0, 80)}`);
+    if (!p) throw new UpError("BAD_ARGS", `not a valid ipfs:// URL: ${label}`, { hint: "use ipfs://<CID> or ipfs://<CID>/<path>" });
     try {
       return { bytes: await fetchFromGateway(p.cid, { gateway: opts.gateway, fetch: opts.fetch, maxBytes: MAX_FILE_BYTES, attempts: 2 }, p.path), source: "ipfs", display: s, existingUrl: `ipfs://${p.cid}${p.path}` };
     } catch (e) {
@@ -112,21 +115,17 @@ async function readSource(input: string, opts: { gateway: string; fetch?: FetchL
     }
   }
   if (/^https:\/\//i.test(s)) {
-    // shown without query or fragment (they may carry access tokens)
-    let shown = s.slice(0, 120);
-    try {
-      const u = new URL(s);
-      shown = `${u.origin}${u.pathname}`;
-    } catch {}
+    // shown without userinfo, query or fragment (they may carry passwords and access tokens)
+    const shown = label;
     try {
       const r = await safeFetchBytes(s, { fetch: opts.fetch, lookup: opts.lookup, maxBytes: MAX_FILE_BYTES, maxRedirects: 3, accept: "image/*,model/gltf-binary;q=0.9,*/*;q=0.1", timeoutMs: 60_000 });
       return { bytes: r.bytes, source: "url", display: shown };
     } catch (e) {
       if (/larger than/.test((e as Error).message)) throw tooBig(MAX_FILE_BYTES + 1);
-      throw new UpError("BAD_ARGS", `could not download ${shown}: ${(e as Error).message}`, { hint: "use a public https URL, or save the image as a file and pass its path" });
+      throw new UpError("BAD_ARGS", `could not download ${shown}: ${scrubUrls((e as Error).message)}`, { hint: "use a public https URL, or save the image as a file and pass its path" });
     }
   }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s) || /^data:/i.test(s)) throw new UpError("BAD_ARGS", `unsupported image source ${s.slice(0, 40)}…`, { hint: "pass a local file path, an https:// URL or an ipfs:// URL" });
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s) || /^data:/i.test(s)) throw new UpError("BAD_ARGS", `unsupported image source ${/^data:/i.test(s) ? "data: URI" : label}`, { hint: "pass a local file path, an https:// URL or an ipfs:// URL" });
   const file = isAbsolute(s) ? s : resolve(process.cwd(), s);
   let st;
   try {
@@ -233,6 +232,8 @@ export interface CurrentMetadata {
   view?: Lsp3View;
   /** Why the JSON is not usable (fetch error, hash mismatch, not JSON, not LSP3). */
   problem?: string;
+  /** Numbers this runtime cannot keep exactly (no JSON.rawJSON): a merge would change them. */
+  lossyNumbers?: string[];
 }
 
 /** Reads (and optionally fetches + hash-checks) the profile's LSP3Profile on one chain. */
@@ -260,7 +261,9 @@ export async function readCurrentMetadata(ctx: VerbContext, chainId: number, pro
     return out;
   }
   try {
-    out.json = JSON.parse(new TextDecoder().decode(bytes));
+    const parsed = parseJsonLossless(new TextDecoder().decode(bytes));
+    out.json = parsed.value;
+    if (parsed.lossyNumbers.length) out.lossyNumbers = parsed.lossyNumbers.slice(0, 10);
   } catch {
     out.problem = "the metadata file is not JSON";
     return out;

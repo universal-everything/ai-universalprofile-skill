@@ -61,3 +61,22 @@ export function redact<T>(value: T, inSecretContainer = false): T {
   if (typeof value === "string") return maskUrl(value) as T;
   return value;
 }
+
+/**
+ * A URL as it may appear in messages: scheme, host and path only — never userinfo, query or
+ * fragment (they can carry passwords and tokens). Unparseable input is not echoed at all.
+ */
+export function safeUrlText(raw: string): string {
+  try {
+    const u = new URL(raw.trim());
+    return `${u.protocol}//${u.host}${u.pathname}${u.search || u.hash ? "?…" : ""}`;
+  } catch {
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(raw.trim())?.[1];
+    return scheme ? `${scheme.toLowerCase()}://<invalid URL>` : "<invalid URL>";
+  }
+}
+
+/** Rewrites every URL inside a free-text message (e.g. a nested error) with safeUrlText. */
+export function scrubUrls(text: string): string {
+  return text.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]*/gi, (m) => safeUrlText(m));
+}
