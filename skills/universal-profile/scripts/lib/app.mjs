@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint cadb4a445ddb (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint b44af944496f (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -118,7 +118,7 @@ function safeUrlText(raw) {
   }
 }
 function scrubUrls(text) {
-  return text.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]*/gi, (m) => safeUrlText(m));
+  return text.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]*/gi, (m) => safeUrlText(m)).replace(/[^\s/@"'<>]*@/g, "[redacted]@").replace(/[?#][^\s"'<>]*/g, (m) => m === "?…" ? m : "?…");
 }
 var SECRET_KEY, SECRET_CONTAINER;
 var init_json = __esm({
@@ -4165,6 +4165,7 @@ __export(gateway_exports, {
   fetchFromGateway: () => fetchFromGateway,
   fetchVerifiable: () => fetchVerifiable,
   gatewayFrom: () => gatewayFrom,
+  gatewayTargets: () => gatewayTargets,
   gatewayUrlFor: () => gatewayUrlFor,
   keccakBytes: () => keccakBytes,
   normaliseGateway: () => normaliseGateway,
@@ -4185,7 +4186,6 @@ function normaliseGateway(raw) {
   const loopback = /^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u2.hostname);
   if (u2.protocol !== "https:" && !(u2.protocol === "http:" && loopback)) throw new UpError("BAD_ARGS", "the IPFS gateway must be an https URL (http only for a local node on 127.0.0.1)", { hint: `e.g. ${DEFAULT_IPFS_GATEWAY}` });
   if (u2.username || u2.password || u2.search || u2.hash) throw new UpError("BAD_ARGS", "the IPFS gateway URL must not contain credentials, a query or a fragment");
-  if (u2.protocol === "http:" && u2.hostname.toLowerCase() === "localhost") u2.hostname = "127.0.0.1";
   return u2.toString().replace(/\/?$/, "/");
 }
 function parseIpfsUrl(url) {
@@ -4201,6 +4201,15 @@ function gatewayUrlFor(gateway, cid, path = "") {
 function keccakBytes(bytes) {
   return keccak2565(bytes);
 }
+function gatewayTargets(url) {
+  const u2 = new URL(url);
+  if (u2.protocol !== "http:" || u2.hostname.toLowerCase() !== "localhost") return [url];
+  return ["127.0.0.1", "[::1]"].map((ip) => {
+    const t = new URL(url);
+    t.hostname = ip;
+    return t.toString();
+  });
+}
 async function fetchFromGateway(cid, opts, path = "") {
   const url = gatewayUrlFor(opts.gateway, cid, path);
   const f = opts.fetch ?? globalThis.fetch;
@@ -4208,49 +4217,51 @@ async function fetchFromGateway(cid, opts, path = "") {
   const base = Number(process.env.UP_IPFS_BACKOFF_MS ?? opts.backoffMs ?? 1e3);
   const maxBytes = opts.maxBytes ?? 12 * 1024 * 1024;
   const host = new URL(url).host;
-  const origin = new URL(url).origin;
   let last = "";
   for (let i = 0; i < attempts; i++) {
     if (i > 0) await sleep2(base * 2 ** (i - 1));
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 3e4);
-    try {
-      let res;
-      let current = url;
-      for (let hop = 0; ; hop++) {
-        res = await f(current, { signal: ctrl.signal, redirect: "manual", headers: { "user-agent": "universal-profile-skill" } });
-        if (res.status < 300 || res.status >= 400) break;
-        const loc = res.headers.get("location");
-        await res.body?.cancel().catch(() => {
-        });
-        if (!loc || hop >= 3) throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} redirected ${loc ? "too often" : "without a location"} for ${cid}`, { details: { reason: "gateway-error", cid } });
-        const next = new URL(loc, current);
-        if (next.origin !== origin) {
-          try {
-            await assertPublicHttpsUrl(next.toString(), opts.lookup);
-          } catch (e) {
-            throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} redirected to a refused location (${e.message})`, { details: { reason: "gateway-error", cid } });
+    for (const target of gatewayTargets(url)) {
+      const origin = new URL(target).origin;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 3e4);
+      try {
+        let res;
+        let current = target;
+        for (let hop = 0; ; hop++) {
+          res = await f(current, { signal: ctrl.signal, redirect: "manual", headers: { "user-agent": "universal-profile-skill" } });
+          if (res.status < 300 || res.status >= 400) break;
+          const loc = res.headers.get("location");
+          await res.body?.cancel().catch(() => {
+          });
+          if (!loc || hop >= 3) throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} redirected ${loc ? "too often" : "without a location"} for ${cid}`, { details: { reason: "gateway-error", cid } });
+          const next = new URL(loc, current);
+          if (next.origin !== origin) {
+            try {
+              await assertPublicHttpsUrl(next.toString(), opts.lookup);
+            } catch (e) {
+              throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} redirected to a refused location (${scrubUrls(e.message)})`, { details: { reason: "gateway-error", cid } });
+            }
           }
+          current = next.toString();
         }
-        current = next.toString();
+        if (res.status === 404 || res.status === 429 || res.status >= 500) {
+          await res.body?.cancel().catch(() => {
+          });
+          last = `HTTP ${res.status}`;
+          break;
+        }
+        if (!res.ok) {
+          await res.body?.cancel().catch(() => {
+          });
+          throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} answered HTTP ${res.status} for ${cid}`, { details: { reason: "gateway-error", status: res.status, cid } });
+        }
+        return await readCapped(res, maxBytes, ctrl);
+      } catch (e) {
+        if (e instanceof UpError) throw e;
+        last = e?.name === "AbortError" ? "timeout" : scrubUrls(String(e?.message ?? e));
+      } finally {
+        clearTimeout(timer);
       }
-      if (res.status === 404 || res.status === 429 || res.status >= 500) {
-        await res.body?.cancel().catch(() => {
-        });
-        last = `HTTP ${res.status}`;
-        continue;
-      }
-      if (!res.ok) {
-        await res.body?.cancel().catch(() => {
-        });
-        throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} answered HTTP ${res.status} for ${cid}`, { details: { reason: "gateway-error", status: res.status, cid } });
-      }
-      return await readCapped(res, maxBytes, ctrl);
-    } catch (e) {
-      if (e instanceof UpError) throw e;
-      last = e?.name === "AbortError" ? "timeout" : String(e?.message ?? e);
-    } finally {
-      clearTimeout(timer);
     }
   }
   throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} did not serve ${cid} (${last})`, { hint: "the content may not have propagated yet or the gateway is unreachable; retry later", details: { reason: "gateway-unavailable", cid } });
@@ -8392,7 +8403,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "cadb4a445ddb" : "source";
+var SOURCE = true ? "b44af944496f" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -11820,7 +11831,7 @@ function decodeLsp3Value(raw) {
 }
 function viewLsp3(json2) {
   if (!isObject(json2) || !isObject(json2.LSP3Profile)) return void 0;
-  const p = json2.LSP3Profile;
+  const p = plainJson(json2.LSP3Profile);
   const arr = (v) => Array.isArray(v) ? v : [];
   return {
     name: typeof p.name === "string" ? p.name : void 0,
@@ -11957,10 +11968,22 @@ function formatBytes(n) {
   return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} bytes`;
 }
 var EXT = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "model/gltf-binary": "glb" };
-async function readSource(input, opts) {
+function downloadReason(msg) {
+  if (/embedded credentials/i.test(msg)) return "it contains a user name or password";
+  if (/non-public|local host name/i.test(msg)) return "it points to a private or local network address";
+  if (/invalid URL/i.test(msg)) return "it is not a valid URL";
+  if (/only https/i.test(msg)) return "only https:// URLs are downloaded";
+  if (/redirect/i.test(msg)) return "too many or invalid redirects";
+  if (/resolve/i.test(msg)) return "its host name does not resolve";
+  const http = /HTTP (\d{3})/.exec(msg);
+  if (http) return `the server answered HTTP ${http[1]}`;
+  if (/abort|timeout/i.test(msg)) return "the download timed out";
+  return "the download failed";
+}
+async function readSource(input, what, opts) {
   const s = input.trim();
   const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(s) && !isAbsolute2(s);
-  const label = isUrl ? safeUrlText(s) : s;
+  const label = isUrl ? `the URL given for the ${what}` : s;
   const tooBig = (n) => new UpError("BAD_ARGS", `${label.slice(0, 120)} is ${formatBytes(n)}; the limit is ${formatBytes(MAX_FILE_BYTES)}`, { hint: "resize or compress the image (e.g. at most 2000 pixels per side as JPEG or WebP) and try again" });
   if (/^ipfs:\/\//i.test(s)) {
     const p = parseIpfsUrl(s);
@@ -11976,10 +11999,10 @@ async function readSource(input, opts) {
     const shown = label;
     try {
       const r = await safeFetchBytes(s, { fetch: opts.fetch, lookup: opts.lookup, maxBytes: MAX_FILE_BYTES, maxRedirects: 3, accept: "image/*,model/gltf-binary;q=0.9,*/*;q=0.1", timeoutMs: 6e4 });
-      return { bytes: r.bytes, source: "url", display: shown };
+      return { bytes: r.bytes, source: "url", display: safeUrlText(s) };
     } catch (e) {
       if (/larger than/.test(e.message)) throw tooBig(MAX_FILE_BYTES + 1);
-      throw new UpError("BAD_ARGS", `could not download ${shown}: ${scrubUrls(e.message)}`, { hint: "use a public https URL, or save the image as a file and pass its path" });
+      throw new UpError("BAD_ARGS", `could not download ${shown}: ${downloadReason(String(e?.message ?? e))}`, { hint: "use a public https URL, or save the image as a file and pass its path" });
     }
   }
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s) || /^data:/i.test(s)) throw new UpError("BAD_ARGS", `unsupported image source ${/^data:/i.test(s) ? "data: URI" : label}`, { hint: "pass a local file path, an https:// URL or an ipfs:// URL" });
@@ -11996,7 +12019,7 @@ async function readSource(input, opts) {
   return { bytes: new Uint8Array(await readFile6(file2)), source: "file", display: basename2(file2) };
 }
 async function loadFile(input, field, opts) {
-  const r = await readSource(input, opts);
+  const r = await readSource(input, FIELD_LABEL[field], opts);
   if (r.bytes.length > MAX_FILE_BYTES) throw new UpError("BAD_ARGS", `${r.display} is larger than ${formatBytes(MAX_FILE_BYTES)}`, { hint: "resize or compress the image and try again" });
   const warnings = [];
   let image;
@@ -12742,6 +12765,7 @@ defineVerb({
 // src/lsp/verbs-metadata.ts
 import { getAddress as getAddress26 } from "./vendor-viem.mjs";
 init_errors();
+init_permissions();
 init_auto();
 init_registry();
 init_client();
@@ -12918,6 +12942,24 @@ function withUploads(e, uploaded, note) {
     cause: e
   });
 }
+async function planPath(ctx, chainId, profile, signer, opts) {
+  if (opts.via !== "auto") return { path: opts.via, relayer: opts.relayer, reason: `--via ${opts.via}`, quotaCheck: opts.via === "relay" ? "after-consent" : "none", fallbackToKm: false };
+  if (opts.fundFromController) return { path: "km", reason: "--fund-from-controller needs a direct path", quotaCheck: "none", fallbackToKm: false };
+  const relayer = await selectRelayer(ctx, chainId, opts.relayer).catch(() => void 0);
+  if (!relayer) return { path: "km", reason: `no relayer configured for chain ${chainId}`, quotaCheck: "none", fallbackToKm: false };
+  try {
+    const perms = await readControllerPermissions(ctx, chainId, profile, signer.address);
+    if (!hasPermission(perms.permissions.value, "EXECUTE_RELAY_CALL")) return { path: "km", reason: `controller ${signer.address} lacks EXECUTE_RELAY_CALL on chain ${chainId}`, quotaCheck: "none", fallbackToKm: false };
+    clientFor(relayer).assertServes(chainId, await getCapabilities(ctx, relayer));
+  } catch (e) {
+    return { path: "km", reason: `relayer ${relayer.name} unusable: ${e.message}`, quotaCheck: "none", fallbackToKm: false };
+  }
+  if (relayer.profile === "lukso-live") {
+    const funded = await getBalance(ctx, chainId, signer.address) > 0n;
+    return funded ? { path: "km", relayer: relayer.name, reason: `relayer ${relayer.name}: quota cannot be checked; the agent's key is funded`, quotaCheck: "none", fallbackToKm: false } : { path: "relay", relayer: relayer.name, reason: `relayer ${relayer.name}: quota cannot be checked; the agent's key has no gas, so relay is the only option`, quotaCheck: "unavailable", fallbackToKm: false };
+  }
+  return { path: "relay", relayer: relayer.name, reason: `relayer ${relayer.name} covers chain ${chainId} (quota checked after approval)`, quotaCheck: "after-consent", fallbackToKm: true };
+}
 function changeSummary(cur, next, changed, files) {
   const before = cur.view;
   const out = {};
@@ -13052,13 +13094,17 @@ defineVerb({
       writes: addSupportedStandard ? ["LSP3Profile", "SupportedStandards:LSP3Profile"] : ["LSP3Profile"]
     };
     const opts0 = execOptions(a);
-    let decision;
-    if (opts0.via === "auto") decision = opts0.fundFromController ? { path: "km", reason: "--fund-from-controller needs a direct path" } : await resolveAutoPath(simulationContext(ctx), chainId, profile, signer, opts0.relayer);
-    const via = decision?.path ?? opts0.via;
-    const runOpts = { ...opts0, via, relayer: decision?.relayer ?? opts0.relayer, skipQuota: false, chainChecked: true };
-    Object.assign(confirmation, { path: via, ...decision ? { autoDecision: { path: decision.path, relayer: decision.relayer, reason: decision.reason.replace(/ \(quota not checked in dry-run[^)]*\)/, ""), quotaLogin: via === "relay" ? `signed only after approval, before any upload — ${QUOTA_LOGIN_FORMAT}` : "not needed" } } : {} });
+    const plan = await planPath(ctx, chainId, profile, signer, opts0);
+    let via = plan.path;
+    const runOpts = { ...opts0, via, relayer: plan.relayer ?? opts0.relayer, skipQuota: false, chainChecked: true };
+    Object.assign(confirmation, {
+      path: plan.fallbackToKm ? "relay (direct km if the relayer reports no quota; the agent's key then pays the gas)" : via,
+      ...opts0.via === "auto" ? { autoDecision: { path: plan.path, relayer: plan.relayer, reason: plan.reason } } : {},
+      quotaLogin: plan.quotaCheck === "after-consent" ? `signed only after approval, before any upload — ${QUOTA_LOGIN_FORMAT}` : plan.quotaCheck === "unavailable" ? "not available for this relayer (LUKSO live relayer: quota and registration cannot be checked; if the profile is not registered there, the write fails after the upload)" : "not needed"
+    });
     const placeholder = encodeLsp3Value("ipfs://pending-upload", serialiseLsp3(draft.json).hash);
-    const sim = await executeAsProfile(simulationContext(ctx), requestFor(placeholder, confirmation), runOpts);
+    const simulateOn = (path) => executeAsProfile(simulationContext(ctx), requestFor(placeholder, confirmation), { ...runOpts, via: path });
+    const sim = await simulateOn(via);
     const media = [];
     if (ctx.flags.dryRun) {
       try {
@@ -13070,35 +13116,41 @@ defineVerb({
       if (!selection.provider) warnings.push(`no IPFS upload provider is configured yet (${selection.missing}): before the real run the human must set one (UP_IPFS_UPLOAD_KEY or up config set ipfs-upload-key, or ipfs-provider pinata/kubo); see up docs profile-metadata`);
       return {
         media,
-        data: { dryRun: true, chainId, profile, changed: draft.changed, confirmation, draft: plainJson(draft.json), simulation: { path: sim.path, gasPayer: sim.gasPayer, status: sim.status, autoDecision: decision }, providerReady: !!selection.provider },
+        data: { dryRun: true, chainId, profile, changed: draft.changed, confirmation, draft: plainJson(draft.json), simulation: { path: sim.path, gasPayer: sim.gasPayer, status: sim.status, plan }, providerReady: !!selection.provider },
         text: [
           `DRY RUN — nothing uploaded, signed or sent.`,
           `Profile metadata of your profile ${profile} on ${where}${explicit ? "" : " (the default chain for profile metadata)"} would change (${a.replace ? "replace" : "merge"}):`,
           ...changeLines(changes),
           `Uploads to IPFS (public and permanent): ${toUpload.length ? `${toUpload.map((f) => FIELD_LABEL[f.field]).join(", ")} and ` : ""}the metadata JSON via ${selection.provider ? selection.provider.label : "— no provider configured yet —"}`,
-          `Write: setData(${confirmation.writes.join(", ")}) as the profile via ${sim.path} (gas: ${sim.gasPayer}); simulation ok`
+          `Write: setData(${confirmation.writes.join(", ")}) as the profile via ${String(confirmation.path)} (gas: ${sim.gasPayer}); simulation ok`
         ].join("\n"),
         warnings
       };
     }
     const provider = requireProvider(selection);
-    if ((sim.path === "km" || sim.path === "lsp0") && await getBalance(ctx, chainId, signer.address) === 0n) {
-      throw new UpError("TX_FAILED", `the agent's key ${signer.address} has no ${l.nativeSymbol} on ${where} to pay the gas for the write (insufficient native balance); nothing was uploaded`, {
-        hint: `ask the human to fund the agent's key ${signer.address} on ${where}: up display address ${signer.address} --chain ${l.arg}; or use a relayer if one covers ${l.name} (up relayer list)`
-      });
-    }
+    const noGas = () => new UpError("TX_FAILED", `the agent's key ${signer.address} has no ${l.nativeSymbol} on ${where} to pay the gas for the write (insufficient native balance); nothing was uploaded`, {
+      hint: `ask the human to fund the agent's key ${signer.address} on ${where}: up display address ${signer.address} --chain ${l.arg}; or use a relayer if one covers ${l.name} (up relayer list)`
+    });
+    if ((via === "km" || via === "lsp0") && await getBalance(ctx, chainId, signer.address) === 0n) throw noGas();
     await ctx.consent({ verb: VERB_SET, risk: "write", chainId, summary: confirmation, target: profile, selector: payloadFor(placeholder).slice(0, 10).toLowerCase(), value: 0n });
-    if (via === "relay") {
+    if (via === "relay" && plan.quotaCheck === "after-consent") {
       const relayer = await selectRelayer(ctx, chainId, runOpts.relayer);
       if (relayer) {
         const q3 = await clientFor(relayer).quota(signer, { chainId, profile, caps: await getCapabilities(ctx, relayer) });
         if (q3.available) {
           runOpts.skipQuota = true;
           if (!quotaPositive(q3)) {
-            throw new UpError("RELAYER_ERROR", `the relayer ${relayer.name} has no quota left for the agent on ${where}; nothing was uploaded or sent`, {
-              hint: `check it with: up relayer quota --chain ${l.arg}; or run the same command with --via km (the agent's key pays the gas)`,
-              details: { relayer: relayer.name, quota: q3.quota, unit: q3.unit }
-            });
+            if (plan.fallbackToKm && await getBalance(ctx, chainId, signer.address) > 0n) {
+              via = "km";
+              runOpts.via = "km";
+              await simulateOn("km");
+              warnings.push(`the relayer ${relayer.name} reported no quota, so the write goes directly through the Key Manager (the agent's key pays the gas)`);
+            } else {
+              throw new UpError("RELAYER_ERROR", `the relayer ${relayer.name} has no quota left for the agent on ${where}; nothing was uploaded or sent`, {
+                hint: `check it with: up relayer quota --chain ${l.arg}; or fund the agent's key and run the same command with --via km (the agent's key pays the gas)`,
+                details: { relayer: relayer.name, quota: q3.quota, unit: q3.unit }
+              });
+            }
           }
         }
       }
@@ -13138,7 +13190,7 @@ defineVerb({
     }
     let out;
     try {
-      out = await executeAsProfile(consentedContext(ctx, chainId, payloadFor(value), via), requestFor(value, { ...confirmation, uploaded, value }), runOpts);
+      out = await executeAsProfile(consentedContext(ctx, chainId, payloadFor(value), via), requestFor(value, { ...confirmation, path: via, uploaded, value }), runOpts);
     } catch (e) {
       throw withUploads(e, uploaded, "the files were uploaded but the profile was not changed: fix the cause and run the same command again");
     }
@@ -13156,7 +13208,7 @@ defineVerb({
     const profileUrl = await resolveProfileUrl(chainId, profile, urlOptions(ctx));
     const done = out.status === "success";
     return {
-      data: { ...out, autoDecision: decision, changed: final.changed, metadataUrl: jsonUrl, metadataHash: ser.hash, value, uploaded, stored, metadata: plainJson(final.json), profileUrl },
+      data: { ...out, pathPlan: plan, changed: final.changed, metadataUrl: jsonUrl, metadataHash: ser.hash, value, uploaded, stored, metadata: plainJson(final.json), profileUrl },
       text: [
         `${done ? "Profile metadata updated" : `Profile metadata write ${out.status}`} on ${where} for your profile ${getAddress26(profile)}:`,
         ...changeLines(changes),

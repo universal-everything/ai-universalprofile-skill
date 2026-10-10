@@ -8,10 +8,12 @@ import { MAX_FILE_BYTES, describeFile, loadFile } from "../../../src/lsp/metadat
 import { fetchFromGateway } from "../../../src/ipfs/gateway.ts";
 import { gifBytes, jpegBytes, pngBytes, SVG } from "../../support/images.ts";
 import { renderError } from "../../../src/core/output.ts";
-import { normaliseGateway } from "../../../src/ipfs/gateway.ts";
+import { gatewayTargets, normaliseGateway } from "../../../src/ipfs/gateway.ts";
+import { startMockIpfs } from "../../support/mock-ipfs.ts";
 import { normaliseKuboUrl } from "../../../src/ipfs/providers.ts";
 import { parseLinks } from "../../../src/lsp/lsp3.ts";
 import type { UpError } from "../../../src/core/errors.ts";
+import { safeUrlText, scrubUrls } from "../../../src/core/json.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "up-files-"));
 const put = (name: string, bytes: Uint8Array) => {
@@ -65,7 +67,7 @@ describe("loadFile", () => {
     expect(JSON.stringify(f.warnings) + describeFile(f)).not.toContain("SECRET123");
     const e = await loadFile("https://img.example/missing.png?token=SECRET123", "profileImage", { ...opts, fetch: fetch as any, lookup: publicLookup }).catch((x) => x);
     expect(e.message).not.toContain("SECRET123");
-    await expect(loadFile("https://internal.example/x.png", "profileImage", { ...opts, fetch: fetch as any, lookup: async () => [{ address: "10.0.0.5", family: 4 }] })).rejects.toMatchObject({ message: expect.stringMatching(/non-public/) });
+    await expect(loadFile("https://internal.example/x.png", "profileImage", { ...opts, fetch: fetch as any, lookup: async () => [{ address: "10.0.0.5", family: 4 }] })).rejects.toMatchObject({ message: expect.stringMatching(/private or local network address/) });
   });
 });
 
@@ -98,6 +100,11 @@ describe("credentials in URLs never reach errors or output", () => {
 
   it("image sources: invalid port, embedded password, query token, other schemes, bad ipfs://", async () => {
     for (const src of [
+      "https://u:pass word@img.example:99999/a?token=SECRET123&pw=hunter2",
+      "https://u:hunter2\t@img.example/a?token=SECRET123",
+      "https://ü:hunter2@ïmg.example:99999/ä?token=SECRET123",
+      "https://u:hunter2%20x@img.example:99999/a?token=SECRET123%26",
+      "https://u:hunter2@img.example:99999/a b?token=SECRET123",
       "https://user:hunter2@img.example:99999/x.png?token=SECRET123",
       "https://user:hunter2@img.example/x.png?token=SECRET123",
       "ftp://user:hunter2@img.example/x.png?token=SECRET123",
@@ -111,6 +118,23 @@ describe("credentials in URLs never reach errors or output", () => {
     }
   });
 
+  it("scrubUrls removes userinfo and queries even when whitespace or odd characters break the URL", () => {
+    for (const msg of [
+      "invalid URL: https://u:pass word@host:99999/a?token=SECRET123",
+      "fetch failed for https://u:hunter2\t@host/a?token=SECRET123 (tab)",
+      "bad https://ü:hunter2@höst:99999/ä?token=SECRET123",
+      "x https://u:hunter2%40x@host:99999/?t=SECRET123%26y",
+      "refused http://host/a b?token=SECRET123 and word@host?q=SECRET123",
+    ]) {
+      const out = scrubUrls(msg);
+      expect(out, msg).not.toContain("hunter2");
+      expect(out, msg).not.toContain("SECRET123");
+      expect(out, msg).not.toContain("pass");
+    }
+    expect(scrubUrls("see https://example.com/docs/page for details")).toBe("see https://example.com/docs/page for details");
+    expect(safeUrlText("https://u:p@host.example/a/b?x=1#f")).toBe("https://host.example/a/b?…");
+  });
+
   it("gateway and kubo config and link URLs: the raw value is not echoed", () => {
     for (const f of [
       () => normaliseGateway("https://u:hunter2@gw.example:99999/ipfs/?k=SECRET123"),
@@ -118,6 +142,9 @@ describe("credentials in URLs never reach errors or output", () => {
       () => normaliseKuboUrl("http://u:hunter2@127.0.0.1:99999/?token=SECRET123"),
       () => normaliseKuboUrl("http://u:hunter2@127.0.0.1:5001/?token=SECRET123"),
       () => parseLinks("Site=https://u:hunter2@site.example:99999/?token=SECRET123"),
+      () => parseLinks("Site=https://u:pass hunter2@site.example:99999/?token=SECRET123"),
+      () => normaliseGateway("https://u:pass hunter2@gw.example:99999/ipfs/?k=SECRET123"),
+      () => normaliseKuboUrl("http://u:pass\thunter2@127.0.0.1:99999/?token=SECRET123"),
     ]) {
       const out = leaks(catchSync(f));
       expect(out).not.toContain("hunter2");
@@ -125,9 +152,27 @@ describe("credentials in URLs never reach errors or output", () => {
     }
   });
 
-  it("a local Kubo gateway on localhost is used through 127.0.0.1 (no subdomain redirect after an upload)", () => {
-    expect(normaliseGateway("http://localhost:8080/ipfs/")).toBe("http://127.0.0.1:8080/ipfs/");
-    expect(normaliseGateway("http://LOCALHOST:8080/ipfs")).toBe("http://127.0.0.1:8080/ipfs/");
-    expect(normaliseGateway("https://localhost/ipfs/")).toBe("https://localhost/ipfs/");
+  it("a localhost gateway is kept as configured and requested by IP (127.0.0.1, then ::1): no subdomain redirect", async () => {
+    expect(normaliseGateway("http://localhost:8080/ipfs/")).toBe("http://localhost:8080/ipfs/");
+    expect(gatewayTargets("http://localhost:8080/ipfs/bafy")).toEqual(["http://127.0.0.1:8080/ipfs/bafy", "http://[::1]:8080/ipfs/bafy"]);
+    expect(gatewayTargets("https://localhost/ipfs/bafy")).toEqual(["https://localhost/ipfs/bafy"]);
+    expect(gatewayTargets("http://127.0.0.1:8080/ipfs/bafy")).toEqual(["http://127.0.0.1:8080/ipfs/bafy"]);
+    const cid = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy";
+    const bytes = new Uint8Array([7, 7, 7]);
+    for (const host of ["127.0.0.1", "::1"]) {
+      let node;
+      try {
+        node = await startMockIpfs({ host });
+      } catch {
+        continue; // no IPv6 loopback on this machine
+      }
+      try {
+        node.store.set(cid, bytes);
+        const port = new URL(node.url).port;
+        expect(await fetchFromGateway(cid, { gateway: normaliseGateway(`http://localhost:${port}/ipfs/`), attempts: 1 }), host).toEqual(bytes);
+      } finally {
+        await node.close();
+      }
+    }
   });
 });

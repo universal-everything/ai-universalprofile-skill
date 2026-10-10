@@ -5,6 +5,7 @@ import { LSP3Schema } from "@erc725/erc725.js/schemas";
 import { keccak256, toBytes, type Hex } from "viem";
 import { assetEntry, decodeLsp3Value, describeImageEntry, displayText, parseJsonLossless, encodeLsp3Value, imageEntry, mergeLsp3, parseDescription, parseLinks, parseName, parseRemove, parseTags, serialiseLsp3, viewLsp3, LIMITS } from "../../../src/lsp/lsp3.ts";
 import { DATA_KEYS, PERMISSIONS } from "../../../src/lsp/constants.ts";
+import { redact, toJson } from "../../../src/core/json.ts";
 import { canWriteDataKey, metadataChain, metadataHooks, setMetadataHooksForTests, METADATA_DEFAULT_CHAIN_ID } from "../../../src/lsp/metadata.ts";
 
 const H1 = keccak256(toBytes("image-1"));
@@ -121,6 +122,17 @@ describe("merge semantics", () => {
     expect(viewLsp3(r.json)!.profileImage[0]).toMatchObject({ width: 512 }); // canonical numbers stay plain numbers
     // without JSON.rawJSON the unsafe numbers are reported (the verb then refuses to merge)
     expect(parseJsonLossless(text, { useRaw: false }).lossyNumbers).toEqual(["9007199254740993", "12345678901234567890"]);
+  });
+
+  it("the view and output use plain numbers even where the merge keeps raw number text (512.0, 1e3)", () => {
+    const text = '{"LSP3Profile":{"name":"a","profileImage":[{"width":512.0,"height":1e3,"url":"ipfs://x","verification":{"method":"keccak256(bytes)","data":"0x00"}}]}}';
+    const p = parseJsonLossless(text);
+    const v = viewLsp3(p.value)!;
+    expect(v.profileImage[0]).toMatchObject({ width: 512, height: 1000 });
+    expect(describeImageEntry(v.profileImage[0])).toBe("512x1000 ipfs://x (keccak256(bytes))");
+    expect(toJson(redact({ data: { metadata: v } }))).not.toContain("rawJSON");
+    // the serialised document still carries the original number text
+    expect(serialiseLsp3(mergeLsp3(p.value, { name: "b" }).json).text).toContain('"width":512.0,"height":1e3');
   });
 
   it("viewLsp3 is tolerant of foreign data", () => {

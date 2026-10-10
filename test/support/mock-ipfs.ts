@@ -52,7 +52,7 @@ export function fakeCid(bytes: Uint8Array): string {
   return "b" + base32(Uint8Array.from([0x01, 0x55, 0x12, 0x20, ...digest]));
 }
 
-export async function startMockIpfs(): Promise<MockIpfs> {
+export async function startMockIpfs(opts: { host?: string } = {}): Promise<MockIpfs> {
   const uploads: RecordedUpload[] = [];
   const gets: string[] = [];
   const store = new Map<string, Uint8Array>();
@@ -117,8 +117,12 @@ export async function startMockIpfs(): Promise<MockIpfs> {
     }
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ IpfsHash: cid, PinSize: file.bytes.length, Timestamp: new Date(0).toISOString() }));
   });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const url = `http://127.0.0.1:${(server.address() as any).port}`;
+  const host = opts.host ?? "127.0.0.1";
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, host, () => resolve());
+  });
+  const url = `http://${host.includes(":") ? `[${host}]` : host}:${(server.address() as any).port}`;
   return {
     url,
     gateway: `${url}/ipfs/`,

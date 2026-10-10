@@ -379,8 +379,8 @@ describe("relay path (gasless for the agent)", () => {
       await run(testContext(home2, agent, {}), "relayer add", { url: relayer.url, name: "mock" });
       const e = await run(testContext(home2, agent, { yes: false }), "profile metadata set", { profile: m.profile, name: "No", "profile-image": files.png }).catch((x) => x);
       expect(e.code).toBe("CONSENT_REQUIRED");
-      expect(e.details.confirmation.path).toBe("relay");
-      expect(e.details.confirmation.autoDecision.quotaLogin).toMatch(/only after approval/);
+      expect(e.details.confirmation.path).toMatch(/^relay/);
+      expect(e.details.confirmation.quotaLogin).toMatch(/only after approval/);
       expect(agent.signatures).toBe(0);
       expect(relayer.quotaChecks).toHaveLength(0);
       expect(relayer.requests.filter((x) => /quota/i.test(x.path))).toHaveLength(0);
@@ -410,6 +410,59 @@ describe("relay path (gasless for the agent)", () => {
     }
   });
 
+  it("LSP15 relayer without quota and a funded agent key: falls back to direct km after consent, like --via auto", async () => {
+    const human = testSigner(generatePrivateKey());
+    await h.fund(human.address, parseEther("5"));
+    const agent = testSigner(generatePrivateKey());
+    await h.fund(agent.address, parseEther("1"));
+    const m = await deployProfileFor(testContext(h.newHome(), human, {}), human, h.chainId, { controller: agent.address });
+    const relayer = await startMockRelayer({ request: h.request, chainId: h.chainId, relayerAccount: h.accounts[1], chainIdRequired: true, quota: { quota: 0, unit: "gas", totalQuota: 100, resetDate: 0 } });
+    try {
+      const actx = testContext(h.newHome(), agent, { approval: "human: yes" });
+      await configureIpfs(actx);
+      await run(actx, "relayer add", { url: relayer.url, name: "mock" });
+      const r: any = await run(actx, "profile metadata set", { profile: m.profile, name: "Fallback" });
+      expect(r.data).toMatchObject({ path: "km", status: "success" });
+      expect(r.warnings.join()).toMatch(/no quota/);
+      expect(relayer.requests.some((x) => x.path === "POST /api/execute")).toBe(false);
+      expect(auditCount(actx.home)).toBe(1);
+    } finally {
+      await relayer.close();
+    }
+  });
+
+  it("LUKSO live relayer (quota cannot be read): funded key → km without any quota request; unfunded key → relay", async () => {
+    const human = testSigner(generatePrivateKey());
+    await h.fund(human.address, parseEther("5"));
+    const funded = countingSigner();
+    await h.fund(funded.address, parseEther("1"));
+    const m = await deployProfileFor(testContext(h.newHome(), human, {}), human, h.chainId, { controller: funded.address });
+    const live = await startMockRelayer({ request: h.request, chainId: h.chainId, relayerAccount: h.accounts[2], mode: "lukso-live" });
+    try {
+      const fctx = testContext(h.newHome(), funded, { approval: "human: yes" });
+      await configureIpfs(fctx);
+      const addLive = async (c: VerbContext) => c.saveConfig({ ...(await c.config()), relayers: [{ name: "live", baseUrl: live.url, chainIds: [h.chainId], profile: "lukso-live" }] }); // as exec-transports.test.ts does
+      await addLive(fctx);
+      const denied = await run(testContext(fctx.home, funded, { yes: false }), "profile metadata set", { profile: m.profile, name: "Live" }).catch((x) => x);
+      expect(denied.code).toBe("CONSENT_REQUIRED");
+      expect(funded.signatures).toBe(0);
+      const r: any = await run(fctx, "profile metadata set", { profile: m.profile, name: "Live" });
+      expect(r.data).toMatchObject({ path: "km", status: "success", pathPlan: { path: "km", relayer: "live" } });
+      expect(live.requests.filter((x) => /quota|execute/i.test(x.path))).toHaveLength(0);
+      // the same profile with an unfunded agent key: relay is the only option (as with --via auto)
+      const poor = testSigner(generatePrivateKey());
+      await run(fctx, "controller add", { profile: m.profile, address: poor.address, preset: "agent-owner" });
+      const pctx = testContext(h.newHome(), poor, { dryRun: true });
+      await configureIpfs(pctx);
+      await addLive(pctx);
+      const dry: any = await run(pctx, "profile metadata set", { profile: m.profile, name: "Live 2" });
+      expect(dry.data.simulation.plan).toMatchObject({ path: "relay", quotaCheck: "unavailable" });
+      expect(dry.data.confirmation.quotaLogin).toMatch(/cannot be checked/);
+    } finally {
+      await live.close();
+    }
+  });
+
   it("auto picks the relayer; one consent; the unfunded agent pays nothing", async () => {
     const human = testSigner(generatePrivateKey());
     await h.fund(human.address, parseEther("5"));
@@ -424,7 +477,7 @@ describe("relay path (gasless for the agent)", () => {
       expect(dry.data.simulation.path).toBe("relay");
       const r: any = await run(actx, "profile metadata set", { profile: m.profile, name: "Relayed", "profile-image": files.png });
       expect(r.data).toMatchObject({ path: "relay", status: "success" });
-      expect(r.data.autoDecision.path).toBe("relay");
+      expect(r.data.pathPlan).toMatchObject({ path: "relay", quotaCheck: "after-consent", fallbackToKm: true });
       expect(r.data.confirmation.profileMetadata.autoDecision.path).toBe("relay");
       expect(r.data.stored.verified).toBe(true);
       expect(BigInt(await h.request("eth_getBalance", [agent.address, "latest"]))).toBe(0n);

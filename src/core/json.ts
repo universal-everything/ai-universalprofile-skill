@@ -76,7 +76,14 @@ export function safeUrlText(raw: string): string {
   }
 }
 
-/** Rewrites every URL inside a free-text message (e.g. a nested error) with safeUrlText. */
+/**
+ * Rewrites every URL inside a free-text message (e.g. a nested error) with safeUrlText, and
+ * then removes anything that still looks like credentials even when a URL was broken up by
+ * whitespace or odd characters: "user:password@" parts, query strings and fragments.
+ */
 export function scrubUrls(text: string): string {
-  return text.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]*/gi, (m) => safeUrlText(m));
+  return text
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]*/gi, (m) => safeUrlText(m))
+    .replace(/[^\s/@"'<>]*@/g, "[redacted]@") // userinfo, also the tail of a password that contained a space
+    .replace(/[?#][^\s"'<>]*/g, (m) => (m === "?…" ? m : "?…")); // query / fragment (tokens)
 }

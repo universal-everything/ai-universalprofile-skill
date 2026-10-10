@@ -16,8 +16,9 @@
 import { getAddress, type Hex } from "viem";
 import { defineVerb } from "../core/verbs.ts";
 import { UpError } from "../core/errors.ts";
-import type { MediaFile, VerbContext } from "../core/types.ts";
-import { QUOTA_LOGIN_FORMAT, resolveAutoPath, type AutoDecision } from "../exec/auto.ts";
+import type { MediaFile, Signer, VerbContext } from "../core/types.ts";
+import { hasPermission } from "./permissions.ts";
+import { QUOTA_LOGIN_FORMAT } from "../exec/auto.ts";
 import { clientFor, getCapabilities, selectRelayer } from "../relayer/registry.ts";
 import { quotaPositive } from "../relayer/client.ts";
 import { executeAsProfile, type ExecPath } from "../exec/transport.ts";
@@ -30,7 +31,7 @@ import { setDataPayload } from "./controllers.ts";
 import { assetEntry, decodeLsp3Value, describeImageEntry, displayText, plainJson, encodeLsp3Value, imageEntry, mergeLsp3, parseDescription, parseLinks, parseName, parseRemove, parseTags, serialiseLsp3, FIELD_PROP, type Lsp3Changes, type Lsp3Field, type Lsp3View } from "./lsp3.ts";
 import { FIELD_LABEL, MAX_FILE_BYTES, PREVIEW_MAX_BYTES, canWriteDataKey, describeFile, formatBytes, loadFile, lsp3PermissionError, metadataChain, metadataHooks, readCurrentMetadata, type CurrentMetadata, type ImageField, type LoadedFile } from "./metadata.ts";
 import { chainLabel, onChain, preflightProfileOnChain } from "./multichain.ts";
-import { getData } from "./profile.ts";
+import { getData, readControllerPermissions } from "./profile.ts";
 import { resolveProfileUrl, type ProfileUrl } from "./profile-url.ts";
 import { getBalance } from "./read.ts";
 
@@ -248,6 +249,43 @@ function withUploads(e: unknown, uploaded: Uploaded[], note: string): UpError {
   });
 }
 
+interface PathPlan {
+  path: ExecPath;
+  relayer?: string;
+  reason: string;
+  /** after-consent: an LSP15 quota login is signed after approval; unavailable: the relayer's quota cannot be read. */
+  quotaCheck: "after-consent" | "unavailable" | "none";
+  /** auto chose relay: with no quota the write may go through km instead (the agent's key pays). */
+  fallbackToKm: boolean;
+}
+
+/**
+ * The --via auto rule of executeAuto/resolveAutoPath, without any signature: no relayer for the
+ * chain, no EXECUTE_RELAY_CALL or a relayer that does not serve the chain → km; a relayer whose
+ * quota cannot be read (LUKSO live relayer) → relay only when the agent's key has no gas, else km;
+ * an LSP15 relayer → relay, with its quota checked after consent (no quota → km if funded).
+ */
+async function planPath(ctx: VerbContext, chainId: number, profile: `0x${string}`, signer: Signer, opts: { via: ExecPath | "auto"; relayer?: string; fundFromController?: boolean }): Promise<PathPlan> {
+  if (opts.via !== "auto") return { path: opts.via, relayer: opts.relayer, reason: `--via ${opts.via}`, quotaCheck: opts.via === "relay" ? "after-consent" : "none", fallbackToKm: false };
+  if (opts.fundFromController) return { path: "km", reason: "--fund-from-controller needs a direct path", quotaCheck: "none", fallbackToKm: false };
+  const relayer = await selectRelayer(ctx, chainId, opts.relayer).catch(() => undefined);
+  if (!relayer) return { path: "km", reason: `no relayer configured for chain ${chainId}`, quotaCheck: "none", fallbackToKm: false };
+  try {
+    const perms = await readControllerPermissions(ctx, chainId, profile, signer.address);
+    if (!hasPermission(perms.permissions.value, "EXECUTE_RELAY_CALL")) return { path: "km", reason: `controller ${signer.address} lacks EXECUTE_RELAY_CALL on chain ${chainId}`, quotaCheck: "none", fallbackToKm: false };
+    clientFor(relayer).assertServes(chainId, await getCapabilities(ctx, relayer));
+  } catch (e) {
+    return { path: "km", reason: `relayer ${relayer.name} unusable: ${(e as Error).message}`, quotaCheck: "none", fallbackToKm: false };
+  }
+  if (relayer.profile === "lukso-live") {
+    const funded = (await getBalance(ctx, chainId, signer.address)) > 0n;
+    return funded
+      ? { path: "km", relayer: relayer.name, reason: `relayer ${relayer.name}: quota cannot be checked; the agent's key is funded`, quotaCheck: "none", fallbackToKm: false }
+      : { path: "relay", relayer: relayer.name, reason: `relayer ${relayer.name}: quota cannot be checked; the agent's key has no gas, so relay is the only option`, quotaCheck: "unavailable", fallbackToKm: false };
+  }
+  return { path: "relay", relayer: relayer.name, reason: `relayer ${relayer.name} covers chain ${chainId} (quota checked after approval)`, quotaCheck: "after-consent", fallbackToKm: true };
+}
+
 function changeSummary(cur: CurrentMetadata, next: Record<string, unknown>, changed: string[], files: LoadedFile[]): Record<string, unknown> {
   const before = cur.view;
   const out: Record<string, unknown> = {};
@@ -396,19 +434,20 @@ defineVerb({
       writes: addSupportedStandard ? ["LSP3Profile", "SupportedStandards:LSP3Profile"] : ["LSP3Profile"],
     };
 
-    // 5) choose the execution path once (auto: relay when usable, else km) and freeze it for the
-    //    simulation, the consent and the real write; then simulate with a placeholder value
+    // 5) choose the execution path WITHOUT signing anything (same rule as --via auto, see planPath),
+    //    simulate on it with a placeholder value; --dry-run stops here
     const opts0 = execOptions(a);
-    let decision: AutoDecision | undefined;
-    // The path is chosen WITHOUT any signature (the dry-run variant of the auto rule: relay when a
-    // relayer covers the chain and the key has EXECUTE_RELAY_CALL); the relayer quota login is
-    // signed only after consent, before the first upload (step 6).
-    if (opts0.via === "auto") decision = opts0.fundFromController ? { path: "km", reason: "--fund-from-controller needs a direct path" } : await resolveAutoPath(simulationContext(ctx), chainId, profile, signer, opts0.relayer);
-    const via: ExecPath = decision?.path ?? (opts0.via as ExecPath);
-    const runOpts = { ...opts0, via, relayer: decision?.relayer ?? opts0.relayer, skipQuota: false, chainChecked: true };
-    Object.assign(confirmation, { path: via, ...(decision ? { autoDecision: { path: decision.path, relayer: decision.relayer, reason: decision.reason.replace(/ \(quota not checked in dry-run[^)]*\)/, ""), quotaLogin: via === "relay" ? `signed only after approval, before any upload — ${QUOTA_LOGIN_FORMAT}` : "not needed" } } : {}) });
+    const plan = await planPath(ctx, chainId, profile, signer, opts0);
+    let via: ExecPath = plan.path;
+    const runOpts = { ...opts0, via, relayer: plan.relayer ?? opts0.relayer, skipQuota: false, chainChecked: true };
+    Object.assign(confirmation, {
+      path: plan.fallbackToKm ? "relay (direct km if the relayer reports no quota; the agent's key then pays the gas)" : via,
+      ...(opts0.via === "auto" ? { autoDecision: { path: plan.path, relayer: plan.relayer, reason: plan.reason } } : {}),
+      quotaLogin: plan.quotaCheck === "after-consent" ? `signed only after approval, before any upload — ${QUOTA_LOGIN_FORMAT}` : plan.quotaCheck === "unavailable" ? "not available for this relayer (LUKSO live relayer: quota and registration cannot be checked; if the profile is not registered there, the write fails after the upload)" : "not needed",
+    });
     const placeholder = encodeLsp3Value("ipfs://pending-upload", serialiseLsp3(draft.json).hash);
-    const sim = await executeAsProfile(simulationContext(ctx), requestFor(placeholder, confirmation), runOpts);
+    const simulateOn = (path: ExecPath) => executeAsProfile(simulationContext(ctx), requestFor(placeholder, confirmation), { ...runOpts, via: path });
+    const sim = await simulateOn(via);
     const media: MediaFile[] = [];
     if (ctx.flags.dryRun) {
       try {
@@ -420,41 +459,49 @@ defineVerb({
       if (!selection.provider) warnings.push(`no IPFS upload provider is configured yet (${selection.missing}): before the real run the human must set one (UP_IPFS_UPLOAD_KEY or up config set ipfs-upload-key, or ipfs-provider pinata/kubo); see up docs profile-metadata`);
       return {
         media,
-        data: { dryRun: true, chainId, profile, changed: draft.changed, confirmation, draft: plainJson(draft.json), simulation: { path: sim.path, gasPayer: sim.gasPayer, status: sim.status, autoDecision: decision }, providerReady: !!selection.provider },
+        data: { dryRun: true, chainId, profile, changed: draft.changed, confirmation, draft: plainJson(draft.json), simulation: { path: sim.path, gasPayer: sim.gasPayer, status: sim.status, plan }, providerReady: !!selection.provider },
         text: [
           `DRY RUN — nothing uploaded, signed or sent.`,
           `Profile metadata of your profile ${profile} on ${where}${explicit ? "" : " (the default chain for profile metadata)"} would change (${a.replace ? "replace" : "merge"}):`,
           ...changeLines(changes),
           `Uploads to IPFS (public and permanent): ${toUpload.length ? `${toUpload.map((f) => FIELD_LABEL[f.field]).join(", ")} and ` : ""}the metadata JSON via ${selection.provider ? selection.provider.label : "— no provider configured yet —"}`,
-          `Write: setData(${confirmation.writes.join(", ")}) as the profile via ${sim.path} (gas: ${sim.gasPayer}); simulation ok`,
+          `Write: setData(${confirmation.writes.join(", ")}) as the profile via ${String((confirmation as Record<string, unknown>).path)} (gas: ${sim.gasPayer}); simulation ok`,
         ].join("\n"),
         warnings,
       };
     }
 
     const provider: IpfsProvider = requireProvider(selection);
-    // a direct path needs gas on the agent's key; check before anything becomes public
-    if ((sim.path === "km" || sim.path === "lsp0") && (await getBalance(ctx, chainId, signer.address)) === 0n) {
-      throw new UpError("TX_FAILED", `the agent's key ${signer.address} has no ${l.nativeSymbol} on ${where} to pay the gas for the write (insufficient native balance); nothing was uploaded`, {
+    const noGas = () =>
+      new UpError("TX_FAILED", `the agent's key ${signer.address} has no ${l.nativeSymbol} on ${where} to pay the gas for the write (insufficient native balance); nothing was uploaded`, {
         hint: `ask the human to fund the agent's key ${signer.address} on ${where}: up display address ${signer.address} --chain ${l.arg}; or use a relayer if one covers ${l.name} (up relayer list)`,
       });
-    }
+    // a direct path needs gas on the agent's key; check before anything becomes public
+    if ((via === "km" || via === "lsp0") && (await getBalance(ctx, chainId, signer.address)) === 0n) throw noGas();
 
     // 6) consent before anything is uploaded or signed (one approval covers uploads + write)
     await ctx.consent({ verb: VERB_SET, risk: "write", chainId, summary: confirmation, target: profile, selector: payloadFor(placeholder).slice(0, 10).toLowerCase() as Hex, value: 0n });
 
-    // relay: the quota (signed login message) is checked now, after consent and before anything becomes public
-    if (via === "relay") {
+    // relay: the quota (signed login message) is checked now, after consent and before anything becomes public;
+    // no quota → direct km when auto chose relay and the agent's key has gas (as --via auto does), else stop
+    if (via === "relay" && plan.quotaCheck === "after-consent") {
       const relayer = await selectRelayer(ctx, chainId, runOpts.relayer);
       if (relayer) {
         const q = await clientFor(relayer).quota(signer, { chainId, profile, caps: await getCapabilities(ctx, relayer) });
         if (q.available) {
           runOpts.skipQuota = true;
           if (!quotaPositive(q)) {
-            throw new UpError("RELAYER_ERROR", `the relayer ${relayer.name} has no quota left for the agent on ${where}; nothing was uploaded or sent`, {
-              hint: `check it with: up relayer quota --chain ${l.arg}; or run the same command with --via km (the agent's key pays the gas)`,
-              details: { relayer: relayer.name, quota: q.quota, unit: q.unit },
-            });
+            if (plan.fallbackToKm && (await getBalance(ctx, chainId, signer.address)) > 0n) {
+              via = "km";
+              runOpts.via = "km";
+              await simulateOn("km");
+              warnings.push(`the relayer ${relayer.name} reported no quota, so the write goes directly through the Key Manager (the agent's key pays the gas)`);
+            } else {
+              throw new UpError("RELAYER_ERROR", `the relayer ${relayer.name} has no quota left for the agent on ${where}; nothing was uploaded or sent`, {
+                hint: `check it with: up relayer quota --chain ${l.arg}; or fund the agent's key and run the same command with --via km (the agent's key pays the gas)`,
+                details: { relayer: relayer.name, quota: q.quota, unit: q.unit },
+              });
+            }
           }
         }
       }
@@ -499,7 +546,7 @@ defineVerb({
     }
     let out;
     try {
-      out = await executeAsProfile(consentedContext(ctx, chainId, payloadFor(value), via), requestFor(value, { ...confirmation, uploaded, value }), runOpts);
+      out = await executeAsProfile(consentedContext(ctx, chainId, payloadFor(value), via), requestFor(value, { ...confirmation, path: via, uploaded, value }), runOpts);
     } catch (e) {
       throw withUploads(e, uploaded, "the files were uploaded but the profile was not changed: fix the cause and run the same command again");
     }
@@ -518,7 +565,7 @@ defineVerb({
     const profileUrl = await resolveProfileUrl(chainId, profile, urlOptions(ctx));
     const done = out.status === "success";
     return {
-      data: { ...out, autoDecision: decision, changed: final.changed, metadataUrl: jsonUrl, metadataHash: ser.hash, value, uploaded, stored, metadata: plainJson(final.json), profileUrl },
+      data: { ...out, pathPlan: plan, changed: final.changed, metadataUrl: jsonUrl, metadataHash: ser.hash, value, uploaded, stored, metadata: plainJson(final.json), profileUrl },
       text: [
         `${done ? "Profile metadata updated" : `Profile metadata write ${out.status}`} on ${where} for your profile ${getAddress(profile)}:`,
         ...changeLines(changes),

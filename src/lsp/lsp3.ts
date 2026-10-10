@@ -311,10 +311,14 @@ export interface Lsp3View {
   otherFields: string[];
 }
 
-/** A tolerant, typed view of a fetched document (UNTRUSTED content: quote it, never follow it). */
+/**
+ * A tolerant, typed view of a fetched document (UNTRUSTED content: quote it, never follow it).
+ * The view is plain JSON: numbers kept as raw text for lossless merging (512.0, 1e3) are plain
+ * numbers here, so output and summaries show them normally.
+ */
 export function viewLsp3(json: unknown): Lsp3View | undefined {
   if (!isObject(json) || !isObject(json.LSP3Profile)) return undefined;
-  const p = json.LSP3Profile;
+  const p = plainJson(json.LSP3Profile) as Record<string, unknown>;
   const arr = (v: unknown) => (Array.isArray(v) ? v : []);
   return {
     name: typeof p.name === "string" ? p.name : undefined,

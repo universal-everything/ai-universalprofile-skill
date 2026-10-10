@@ -12,7 +12,7 @@ import { basename, isAbsolute, resolve } from "node:path";
 import { getAddress, type Address, type Hex } from "viem";
 import type { VerbContext } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
-import { safeUrlText, scrubUrls } from "../core/json.ts";
+import { safeUrlText } from "../core/json.ts";
 import type { FetchLike } from "../abi/http.ts";
 import { safeFetchBytes, type LookupFn } from "../tokens/safe-fetch.ts";
 import { ImageFormatError, imageInfo, type ImageInfo } from "../display/image-info.ts";
@@ -99,10 +99,25 @@ export function formatBytes(n: number): string {
 
 const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "model/gltf-binary": "glb" };
 
-async function readSource(input: string, opts: { gateway: string; fetch?: FetchLike; lookup?: LookupFn }): Promise<{ bytes: Uint8Array; source: LoadedFile["source"]; display: string; existingUrl?: string }> {
+/** A download failure in plain words — never the raw URL or the underlying message (they may carry credentials). */
+function downloadReason(msg: string): string {
+  if (/embedded credentials/i.test(msg)) return "it contains a user name or password";
+  if (/non-public|local host name/i.test(msg)) return "it points to a private or local network address";
+  if (/invalid URL/i.test(msg)) return "it is not a valid URL";
+  if (/only https/i.test(msg)) return "only https:// URLs are downloaded";
+  if (/redirect/i.test(msg)) return "too many or invalid redirects";
+  if (/resolve/i.test(msg)) return "its host name does not resolve";
+  const http = /HTTP (\d{3})/.exec(msg);
+  if (http) return `the server answered HTTP ${http[1]}`;
+  if (/abort|timeout/i.test(msg)) return "the download timed out";
+  return "the download failed";
+}
+
+async function readSource(input: string, what: string, opts: { gateway: string; fetch?: FetchLike; lookup?: LookupFn }): Promise<{ bytes: Uint8Array; source: LoadedFile["source"]; display: string; existingUrl?: string }> {
   const s = input.trim();
   const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(s) && !isAbsolute(s);
-  const label = isUrl ? safeUrlText(s) : s;
+  // a URL the human gave is never echoed in errors (it may carry a password or a token)
+  const label = isUrl ? `the URL given for the ${what}` : s;
   const tooBig = (n: number) => new UpError("BAD_ARGS", `${label.slice(0, 120)} is ${formatBytes(n)}; the limit is ${formatBytes(MAX_FILE_BYTES)}`, { hint: "resize or compress the image (e.g. at most 2000 pixels per side as JPEG or WebP) and try again" });
   if (/^ipfs:\/\//i.test(s)) {
     const p = parseIpfsUrl(s);
@@ -115,14 +130,14 @@ async function readSource(input: string, opts: { gateway: string; fetch?: FetchL
     }
   }
   if (/^https:\/\//i.test(s)) {
-    // shown without userinfo, query or fragment (they may carry passwords and access tokens)
     const shown = label;
     try {
       const r = await safeFetchBytes(s, { fetch: opts.fetch, lookup: opts.lookup, maxBytes: MAX_FILE_BYTES, maxRedirects: 3, accept: "image/*,model/gltf-binary;q=0.9,*/*;q=0.1", timeoutMs: 60_000 });
-      return { bytes: r.bytes, source: "url", display: shown };
+      // on success the source is shown without userinfo, query or fragment
+      return { bytes: r.bytes, source: "url", display: safeUrlText(s) };
     } catch (e) {
       if (/larger than/.test((e as Error).message)) throw tooBig(MAX_FILE_BYTES + 1);
-      throw new UpError("BAD_ARGS", `could not download ${shown}: ${scrubUrls((e as Error).message)}`, { hint: "use a public https URL, or save the image as a file and pass its path" });
+      throw new UpError("BAD_ARGS", `could not download ${shown}: ${downloadReason(String((e as Error)?.message ?? e))}`, { hint: "use a public https URL, or save the image as a file and pass its path" });
     }
   }
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s) || /^data:/i.test(s)) throw new UpError("BAD_ARGS", `unsupported image source ${/^data:/i.test(s) ? "data: URI" : label}`, { hint: "pass a local file path, an https:// URL or an ipfs:// URL" });
@@ -144,7 +159,7 @@ async function readSource(input: string, opts: { gateway: string; fetch?: FetchL
  * the exact bytes (keccak256(bytes), as stored in the LSP3 entry).
  */
 export async function loadFile(input: string, field: ImageField, opts: { gateway: string; fetch?: FetchLike; lookup?: LookupFn }): Promise<LoadedFile> {
-  const r = await readSource(input, opts);
+  const r = await readSource(input, FIELD_LABEL[field], opts);
   if (r.bytes.length > MAX_FILE_BYTES) throw new UpError("BAD_ARGS", `${r.display} is larger than ${formatBytes(MAX_FILE_BYTES)}`, { hint: "resize or compress the image and try again" });
   const warnings: string[] = [];
   let image: ImageInfo | undefined;

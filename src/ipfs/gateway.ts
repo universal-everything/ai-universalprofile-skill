@@ -35,10 +35,6 @@ export function normaliseGateway(raw: string): string {
   const loopback = /^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u.hostname);
   if (u.protocol !== "https:" && !(u.protocol === "http:" && loopback)) throw new UpError("BAD_ARGS", "the IPFS gateway must be an https URL (http only for a local node on 127.0.0.1)", { hint: `e.g. ${DEFAULT_IPFS_GATEWAY}` });
   if (u.username || u.password || u.search || u.hash) throw new UpError("BAD_ARGS", "the IPFS gateway URL must not contain credentials, a query or a fragment");
-  // A local Kubo gateway on "localhost" redirects path requests to its subdomain gateway
-  // (<cid>.ipfs.localhost), which the redirect guard refuses only after an upload is public.
-  // On 127.0.0.1 Kubo serves the path gateway directly, so local configs use that.
-  if (u.protocol === "http:" && u.hostname.toLowerCase() === "localhost") u.hostname = "127.0.0.1";
   return u.toString().replace(/\/?$/, "/");
 }
 
@@ -76,6 +72,23 @@ export interface GatewayFetchOptions {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** GET <gateway>/<cid><path> with retries on network errors, 404, 429 and 5xx; size-capped. */
+/**
+ * The URLs actually requested for a gateway URL. A local Kubo gateway addressed as "localhost"
+ * redirects path requests to its subdomain gateway (<cid>.ipfs.localhost), which the redirect
+ * guard refuses; addressed by IP it serves the path gateway directly. So "localhost" is tried
+ * as 127.0.0.1 and then [::1] (a node may listen on either); the configured URL is kept as given.
+ */
+export function gatewayTargets(url: string): string[] {
+  const u = new URL(url);
+  if (u.protocol !== "http:" || u.hostname.toLowerCase() !== "localhost") return [url];
+  return ["127.0.0.1", "[::1]"].map((ip) => {
+    const t = new URL(url);
+    t.hostname = ip;
+    return t.toString();
+  });
+}
+
+/** GET <gateway>/<cid><path> with retries on network errors, 404, 429 and 5xx; size-capped. */
 export async function fetchFromGateway(cid: string, opts: GatewayFetchOptions, path = ""): Promise<Uint8Array> {
   const url = gatewayUrlFor(opts.gateway, cid, path);
   const f = opts.fetch ?? (globalThis.fetch as FetchLike);
@@ -83,47 +96,50 @@ export async function fetchFromGateway(cid: string, opts: GatewayFetchOptions, p
   const base = Number(process.env.UP_IPFS_BACKOFF_MS ?? opts.backoffMs ?? 1000);
   const maxBytes = opts.maxBytes ?? 12 * 1024 * 1024;
   const host = new URL(url).host;
-  const origin = new URL(url).origin;
   let last = "";
   for (let i = 0; i < attempts; i++) {
     if (i > 0) await sleep(base * 2 ** (i - 1));
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 30_000);
-    try {
-      // redirects are followed by hand: the same origin, or a public https host (no hop into private networks)
-      let res: Response | undefined;
-      let current = url;
-      for (let hop = 0; ; hop++) {
-        res = await f(current, { signal: ctrl.signal, redirect: "manual", headers: { "user-agent": "universal-profile-skill" } });
-        if (res.status < 300 || res.status >= 400) break;
-        const loc = res.headers.get("location");
-        await res.body?.cancel().catch(() => {});
-        if (!loc || hop >= 3) throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} redirected ${loc ? "too often" : "without a location"} for ${cid}`, { details: { reason: "gateway-error", cid } });
-        const next = new URL(loc, current);
-        if (next.origin !== origin) {
-          try {
-            await assertPublicHttpsUrl(next.toString(), opts.lookup);
-          } catch (e) {
-            throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} redirected to a refused location (${(e as Error).message})`, { details: { reason: "gateway-error", cid } });
+    for (const target of gatewayTargets(url)) {
+      const origin = new URL(target).origin;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 30_000);
+      try {
+        // redirects are followed by hand: the same origin, or a public https host (no hop into private networks)
+        let res: Response | undefined;
+        let current = target;
+        for (let hop = 0; ; hop++) {
+          res = await f(current, { signal: ctrl.signal, redirect: "manual", headers: { "user-agent": "universal-profile-skill" } });
+          if (res.status < 300 || res.status >= 400) break;
+          const loc = res.headers.get("location");
+          await res.body?.cancel().catch(() => {});
+          if (!loc || hop >= 3) throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} redirected ${loc ? "too often" : "without a location"} for ${cid}`, { details: { reason: "gateway-error", cid } });
+          const next = new URL(loc, current);
+          if (next.origin !== origin) {
+            try {
+              await assertPublicHttpsUrl(next.toString(), opts.lookup);
+            } catch (e) {
+              throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} redirected to a refused location (${scrubUrls((e as Error).message)})`, { details: { reason: "gateway-error", cid } });
+            }
           }
+          current = next.toString();
         }
-        current = next.toString();
+        if (res.status === 404 || res.status === 429 || res.status >= 500) {
+          await res.body?.cancel().catch(() => {});
+          last = `HTTP ${res.status}`;
+          break; // the gateway answered: retry later, not on the other loopback address
+        }
+        if (!res.ok) {
+          await res.body?.cancel().catch(() => {});
+          throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} answered HTTP ${res.status} for ${cid}`, { details: { reason: "gateway-error", status: res.status, cid } });
+        }
+        return await readCapped(res, maxBytes, ctrl);
+      } catch (e) {
+        if (e instanceof UpError) throw e;
+        last = (e as Error)?.name === "AbortError" ? "timeout" : scrubUrls(String((e as Error)?.message ?? e));
+        // connection failed: try the next loopback address of a "localhost" gateway
+      } finally {
+        clearTimeout(timer);
       }
-      if (res.status === 404 || res.status === 429 || res.status >= 500) {
-        await res.body?.cancel().catch(() => {});
-        last = `HTTP ${res.status}`;
-        continue;
-      }
-      if (!res.ok) {
-        await res.body?.cancel().catch(() => {});
-        throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} answered HTTP ${res.status} for ${cid}`, { details: { reason: "gateway-error", status: res.status, cid } });
-      }
-      return await readCapped(res, maxBytes, ctrl);
-    } catch (e) {
-      if (e instanceof UpError) throw e;
-      last = (e as Error)?.name === "AbortError" ? "timeout" : String((e as Error)?.message ?? e);
-    } finally {
-      clearTimeout(timer);
     }
   }
   throw new UpError("IPFS_ERROR", `the IPFS gateway ${host} did not serve ${cid} (${last})`, { hint: "the content may not have propagated yet or the gateway is unreachable; retry later", details: { reason: "gateway-unavailable", cid } });
