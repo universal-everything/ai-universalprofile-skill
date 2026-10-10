@@ -552,7 +552,14 @@
       "hosts": [
         "nodejs.org"
       ]
+    },
+    "prices": {
+      "purpose": "Native-coin prices in USD for funding suggestions (about $1 / $10 worth); optional, cached 10 minutes; without it the skill suggests coin amounts only.",
+      "when": "funding suggest",
+      "hosts": [
+        "api.coingecko.com"
+      ]
     }
   },
-  "totalHosts": 484
+  "totalHosts": 485
 }

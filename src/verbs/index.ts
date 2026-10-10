@@ -13,3 +13,4 @@ import "../display/verbs.ts";
 import "../knowledge/verbs.ts";
 import "../knowledge/onboarding.ts";
 import "./start.ts";
+import "../chain/funding.ts";

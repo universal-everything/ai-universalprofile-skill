@@ -26,7 +26,7 @@ import { checkEphemeralHome, environment, type SignerEnvironment } from "./env.t
 import { LinuxSecretServiceBackend } from "./linux-secret-service.ts";
 import { LinuxSystemdCredsBackend } from "./linux-systemd-creds.ts";
 import { MacosKeychainBackend } from "./macos-keychain.ts";
-import { MemoryBackend } from "./memory.ts";
+import { MemoryBackend, memoryEnabled } from "./memory.ts";
 import { PROTECTED_FILE_WARNING, ProtectedFileBackend } from "./protected-file.ts";
 import { RemoteSignerBackend } from "./remote-signer.ts";
 import { WindowsDpapiBackend } from "./windows-dpapi.ts";
@@ -156,6 +156,8 @@ export async function chooseBackend(preferred?: string, envOverride?: SignerEnvi
     }
     return b;
   }
+  // Test mode (UP_TEST_EPHEMERAL_KEY set) never writes into a real OS key store: "auto" means memory.
+  if (memoryEnabled()) return internalBackend("memory");
   const env = envOverride ?? (await environment());
   const probes = await probeAll();
   const id = selectAutoBackend(env, probes);

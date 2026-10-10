@@ -74,4 +74,9 @@ describe("start", () => {
     await getVerb("start")!.run(ctx, { host: "dots" });
     expect(process.env.UP_AGENT_HOST).toBe("dots");
   });
+
+  it("test mode never writes into a real OS key store", async () => {
+    const { chooseBackend } = await import("../../../src/signer/index.ts");
+    expect((await chooseBackend("auto")).id).toBe("memory");
+  });
 });

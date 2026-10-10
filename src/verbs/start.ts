@@ -50,7 +50,10 @@ defineVerb({
     "Idempotent: an existing key and configuration are kept. Inside a cloud agent VM (OpenAI dots, Meta Muse, other isolated VMs) pass --host dots|muse|vm so the key is kept in a protected file there. " +
     "Tell the human `data.say` in your own voice (it contains no commands or jargon) and follow `data.next` yourself; never read `data.next` or this command to the human.",
   risk: "local",
-  params: [{ name: "host", type: "string", description: "Cloud agent VM type when running inside one.", enum: [...HOSTS] }],
+  params: [
+    { name: "host", type: "string", description: "Cloud agent VM type when running inside one.", enum: [...HOSTS] },
+    { name: "backend", type: "string", description: "Key store for a new key (default auto: the strongest unattended store here).", default: "auto" },
+  ],
   examples: ["up start", "up start --host dots"],
   async run(ctx, a) {
     if (a.host) process.env.UP_AGENT_HOST = String(a.host);
@@ -77,7 +80,7 @@ defineVerb({
     // 2) The agent's own key: created once, locally. No approval needed; nothing is spent.
     let key: any;
     try {
-      key = await getVerb("init")!.run(ctx, { backend: "auto", force: false });
+      key = await getVerb("init")!.run(ctx, { backend: a.backend ?? "auto", force: false });
     } catch (e) {
       if (e instanceof UpError && e.code === "SIGNER_BACKEND_UNAVAILABLE") {
         return {

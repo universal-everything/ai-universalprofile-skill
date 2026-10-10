@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint fe854225b554 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint ac1b7c5bebfa (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -44,6 +44,135 @@ var init_errors = __esm({
         return { code: this.code, message: this.message, hint: this.hint, details: this.details };
       }
     };
+  }
+});
+
+// src/core/verbs.ts
+function defineVerb(def) {
+  if (verbs.has(def.name)) throw new Error(`verb "${def.name}" registered twice`);
+  for (const p of def.params) {
+    if (!/^[a-z][a-z0-9-]*$/.test(p.name)) throw new Error(`verb "${def.name}": bad param name "${p.name}"`);
+  }
+  verbs.set(def.name, def);
+  return def;
+}
+function allVerbs() {
+  return [...verbs.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+function getVerb(name) {
+  return verbs.get(name);
+}
+function matchVerb(words) {
+  for (let n = Math.min(4, words.length); n >= 1; n--) {
+    const name = words.slice(0, n).join(" ");
+    const v = verbs.get(name);
+    if (v) return { verb: v, rest: words.slice(n) };
+  }
+  return void 0;
+}
+function mcpToolName(verbName) {
+  return "up_" + verbName.replace(/[ -]/g, "_");
+}
+function verbFromToolName(tool) {
+  for (const v of verbs.values()) if (mcpToolName(v.name) === tool) return v;
+  return void 0;
+}
+function jsonSchemaFor(p) {
+  const base = { description: p.description };
+  switch (p.type) {
+    case "string":
+      base.type = "string";
+      break;
+    case "number":
+      base.type = "number";
+      break;
+    case "integer":
+      base.type = "integer";
+      break;
+    case "boolean":
+      base.type = "boolean";
+      break;
+    case "string[]":
+      base.type = "array";
+      base.items = { type: "string" };
+      break;
+    case "json":
+      break;
+  }
+  if (p.enum) base.enum = [...p.enum];
+  if (p.default !== void 0) base.default = p.default;
+  return base;
+}
+function inputSchema(v) {
+  const properties = {};
+  const required = [];
+  for (const p of [...v.params, ...GLOBAL_PARAMS.filter((g) => !v.params.some((p2) => p2.name === g.name))]) {
+    properties[p.name] = jsonSchemaFor(p);
+    if (p.required) required.push(p.name);
+  }
+  return { type: "object", properties, required, additionalProperties: false };
+}
+function coerceArgs(v, raw) {
+  const out = {};
+  const defs = [...v.params, ...GLOBAL_PARAMS.filter((g) => !v.params.some((p) => p.name === g.name))];
+  const known = new Set(defs.map((d) => d.name));
+  for (const k of Object.keys(raw)) {
+    if (!known.has(k)) throw new UpError("BAD_ARGS", `unknown option --${k} for "${v.name}"`, { hint: `run: up ${v.name} --help` });
+  }
+  for (const d of defs) {
+    let val = raw[d.name];
+    if (val === void 0) {
+      if (d.default !== void 0) out[d.name] = d.default;
+      else if (d.required) throw new UpError("BAD_ARGS", `missing required option --${d.name} for "${v.name}"`, { hint: `run: up ${v.name} --help` });
+      continue;
+    }
+    switch (d.type) {
+      case "boolean":
+        if (typeof val === "string") val = !["false", "0", "no", "off"].includes(val.toLowerCase());
+        break;
+      case "number":
+      case "integer": {
+        const n = typeof val === "number" ? val : Number(val);
+        if (!Number.isFinite(n) || d.type === "integer" && !Number.isInteger(n)) throw new UpError("BAD_ARGS", `--${d.name} must be a ${d.type}`);
+        val = n;
+        break;
+      }
+      case "string[]":
+        if (typeof val === "string") val = val.split(",").map((s) => s.trim()).filter(Boolean);
+        else if (!Array.isArray(val)) val = [String(val)];
+        else val = val.map(String);
+        break;
+      case "json":
+        if (typeof val === "string") {
+          try {
+            val = JSON.parse(val);
+          } catch {
+          }
+        }
+        break;
+      case "string":
+        val = String(val);
+        break;
+    }
+    if (d.enum && !d.enum.includes(String(val))) throw new UpError("BAD_ARGS", `--${d.name} must be one of ${d.enum.join(", ")}`);
+    out[d.name] = val;
+  }
+  return out;
+}
+var verbs, GLOBAL_PARAMS;
+var init_verbs = __esm({
+  "src/core/verbs.ts"() {
+    "use strict";
+    init_errors();
+    verbs = /* @__PURE__ */ new Map();
+    GLOBAL_PARAMS = [
+      { name: "chain", type: "string", description: "Chain id or slug/name from the registry (e.g. 42, lukso, base). Defaults to config.defaultChain." },
+      { name: "profile", type: "string", description: "Universal Profile address or alias. Defaults to config.defaultProfile." },
+      { name: "dry-run", type: "boolean", description: "Build, simulate and show everything but never sign or send." },
+      { name: "yes", type: "boolean", description: "Agent confirms the action is within the delegated policy (policy.json). Not sufficient for admin actions without policy.allowAdmin." },
+      { name: "approval", type: "string", description: "Verbatim human approval text for this exact action (recorded in the local audit log). Required for admin actions and anything outside the delegated policy." },
+      { name: "json", type: "boolean", description: "Force JSON output (default when stdout is not a TTY)." }
+    ];
   }
 });
 
@@ -534,6 +663,102 @@ var init_rpc = __esm({
         this.retryable = retryable;
       }
       retryable;
+    };
+  }
+});
+
+// src/chain/registry.ts
+import { readFileSync as readFileSync2, existsSync as existsSync3 } from "node:fs";
+function loadOverlay(home) {
+  const f = paths.cache(home, "registry", "overlay.json");
+  if (!existsSync3(f)) return {};
+  try {
+    return JSON.parse(readFileSync2(f, "utf8"));
+  } catch {
+    return {};
+  }
+}
+function createRegistry(home) {
+  let chainsCache;
+  const load = () => {
+    if (chainsCache) return chainsCache;
+    const bundled = assetJson("registry", "chains.json").chains.map((c) => ({ ...c, rpcs: [...c.rpcs] }));
+    const overlay = loadOverlay(home);
+    for (const oc of overlay.chains ?? []) {
+      const existing = bundled.find((c) => c.chainId === oc.chainId);
+      if (!existing) bundled.push(oc);
+      else {
+        for (const r of oc.rpcs ?? []) if (!existing.rpcs.some((x) => x.url === r.url)) existing.rpcs.push(r);
+      }
+    }
+    return chainsCache = bundled;
+  };
+  return {
+    chains: load,
+    chain(idOrName) {
+      const all = load();
+      const s = String(idOrName).trim().toLowerCase();
+      const byId = /^\d+$/.test(s) ? all.find((c) => c.chainId === Number(s)) : void 0;
+      const found = byId ?? all.find((c) => c.slug === s || c.name.toLowerCase() === s) ?? ALIASES[s]?.map((id) => all.find((c) => c.chainId === id)).find(Boolean);
+      if (!found) {
+        throw new UpError("CHAIN_UNKNOWN", `unknown chain "${idOrName}"`, {
+          hint: /^\d+$/.test(s) ? `add it with: up chains add ${s} (fetches metadata + RPCs from chainlist)` : "list chains with: up chains list"
+        });
+      }
+      return found;
+    },
+    contracts: () => assetJson("registry", "contracts.json").contracts,
+    protocols: () => assetJson("registry", "protocols.json"),
+    canonical(name, version) {
+      const c = assetJson("registry", "contracts.json").contracts[name];
+      if (!c) return void 0;
+      const vs = c.versions;
+      if (version) return vs[version.replace(/^v/, "")]?.address;
+      const keys = Object.keys(vs).sort(semverDesc);
+      return vs[keys[0]]?.address;
+    }
+  };
+}
+function semverDesc(a, b) {
+  if (a === "singleton") return 1;
+  if (b === "singleton") return -1;
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pb[i] ?? 0) - (pa[i] ?? 0);
+  return 0;
+}
+var ALIASES, LSP;
+var init_registry = __esm({
+  "src/chain/registry.ts"() {
+    "use strict";
+    init_assets();
+    init_errors();
+    init_home();
+    ALIASES = {
+      mainnet: [1],
+      eth: [1],
+      sepolia: [11155111],
+      arbitrum: [42161],
+      bsc: [56],
+      bnb: [56],
+      avalanche: [43114],
+      avax: [43114],
+      "lukso-mainnet": [42],
+      robinhood: [4663],
+      matic: [137]
+    };
+    LSP = {
+      LSP23_FACTORY: "0x2300000A84D25dF63081feAa37ba6b62C4c89a30",
+      UP_INIT_POST_DEPLOYMENT_MODULE: "0x000000000066093407b6704B89793beFfD0D8F00",
+      UP_POST_DEPLOYMENT_MODULE: "0x0000005aD606bcFEF9Ea6D0BbE5b79847054BcD7",
+      UP_INIT: { "0.14.0": "0x3024D38EA2434BA6635003Dc1BDC0daB5882ED4F", "0.12.1": "0x52c90985AF970D4E0DC26Cb5D052505278aF32A9" },
+      KM_INIT: { "0.14.0": "0x2Fe3AeD98684E7351aD2D408A43cE09a738BF8a4", "0.12.1": "0xa75684d7D048704a2DB851D05Ba0c3cbe226264C" },
+      URD: { "0.14.0": "0x7870C5B8BC9572A8001C3f96f7ff59961B23500D", "0.12.1": "0xA5467dfe7019bF2C7C5F7A707711B9d4cAD118c8" },
+      ERC_TOKEN_CALLBACKS: "0x082d49D8487d2ed2527440c7879C66d850daaBc5",
+      NICK_FACTORY: "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+      ENTRYPOINT_V06: "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789",
+      MULTICALL3: "0xcA11bde05977b3631167028862bE2a173976CA11",
+      LSP26: "0xf01103E5a9909Fc0DBe8166dA7085e0285daDDcA"
     };
   }
 });
@@ -5748,6 +5973,7 @@ async function chooseBackend(preferred, envOverride) {
     }
     return b;
   }
+  if (memoryEnabled()) return internalBackend("memory");
   const env = envOverride ?? await environment();
   const probes = await probeAll();
   const id = selectAutoBackend(env, probes);
@@ -6467,6 +6693,23 @@ var init_constants = __esm({
 });
 
 // src/lsp/permissions.ts
+var permissions_exports = {};
+__export(permissions_exports, {
+  FORBIDDEN_FOR_ENTRYPOINT: () => FORBIDDEN_FOR_ENTRYPOINT,
+  PERMISSION_INFO: () => PERMISSION_INFO,
+  PRESETS: () => PRESETS,
+  TOKEN_INTERFACE_IDS: () => TOKEN_INTERFACE_IDS,
+  TOKEN_STANDARD_ALLOWED_CALLS: () => TOKEN_STANDARD_ALLOWED_CALLS,
+  decodePermissions: () => decodePermissions,
+  describePermissions: () => describePermissions,
+  encodePermissions: () => encodePermissions,
+  explainPermissions: () => explainPermissions,
+  getPreset: () => getPreset,
+  grantWarnings: () => grantWarnings,
+  hasPermission: () => hasPermission,
+  parsePermissionName: () => parsePermissionName,
+  toBytes32: () => toBytes32
+});
 function toBytes32(v) {
   if (v < 0n || v > MAX256) throw new Error("permission value out of bytes32 range");
   return "0x" + v.toString(16).padStart(64, "0");
@@ -7212,7 +7455,7 @@ function clientFor(entry, fetchImpl) {
   return new RelayerClient(entry, { fetch: fetchImpl });
 }
 var CAPS_TTL_MS;
-var init_registry = __esm({
+var init_registry2 = __esm({
   "src/relayer/registry.ts"() {
     "use strict";
     init_errors();
@@ -7822,7 +8065,7 @@ var init_multichain = __esm({
     init_errors();
     init_profile_record();
     init_select();
-    init_registry();
+    init_registry2();
     init_constants();
     init_permissions();
     init_controllers();
@@ -7886,7 +8129,7 @@ var init_auto = __esm({
     init_read2();
     init_profile();
     init_permissions();
-    init_registry();
+    init_registry2();
     init_client();
     init_transport();
     QUOTA_LOGIN_FORMAT = "LSP15 /quota login message only: personal_sign(keccak256(abi.encodePacked(address, uint256 timestamp[, uint256 chainId]))) computed by the skill — authorises nothing, valid ±300 s";
@@ -7924,6 +8167,422 @@ var init_transport = __esm({
     init_errors();
     OPERATION = { CALL: 0, CREATE: 1, CREATE2: 2, STATICCALL: 3, DELEGATECALL: 4 };
     transports = /* @__PURE__ */ new Map();
+  }
+});
+
+// src/chain/funding.ts
+var funding_exports = {};
+__export(funding_exports, {
+  PRICE_API: () => PRICE_API,
+  displaySymbol: () => displaySymbol,
+  friendlyAmount: () => friendlyAmount,
+  priceIdFor: () => priceIdFor,
+  priceUsd: () => priceUsd
+});
+import { formatEther as formatEther3, keccak256 as keccak25612, parseEther, toHex as toHex2 } from "./vendor-viem.mjs";
+function displaySymbol(symbol) {
+  return /ETH$/.test(symbol) && symbol !== "ETH" && !/^W/.test(symbol) ? "ETH" : symbol;
+}
+function priceIdFor(symbol) {
+  const s = displaySymbol(symbol);
+  if (s === "ETH") return "ethereum";
+  const ids = { LYX: "lukso-token-2", BNB: "binancecoin", POL: "polygon-ecosystem-token", AVAX: "avalanche-2" };
+  if (ids[s]) return ids[s];
+  if (/^(xDAI|USDC|USDT0|PathUSD)/.test(s)) return "usd";
+  return void 0;
+}
+async function priceUsd(ctx, symbol, opts = {}) {
+  const id = priceIdFor(symbol);
+  if (!id) return void 0;
+  if (id === "usd") return 1;
+  const now = opts.now ?? Date.now();
+  const cacheFile = paths.cache(ctx.home, "prices.json");
+  const cache2 = await readJson(cacheFile, {});
+  const hit = cache2[id];
+  if (hit && now - hit.at < PRICE_TTL_MS && hit.usd > 0) return hit.usd;
+  try {
+    const r = await httpJson(`${PRICE_API}?ids=${id}&vs_currencies=usd`, { fetch: opts.fetch, timeoutMs: 8e3, retries: 1, label: "price API" });
+    const usd = r.status === 200 ? r.body?.[id]?.usd : void 0;
+    if (typeof usd === "number" && usd > 0) {
+      cache2[id] = { usd, at: now };
+      await writeJson(cacheFile, cache2).catch(() => {
+      });
+      return usd;
+    }
+  } catch {
+  }
+  return hit?.usd;
+}
+function friendlyAmount(wei) {
+  if (wei <= 0n) return "0";
+  const s = formatEther3(wei);
+  const n = Number(s);
+  const mag = Math.floor(Math.log10(n));
+  const step = 10 ** (mag - 1);
+  const up = Math.ceil(n / step - 1e-9) * step;
+  return up >= 1 ? String(Number(up.toPrecision(2))) : up.toFixed(Math.max(0, 1 - mag));
+}
+function usdToWei(usd, priceUsd2) {
+  return parseEther((usd / priceUsd2).toFixed(18));
+}
+async function deploymentCostWei(ctx, chainId, from) {
+  try {
+    const { planDeployment: planDeployment2, DEFAULT_IMPL_VERSION: DEFAULT_IMPL_VERSION2 } = await Promise.resolve().then(() => (init_lsp23(), lsp23_exports));
+    const { getPreset: getPreset2, toBytes32: toBytes322 } = await Promise.resolve().then(() => (init_permissions(), permissions_exports));
+    const salt = keccak25612(toHex2(`funding-estimate-${from}`));
+    const plan = planDeployment2({ salt, controller: from, permissions: toBytes322(getPreset2("agent-owner").permissions), implementationVersion: DEFAULT_IMPL_VERSION2 });
+    const g = await gasCheck(ctx, from, { chainId, to: plan.factory, data: plan.deployCalldata });
+    return g.maxCostWei;
+  } catch {
+    return void 0;
+  }
+}
+var PRICE_API, PRICE_TTL_MS;
+var init_funding = __esm({
+  "src/chain/funding.ts"() {
+    "use strict";
+    init_verbs();
+    init_errors();
+    init_home();
+    init_http();
+    init_tx();
+    PRICE_API = "https://api.coingecko.com/api/v3/simple/price";
+    PRICE_TTL_MS = 10 * 6e4;
+    defineVerb({
+      name: "funding suggest",
+      group: "chains",
+      summary: "How much native coin to ask the human to send to the agent's address on a network: about $1 worth to create the profile plus some gas, about $10 worth for more actions (never less than the current deployment cost). Plain-language text included.",
+      description: "Uses a live price (CoinGecko, cached 10 minutes) and an on-chain estimate of the profile deployment on that network. Without a price it suggests a coin amount only and makes no dollar claim. Show the QR of the address (up display address <address>) together with `text`.",
+      risk: "read",
+      params: [{ name: "address", type: "string", description: "Address to fund (default: this agent's key for the chain)." }],
+      examples: ["up funding suggest --chain lukso", "up funding suggest --chain base"],
+      async run(ctx, a) {
+        const chainId = ctx.chainId(a.chain);
+        const chain = ctx.registry.chain(chainId);
+        const address = a.address ? a.address : (await ctx.signer(chainId)).address;
+        const symbol = displaySymbol(chain.nativeSymbol);
+        const [price, deployCost, balanceHex] = await Promise.all([
+          chain.testnet ? Promise.resolve(void 0) : priceUsd(ctx, chain.nativeSymbol),
+          // test coins have no price
+          deploymentCostWei(ctx, chainId, address),
+          ctx.rpc.request(chainId, "eth_getBalance", [address, "latest"])
+        ]);
+        const floor = deployCost ? deployCost * 3n / 2n : 0n;
+        const starterWei = price ? [usdToWei(1, price), floor].reduce((x, y) => x > y ? x : y) : floor * 2n;
+        const moreWei = price ? [usdToWei(10, price), starterWei * 2n].reduce((x, y) => x > y ? x : y) : starterWei * 10n;
+        if (starterWei === 0n) throw new UpError("NETWORK_ERROR", `could not estimate gas or price on ${chain.name}`, { hint: `retry, or check the network: up chains verify ${chainId}` });
+        const usdOf = (wei) => price ? Math.round(Number(formatEther3(wei)) * price * 100) / 100 : void 0;
+        const s = {
+          chainId,
+          network: chain.name,
+          symbol,
+          address,
+          priceUsd: price,
+          deploymentCost: deployCost ? formatEther3(deployCost) : void 0,
+          balance: formatEther3(BigInt(balanceHex)),
+          starter: { amount: friendlyAmount(starterWei), usd: usdOf(starterWei) },
+          more: { amount: friendlyAmount(moreWei), usd: usdOf(moreWei) }
+        };
+        const usd = (v) => v !== void 0 ? ` (about $${v < 10 ? v.toFixed(2) : Math.round(v)})` : "";
+        const text = [
+          `Please send about ${s.starter.amount} ${symbol}${usd(s.starter.usd)}${chain.testnet ? " (test coins, e.g. from a faucet)" : ""} on ${chain.name} to my address ${address} (QR attached).`,
+          `That's enough for me to create the profile and still have gas for a few actions. If you'd like me to do more right away, send about ${s.more.amount} ${symbol}${usd(s.more.usd)} instead.`,
+          "This is my own gas money: with it I do everything myself, so you never have to sign anything."
+        ].join(" ");
+        return { data: s, text };
+      }
+    });
+  }
+});
+
+// src/lsp/lsp23.ts
+var lsp23_exports = {};
+__export(lsp23_exports, {
+  DEFAULT_IMPL_VERSION: () => DEFAULT_IMPL_VERSION,
+  buildInitialData: () => buildInitialData,
+  candidateSalts: () => candidateSalts,
+  checkPrerequisites: () => checkPrerequisites,
+  computeERC1167Addresses: () => computeERC1167Addresses,
+  computeOnChain: () => computeOnChain,
+  deployFromManifest: () => deployFromManifest,
+  erc1167InitCode: () => erc1167InitCode,
+  loadManifest: () => loadManifest,
+  manifestFromPlan: () => manifestFromPlan,
+  planDeployment: () => planDeployment,
+  readProfileRecord: () => readProfileRecord,
+  resolveImplementations: () => resolveImplementations,
+  saveManifest: () => saveManifest,
+  verifyDeployment: () => verifyDeployment,
+  verifyManifest: () => verifyManifest,
+  writeProfileRecord: () => writeProfileRecord
+});
+import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData11, encodePacked as encodePacked3, formatEther as formatEther4, getAddress as getAddress21, getContractAddress, keccak256 as keccak25613 } from "./vendor-viem.mjs";
+function erc1167InitCode(implementation) {
+  return concat3(["0x3d602d80600a3d3981f3363d3d373d3d3d363d73", getAddress21(implementation), "0x5af43d82803e903d91602b57fd5bf3"]);
+}
+function resolveImplementations(inputs) {
+  const v = inputs.implementationVersion ?? DEFAULT_IMPL_VERSION;
+  const upInit = inputs.upInit ?? LSP.UP_INIT[v];
+  const kmInit = inputs.kmInit ?? LSP.KM_INIT[v];
+  const urd = inputs.urd ?? LSP.URD[v];
+  if (!upInit || !kmInit || !urd) throw new UpError("BAD_ARGS", `no canonical UP/KM/URD implementation for version ${v}`, { hint: `known versions: ${Object.keys(LSP.UP_INIT).join(", ")}` });
+  return {
+    version: v,
+    factory: getAddress21(inputs.factory ?? LSP.LSP23_FACTORY),
+    postDeploymentModule: getAddress21(inputs.postDeploymentModule ?? LSP.UP_INIT_POST_DEPLOYMENT_MODULE),
+    upInit: getAddress21(upInit),
+    kmInit: getAddress21(kmInit),
+    urd: getAddress21(urd)
+  };
+}
+function buildInitialData(controller, permissions, urd, opts = {}) {
+  const controllers = [{ address: getAddress21(controller), permissions }, ...(opts.extraControllers ?? []).map((c) => ({ address: getAddress21(c.address), permissions: c.permissions }))];
+  const seen = /* @__PURE__ */ new Set();
+  for (const c of controllers) {
+    if (seen.has(c.address)) throw new UpError("BAD_ARGS", `controller ${c.address} listed twice`);
+    if (c.address === getAddress21(urd)) throw new UpError("BAD_ARGS", "a controller cannot be the Universal Receiver Delegate");
+    if (!/^0x[0-9a-fA-F]{64}$/.test(c.permissions) || BigInt(c.permissions) === 0n) throw new UpError("BAD_ARGS", `controller ${c.address} needs a non-zero bytes32 permission value`);
+    seen.add(c.address);
+  }
+  const dataKeys = [DATA_KEYS["SupportedStandards:LSP3Profile"]];
+  const dataValues = [DATA_KEYS.SupportedStandardsLSP3Value];
+  if (opts.lsp3 && opts.lsp3 !== "0x") {
+    dataKeys.push(DATA_KEYS.LSP3Profile);
+    dataValues.push(opts.lsp3);
+  }
+  dataKeys.push(DATA_KEYS.LSP1UniversalReceiverDelegate, permissionsKey(urd));
+  dataValues.push(getAddress21(urd).toLowerCase(), toBytes32(URD_PERMISSIONS));
+  for (const c of controllers) {
+    dataKeys.push(permissionsKey(c.address));
+    dataValues.push(c.permissions.toLowerCase());
+  }
+  const listed = [...controllers.map((c) => c.address), getAddress21(urd)];
+  dataKeys.push(DATA_KEYS["AddressPermissions[]"]);
+  dataValues.push(uint128Hex(listed.length));
+  listed.forEach((a, i) => {
+    dataKeys.push(permissionsArrayIndexKey(i));
+    dataValues.push(a.toLowerCase());
+  });
+  return { dataKeys, dataValues };
+}
+function planDeployment(inputs) {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(inputs.salt)) throw new UpError("BAD_ARGS", "salt must be 32 bytes hex");
+  const impl = resolveImplementations(inputs);
+  const { dataKeys, dataValues } = buildInitialData(inputs.controller, inputs.permissions, impl.urd, { lsp3: inputs.lsp3, extraControllers: inputs.extraControllers });
+  const postDeploymentModuleCalldata = encodeAbiParameters2([{ type: "bytes32[]" }, { type: "bytes[]" }], [dataKeys, dataValues]);
+  const primary = {
+    salt: inputs.salt.toLowerCase(),
+    fundingAmount: 0n,
+    implementationContract: impl.upInit,
+    initializationCalldata: encodeFunctionData11({ abi: UP_INIT_ABI, functionName: "initialize", args: [impl.postDeploymentModule] })
+  };
+  const secondary = {
+    fundingAmount: 0n,
+    implementationContract: impl.kmInit,
+    initializationCalldata: encodeFunctionData11({ abi: KM_INIT_ABI, functionName: "initialize", args: ["0x0000000000000000000000000000000000000000"] }).slice(0, 10),
+    addPrimaryContractAddress: true,
+    extraInitializationParams: "0x"
+  };
+  const { profile, keyManager, generatedSalt } = computeERC1167Addresses(impl.factory, primary, secondary, impl.postDeploymentModule, postDeploymentModuleCalldata);
+  const deployCalldata = encodeFunctionData11({ abi: LSP23_ABI, functionName: "deployERC1167Proxies", args: [primary, secondary, impl.postDeploymentModule, postDeploymentModuleCalldata] });
+  return {
+    factory: impl.factory,
+    postDeploymentModule: impl.postDeploymentModule,
+    implementations: {
+      universalProfileInit: { version: impl.version, address: impl.upInit },
+      keyManagerInit: { version: impl.version, address: impl.kmInit },
+      universalReceiverDelegate: { version: impl.version, address: impl.urd }
+    },
+    dataKeys,
+    dataValues,
+    primaryContractDeploymentInit: { ...primary, fundingAmount: "0" },
+    secondaryContractDeploymentInit: { ...secondary, fundingAmount: "0" },
+    postDeploymentModuleCalldata,
+    generatedSalt,
+    profile,
+    keyManager,
+    deployCalldata
+  };
+}
+function computeERC1167Addresses(factory, primary, secondary, postDeploymentModule, postDeploymentModuleCalldata) {
+  const generatedSalt = keccak25613(
+    encodeAbiParameters2(
+      [{ type: "bytes32" }, { type: "address" }, { type: "bytes" }, { type: "bool" }, { type: "bytes" }, { type: "address" }, { type: "bytes" }],
+      [primary.salt, secondary.implementationContract, secondary.initializationCalldata, secondary.addPrimaryContractAddress, secondary.extraInitializationParams, postDeploymentModule, postDeploymentModuleCalldata]
+    )
+  );
+  const profile = getContractAddress({ opcode: "CREATE2", from: factory, salt: generatedSalt, bytecodeHash: keccak25613(erc1167InitCode(primary.implementationContract)) });
+  const keyManager = getContractAddress({ opcode: "CREATE2", from: factory, salt: keccak25613(encodePacked3(["address"], [profile])), bytecodeHash: keccak25613(erc1167InitCode(secondary.implementationContract)) });
+  return { profile, keyManager, generatedSalt };
+}
+function candidateSalts(seed, count, offset = 0) {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(seed)) throw new UpError("BAD_ARGS", "seed must be 32 bytes hex");
+  if (!Number.isInteger(count) || count < 1 || count > 100) throw new UpError("BAD_ARGS", "count must be 1..100");
+  return Array.from({ length: count }, (_, i) => keccak25613(encodePacked3(["bytes32", "uint256"], [seed, BigInt(offset + i)])));
+}
+async function computeOnChain(ctx, chainId, plan) {
+  const p = { ...plan.primaryContractDeploymentInit, fundingAmount: 0n };
+  const s = { ...plan.secondaryContractDeploymentInit, fundingAmount: 0n };
+  const [profile, keyManager] = await read2(ctx, chainId, plan.factory, LSP23_ABI, "computeERC1167Addresses", [p, s, plan.postDeploymentModule, plan.postDeploymentModuleCalldata]);
+  return { profile: getAddress21(profile), keyManager: getAddress21(keyManager) };
+}
+function manifestFromPlan(inputs, plan, extra = {}) {
+  const { deployCalldata, ...rest } = plan;
+  return {
+    version: 1,
+    kind: "lsp23-erc1167-up",
+    profile: plan.profile,
+    keyManager: plan.keyManager,
+    controller: getAddress21(inputs.controller),
+    preset: inputs.preset,
+    permissions: inputs.permissions,
+    permissionNames: decodePermissions(inputs.permissions).names,
+    extraControllers: inputs.extraControllers,
+    lsp3: inputs.lsp3,
+    salt: plan.primaryContractDeploymentInit.salt,
+    seed: extra.seed,
+    candidateIndex: extra.candidateIndex,
+    plan: rest,
+    deployCalldata,
+    chains: [],
+    deployments: {},
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    note: "Replaying deployCalldata through the LSP23 factory on another chain yields the same profile and Key Manager addresses. Changing ANY input (controller, permissions, salt, versions, LSP3 value) changes the address."
+  };
+}
+async function loadManifest(home, profile) {
+  const r = await readProfileRecord(home, profile);
+  return r.deployment;
+}
+async function saveManifest(home, m) {
+  await updateProfileRecord(home, m.profile, (latest) => {
+    const cur = latest.deployment;
+    if (!cur || cur.profile !== m.profile || cur.deployCalldata !== m.deployCalldata) return { deployment: m };
+    return { deployment: { ...m, chains: [.../* @__PURE__ */ new Set([...cur.chains ?? [], ...m.chains])], deployments: { ...cur.deployments ?? {}, ...m.deployments } } };
+  });
+}
+function verifyManifest(m) {
+  const p = m.plan;
+  const c = computeERC1167Addresses(p.factory, p.primaryContractDeploymentInit, p.secondaryContractDeploymentInit, p.postDeploymentModule, p.postDeploymentModuleCalldata);
+  const deploy = encodeFunctionData11({
+    abi: LSP23_ABI,
+    functionName: "deployERC1167Proxies",
+    args: [{ ...p.primaryContractDeploymentInit, fundingAmount: 0n }, { ...p.secondaryContractDeploymentInit, fundingAmount: 0n }, p.postDeploymentModule, p.postDeploymentModuleCalldata]
+  });
+  const ok = c.profile === getAddress21(m.profile) && c.keyManager === getAddress21(m.keyManager) && deploy.toLowerCase() === m.deployCalldata.toLowerCase();
+  return { ok, profile: c.profile, keyManager: c.keyManager };
+}
+async function checkPrerequisites(ctx, chainId, plan) {
+  const req = {
+    LSP23LinkedContractsFactory: plan.factory,
+    UniversalProfileInitPostDeploymentModule: plan.postDeploymentModule,
+    UniversalProfileInit: plan.implementations.universalProfileInit.address,
+    LSP6KeyManagerInit: plan.implementations.keyManagerInit.address,
+    LSP1UniversalReceiverDelegateUP: plan.implementations.universalReceiverDelegate.address
+  };
+  const out = {};
+  for (const [n, a] of Object.entries(req)) out[n] = await hasCode(ctx, chainId, a);
+  return out;
+}
+async function verifyDeployment(ctx, chainId, m) {
+  const km = await resolveKeyManager(ctx, chainId, m.profile);
+  const ctl = await readControllerPermissions(ctx, chainId, m.profile, m.controller);
+  const urd = await getData(ctx, chainId, m.profile, DATA_KEYS.LSP1UniversalReceiverDelegate);
+  return {
+    profileHasCode: await hasCode(ctx, chainId, m.profile),
+    keyManagerHasCode: await hasCode(ctx, chainId, m.keyManager),
+    ownerIsKeyManager: km.owner === getAddress21(m.keyManager),
+    keyManagerTargetIsProfile: km.keyManager === getAddress21(m.keyManager),
+    supportsLSP0: await supportsInterface(ctx, chainId, m.profile, INTERFACE_IDS2.LSP0ERC725Account),
+    keyManagerSupportsLSP6: await supportsInterface(ctx, chainId, m.keyManager, INTERFACE_IDS2.LSP6KeyManager),
+    controllerPermissionsMatch: ctl.permissions.hex.toLowerCase() === m.permissions.toLowerCase(),
+    universalReceiverDelegateSet: urd.toLowerCase() === m.plan.implementations.universalReceiverDelegate.address.toLowerCase()
+  };
+}
+async function deployFromManifest(ctx, signer, m, chainId, verb = "account deploy") {
+  const v = verifyManifest(m);
+  if (!v.ok) throw new UpError("INTERNAL", "deployment manifest is inconsistent (stored addresses/calldata do not re-derive)", { hint: "do not edit manifests by hand; re-run up account precompute", details: v });
+  const prerequisites = await checkPrerequisites(ctx, chainId, m.plan);
+  const missing = Object.entries(prerequisites).filter(([, ok]) => !ok).map(([n]) => n);
+  if (missing.length) {
+    throw new UpError("NOT_DEPLOYED", `the canonical LSP contracts are missing on chain ${chainId}: ${missing.join(", ")}`, {
+      hint: "these are deployed through Nick's factory with fixed salts; check: up chains verify " + chainId,
+      details: prerequisites
+    });
+  }
+  const onchain = await computeOnChain(ctx, chainId, m.plan);
+  const onChainCompute = { ...onchain, matches: onchain.profile === getAddress21(m.profile) && onchain.keyManager === getAddress21(m.keyManager) };
+  if (!onChainCompute.matches) {
+    throw new UpError("INTERNAL", `factory on chain ${chainId} computes ${onchain.profile}/${onchain.keyManager}, manifest says ${m.profile}/${m.keyManager}`, { hint: "the factory at the canonical address behaves differently on this chain; do not deploy", details: onChainCompute });
+  }
+  const confirmation = {
+    action: "deploy Universal Profile via LSP23",
+    chainId,
+    profile: m.profile,
+    keyManager: m.keyManager,
+    factory: m.plan.factory,
+    gasPayer: `controller EOA ${signer.address}`,
+    initialController: m.controller,
+    controllerPermissions: { hex: m.permissions, names: m.permissionNames, preset: m.preset },
+    universalReceiverDelegate: m.plan.implementations.universalReceiverDelegate.address,
+    implementations: m.plan.implementations,
+    salt: m.salt,
+    value: "0",
+    calldata: m.deployCalldata
+  };
+  if (await hasCode(ctx, chainId, m.profile)) {
+    const verified2 = await verifyDeployment(ctx, chainId, m);
+    const rec = { chainId, status: "already-deployed", deployedAt: (/* @__PURE__ */ new Date()).toISOString(), verified: verified2 };
+    m.deployments[String(chainId)] = { ...m.deployments[String(chainId)] ?? {}, ...rec };
+    if (!m.chains.includes(chainId)) m.chains.push(chainId);
+    if (!ctx.flags.dryRun) await saveManifest(ctx.home, m);
+    return { chainId, profile: m.profile, keyManager: m.keyManager, status: "already-deployed", verified: verified2, onChainCompute, prerequisites, confirmation };
+  }
+  await simulate(ctx, { chainId, from: signer.address, to: m.plan.factory, data: m.deployCalldata });
+  const g = await gasCheck(ctx, signer.address, { chainId, to: m.plan.factory, data: m.deployCalldata });
+  const symbol = await (async () => {
+    try {
+      const { displaySymbol: displaySymbol2 } = await Promise.resolve().then(() => (init_funding(), funding_exports));
+      return displaySymbol2(ctx.registry.chain(chainId).nativeSymbol);
+    } catch {
+      return "native";
+    }
+  })();
+  const gasInfo = { payer: signer.address, symbol, maxCost: formatEther4(g.maxCostWei), balance: formatEther4(g.balanceWei), enough: g.enough, ...g.enough ? {} : { missing: formatEther4(g.shortfallWei), suggestedFunding: formatEther4(g.suggestedFundingWei) } };
+  confirmation.gas = gasInfo;
+  if (!g.enough && !ctx.flags.dryRun) {
+    throw new UpError("TX_FAILED", `the agent's key ${signer.address} needs gas on chain ${chainId}: it has ${gasInfo.balance} ${symbol}, the deployment may cost up to ${gasInfo.maxCost} ${symbol}`, {
+      hint: `ask the human to send about ${gasInfo.suggestedFunding} ${symbol} to ${signer.address} (show it as a QR: up display address ${signer.address} --chain ${chainId}); then deploy`,
+      details: { reason: "needs-gas", gas: gasInfo }
+    });
+  }
+  await ctx.consent({ verb, risk: "write", chainId, summary: confirmation, value: 0n, target: m.plan.factory, selector: m.deployCalldata.slice(0, 10) });
+  if (ctx.flags.dryRun) return { chainId, profile: m.profile, keyManager: m.keyManager, status: "dry-run", onChainCompute, prerequisites, confirmation, gas: gasInfo };
+  const tx = await sendTx(ctx, signer, { chainId, to: m.plan.factory, data: m.deployCalldata });
+  const verified = await verifyDeployment(ctx, chainId, m);
+  const allOk = Object.values(verified).every(Boolean);
+  m.deployments[String(chainId)] = { chainId, status: "deployed", txHash: tx.hash, blockNumber: tx.blockNumber, deployedAt: (/* @__PURE__ */ new Date()).toISOString(), deployer: signer.address, verified };
+  if (!m.chains.includes(chainId)) m.chains.push(chainId);
+  await saveManifest(ctx.home, m);
+  if (!allOk) {
+    throw new UpError("TX_FAILED", `deployment transaction ${tx.hash} succeeded but post-deployment checks failed`, { details: verified });
+  }
+  return { chainId, profile: m.profile, keyManager: m.keyManager, status: "deployed", txHash: tx.hash, blockNumber: tx.blockNumber, gasUsed: tx.gasUsed, explorerUrl: tx.explorerUrl, verified, onChainCompute, prerequisites, confirmation };
+}
+var DEFAULT_IMPL_VERSION;
+var init_lsp23 = __esm({
+  "src/lsp/lsp23.ts"() {
+    "use strict";
+    init_errors();
+    init_profile_record();
+    init_registry();
+    init_tx();
+    init_abis();
+    init_constants();
+    init_permissions();
+    init_read2();
+    init_profile();
+    DEFAULT_IMPL_VERSION = "0.14.0";
   }
 });
 
@@ -8285,140 +8944,16 @@ var init_token_guard = __esm({
 });
 
 // src/verbs/setup.ts
-import { getAddress as getAddress8, isAddress as isAddress5 } from "./vendor-viem.mjs";
-import { existsSync as existsSync12, accessSync, constants } from "node:fs";
-
-// src/core/verbs.ts
-init_errors();
-var verbs = /* @__PURE__ */ new Map();
-function defineVerb(def) {
-  if (verbs.has(def.name)) throw new Error(`verb "${def.name}" registered twice`);
-  for (const p of def.params) {
-    if (!/^[a-z][a-z0-9-]*$/.test(p.name)) throw new Error(`verb "${def.name}": bad param name "${p.name}"`);
-  }
-  verbs.set(def.name, def);
-  return def;
-}
-function allVerbs() {
-  return [...verbs.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
-function getVerb(name) {
-  return verbs.get(name);
-}
-function matchVerb(words) {
-  for (let n = Math.min(4, words.length); n >= 1; n--) {
-    const name = words.slice(0, n).join(" ");
-    const v = verbs.get(name);
-    if (v) return { verb: v, rest: words.slice(n) };
-  }
-  return void 0;
-}
-function mcpToolName(verbName) {
-  return "up_" + verbName.replace(/[ -]/g, "_");
-}
-function verbFromToolName(tool) {
-  for (const v of verbs.values()) if (mcpToolName(v.name) === tool) return v;
-  return void 0;
-}
-var GLOBAL_PARAMS = [
-  { name: "chain", type: "string", description: "Chain id or slug/name from the registry (e.g. 42, lukso, base). Defaults to config.defaultChain." },
-  { name: "profile", type: "string", description: "Universal Profile address or alias. Defaults to config.defaultProfile." },
-  { name: "dry-run", type: "boolean", description: "Build, simulate and show everything but never sign or send." },
-  { name: "yes", type: "boolean", description: "Agent confirms the action is within the delegated policy (policy.json). Not sufficient for admin actions without policy.allowAdmin." },
-  { name: "approval", type: "string", description: "Verbatim human approval text for this exact action (recorded in the local audit log). Required for admin actions and anything outside the delegated policy." },
-  { name: "json", type: "boolean", description: "Force JSON output (default when stdout is not a TTY)." }
-];
-function jsonSchemaFor(p) {
-  const base = { description: p.description };
-  switch (p.type) {
-    case "string":
-      base.type = "string";
-      break;
-    case "number":
-      base.type = "number";
-      break;
-    case "integer":
-      base.type = "integer";
-      break;
-    case "boolean":
-      base.type = "boolean";
-      break;
-    case "string[]":
-      base.type = "array";
-      base.items = { type: "string" };
-      break;
-    case "json":
-      break;
-  }
-  if (p.enum) base.enum = [...p.enum];
-  if (p.default !== void 0) base.default = p.default;
-  return base;
-}
-function inputSchema(v) {
-  const properties = {};
-  const required = [];
-  for (const p of [...v.params, ...GLOBAL_PARAMS.filter((g) => !v.params.some((p2) => p2.name === g.name))]) {
-    properties[p.name] = jsonSchemaFor(p);
-    if (p.required) required.push(p.name);
-  }
-  return { type: "object", properties, required, additionalProperties: false };
-}
-function coerceArgs(v, raw) {
-  const out = {};
-  const defs = [...v.params, ...GLOBAL_PARAMS.filter((g) => !v.params.some((p) => p.name === g.name))];
-  const known = new Set(defs.map((d) => d.name));
-  for (const k of Object.keys(raw)) {
-    if (!known.has(k)) throw new UpError("BAD_ARGS", `unknown option --${k} for "${v.name}"`, { hint: `run: up ${v.name} --help` });
-  }
-  for (const d of defs) {
-    let val = raw[d.name];
-    if (val === void 0) {
-      if (d.default !== void 0) out[d.name] = d.default;
-      else if (d.required) throw new UpError("BAD_ARGS", `missing required option --${d.name} for "${v.name}"`, { hint: `run: up ${v.name} --help` });
-      continue;
-    }
-    switch (d.type) {
-      case "boolean":
-        if (typeof val === "string") val = !["false", "0", "no", "off"].includes(val.toLowerCase());
-        break;
-      case "number":
-      case "integer": {
-        const n = typeof val === "number" ? val : Number(val);
-        if (!Number.isFinite(n) || d.type === "integer" && !Number.isInteger(n)) throw new UpError("BAD_ARGS", `--${d.name} must be a ${d.type}`);
-        val = n;
-        break;
-      }
-      case "string[]":
-        if (typeof val === "string") val = val.split(",").map((s) => s.trim()).filter(Boolean);
-        else if (!Array.isArray(val)) val = [String(val)];
-        else val = val.map(String);
-        break;
-      case "json":
-        if (typeof val === "string") {
-          try {
-            val = JSON.parse(val);
-          } catch {
-          }
-        }
-        break;
-      case "string":
-        val = String(val);
-        break;
-    }
-    if (d.enum && !d.enum.includes(String(val))) throw new UpError("BAD_ARGS", `--${d.name} must be one of ${d.enum.join(", ")}`);
-    out[d.name] = val;
-  }
-  return out;
-}
-
-// src/verbs/setup.ts
+init_verbs();
 init_errors();
 init_home();
 init_policy();
+import { getAddress as getAddress8, isAddress as isAddress5 } from "./vendor-viem.mjs";
+import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "fe854225b554" : "source";
+var SOURCE = true ? "ac1b7c5bebfa" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -8551,95 +9086,8 @@ async function refreshRegistry(home) {
   return { newChains, removed, changedRpc, changedExplorers, source: src.chainsMainnet };
 }
 
-// src/chain/registry.ts
-init_assets();
-init_errors();
-init_home();
-import { readFileSync as readFileSync2, existsSync as existsSync3 } from "node:fs";
-function loadOverlay(home) {
-  const f = paths.cache(home, "registry", "overlay.json");
-  if (!existsSync3(f)) return {};
-  try {
-    return JSON.parse(readFileSync2(f, "utf8"));
-  } catch {
-    return {};
-  }
-}
-function createRegistry(home) {
-  let chainsCache;
-  const load = () => {
-    if (chainsCache) return chainsCache;
-    const bundled = assetJson("registry", "chains.json").chains.map((c) => ({ ...c, rpcs: [...c.rpcs] }));
-    const overlay = loadOverlay(home);
-    for (const oc of overlay.chains ?? []) {
-      const existing = bundled.find((c) => c.chainId === oc.chainId);
-      if (!existing) bundled.push(oc);
-      else {
-        for (const r of oc.rpcs ?? []) if (!existing.rpcs.some((x) => x.url === r.url)) existing.rpcs.push(r);
-      }
-    }
-    return chainsCache = bundled;
-  };
-  return {
-    chains: load,
-    chain(idOrName) {
-      const all = load();
-      const s = String(idOrName).trim().toLowerCase();
-      const byId = /^\d+$/.test(s) ? all.find((c) => c.chainId === Number(s)) : void 0;
-      const found = byId ?? all.find((c) => c.slug === s || c.name.toLowerCase() === s) ?? ALIASES[s]?.map((id) => all.find((c) => c.chainId === id)).find(Boolean);
-      if (!found) {
-        throw new UpError("CHAIN_UNKNOWN", `unknown chain "${idOrName}"`, {
-          hint: /^\d+$/.test(s) ? `add it with: up chains add ${s} (fetches metadata + RPCs from chainlist)` : "list chains with: up chains list"
-        });
-      }
-      return found;
-    },
-    contracts: () => assetJson("registry", "contracts.json").contracts,
-    protocols: () => assetJson("registry", "protocols.json"),
-    canonical(name, version) {
-      const c = assetJson("registry", "contracts.json").contracts[name];
-      if (!c) return void 0;
-      const vs = c.versions;
-      if (version) return vs[version.replace(/^v/, "")]?.address;
-      const keys = Object.keys(vs).sort(semverDesc);
-      return vs[keys[0]]?.address;
-    }
-  };
-}
-var ALIASES = {
-  mainnet: [1],
-  eth: [1],
-  sepolia: [11155111],
-  arbitrum: [42161],
-  bsc: [56],
-  bnb: [56],
-  avalanche: [43114],
-  avax: [43114],
-  "lukso-mainnet": [42],
-  robinhood: [4663],
-  matic: [137]
-};
-function semverDesc(a, b) {
-  if (a === "singleton") return 1;
-  if (b === "singleton") return -1;
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pb[i] ?? 0) - (pa[i] ?? 0);
-  return 0;
-}
-var LSP = {
-  LSP23_FACTORY: "0x2300000A84D25dF63081feAa37ba6b62C4c89a30",
-  UP_INIT_POST_DEPLOYMENT_MODULE: "0x000000000066093407b6704B89793beFfD0D8F00",
-  UP_POST_DEPLOYMENT_MODULE: "0x0000005aD606bcFEF9Ea6D0BbE5b79847054BcD7",
-  UP_INIT: { "0.14.0": "0x3024D38EA2434BA6635003Dc1BDC0daB5882ED4F", "0.12.1": "0x52c90985AF970D4E0DC26Cb5D052505278aF32A9" },
-  KM_INIT: { "0.14.0": "0x2Fe3AeD98684E7351aD2D408A43cE09a738BF8a4", "0.12.1": "0xa75684d7D048704a2DB851D05Ba0c3cbe226264C" },
-  URD: { "0.14.0": "0x7870C5B8BC9572A8001C3f96f7ff59961B23500D", "0.12.1": "0xA5467dfe7019bF2C7C5F7A707711B9d4cAD118c8" },
-  ERC_TOKEN_CALLBACKS: "0x082d49D8487d2ed2527440c7879C66d850daaBc5",
-  NICK_FACTORY: "0x4e59b44847b379578588920cA78FbF26c0B4956C",
-  ENTRYPOINT_V06: "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789",
-  MULTICALL3: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  LSP26: "0xf01103E5a9909Fc0DBe8166dA7085e0285daDDcA"
-};
+// src/verbs/setup.ts
+init_registry();
 
 // src/chain/recommended.ts
 var RECOMMENDED_CHAINS = [42, 1, 8453, 42161, 56, 137];
@@ -8965,12 +9413,13 @@ defineVerb({
 // src/signer/verbs.ts
 init_errors();
 init_home();
+init_verbs();
+init_signer();
+init_select();
 import { chmod as chmod2, link, lstat as lstat2, open, rm as rm4, stat as stat3, writeFile as writeFile3 } from "node:fs/promises";
 import { randomBytes as randomBytes5 } from "node:crypto";
 import { basename, dirname as dirname3, isAbsolute, join as join7, resolve as resolve3 } from "node:path";
 import { getAddress as getAddress9, isAddress as isAddress6 } from "./vendor-viem.mjs";
-init_signer();
-init_select();
 
 // src/signer/keystore-v3.ts
 init_errors();
@@ -10674,7 +11123,7 @@ function encodeExecuteRelayCall(signature, nonce, validityTimestamps, payload) {
 }
 
 // src/exec/relay.ts
-init_registry();
+init_registry2();
 init_client();
 var POLL_MS = () => Number(process.env.UP_POLL_MS ?? 2e3);
 var TIMEOUT_MS3 = () => Number(process.env.UP_RECEIPT_TIMEOUT_MS ?? 18e4);
@@ -10877,12 +11326,13 @@ registerTransport(lsp0Transport);
 registerTransport(relayTransport);
 
 // src/exec/verbs.ts
+init_verbs();
 init_errors();
 init_tx();
 init_abis();
 init_profile();
 init_read2();
-init_registry();
+init_registry2();
 init_select();
 init_auto();
 
@@ -11277,277 +11727,14 @@ defineVerb({
 import { randomBytes as randomBytes8 } from "node:crypto";
 import { isAbsolute as isAbsolute3, resolve as resolve5 } from "node:path";
 import { getAddress as getAddress24, isAddress as isAddress12 } from "./vendor-viem.mjs";
+init_verbs();
 init_errors();
 init_home();
 init_json();
 init_auto();
 init_constants();
 init_permissions();
-
-// src/lsp/lsp23.ts
-init_errors();
-init_profile_record();
-import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData11, encodePacked as encodePacked3, formatEther as formatEther3, getAddress as getAddress21, getContractAddress, keccak256 as keccak25612 } from "./vendor-viem.mjs";
-init_tx();
-init_abis();
-init_constants();
-init_permissions();
-init_read2();
-init_profile();
-var DEFAULT_IMPL_VERSION = "0.14.0";
-function erc1167InitCode(implementation) {
-  return concat3(["0x3d602d80600a3d3981f3363d3d373d3d3d363d73", getAddress21(implementation), "0x5af43d82803e903d91602b57fd5bf3"]);
-}
-function resolveImplementations(inputs) {
-  const v = inputs.implementationVersion ?? DEFAULT_IMPL_VERSION;
-  const upInit = inputs.upInit ?? LSP.UP_INIT[v];
-  const kmInit = inputs.kmInit ?? LSP.KM_INIT[v];
-  const urd = inputs.urd ?? LSP.URD[v];
-  if (!upInit || !kmInit || !urd) throw new UpError("BAD_ARGS", `no canonical UP/KM/URD implementation for version ${v}`, { hint: `known versions: ${Object.keys(LSP.UP_INIT).join(", ")}` });
-  return {
-    version: v,
-    factory: getAddress21(inputs.factory ?? LSP.LSP23_FACTORY),
-    postDeploymentModule: getAddress21(inputs.postDeploymentModule ?? LSP.UP_INIT_POST_DEPLOYMENT_MODULE),
-    upInit: getAddress21(upInit),
-    kmInit: getAddress21(kmInit),
-    urd: getAddress21(urd)
-  };
-}
-function buildInitialData(controller, permissions, urd, opts = {}) {
-  const controllers = [{ address: getAddress21(controller), permissions }, ...(opts.extraControllers ?? []).map((c) => ({ address: getAddress21(c.address), permissions: c.permissions }))];
-  const seen = /* @__PURE__ */ new Set();
-  for (const c of controllers) {
-    if (seen.has(c.address)) throw new UpError("BAD_ARGS", `controller ${c.address} listed twice`);
-    if (c.address === getAddress21(urd)) throw new UpError("BAD_ARGS", "a controller cannot be the Universal Receiver Delegate");
-    if (!/^0x[0-9a-fA-F]{64}$/.test(c.permissions) || BigInt(c.permissions) === 0n) throw new UpError("BAD_ARGS", `controller ${c.address} needs a non-zero bytes32 permission value`);
-    seen.add(c.address);
-  }
-  const dataKeys = [DATA_KEYS["SupportedStandards:LSP3Profile"]];
-  const dataValues = [DATA_KEYS.SupportedStandardsLSP3Value];
-  if (opts.lsp3 && opts.lsp3 !== "0x") {
-    dataKeys.push(DATA_KEYS.LSP3Profile);
-    dataValues.push(opts.lsp3);
-  }
-  dataKeys.push(DATA_KEYS.LSP1UniversalReceiverDelegate, permissionsKey(urd));
-  dataValues.push(getAddress21(urd).toLowerCase(), toBytes32(URD_PERMISSIONS));
-  for (const c of controllers) {
-    dataKeys.push(permissionsKey(c.address));
-    dataValues.push(c.permissions.toLowerCase());
-  }
-  const listed = [...controllers.map((c) => c.address), getAddress21(urd)];
-  dataKeys.push(DATA_KEYS["AddressPermissions[]"]);
-  dataValues.push(uint128Hex(listed.length));
-  listed.forEach((a, i) => {
-    dataKeys.push(permissionsArrayIndexKey(i));
-    dataValues.push(a.toLowerCase());
-  });
-  return { dataKeys, dataValues };
-}
-function planDeployment(inputs) {
-  if (!/^0x[0-9a-fA-F]{64}$/.test(inputs.salt)) throw new UpError("BAD_ARGS", "salt must be 32 bytes hex");
-  const impl = resolveImplementations(inputs);
-  const { dataKeys, dataValues } = buildInitialData(inputs.controller, inputs.permissions, impl.urd, { lsp3: inputs.lsp3, extraControllers: inputs.extraControllers });
-  const postDeploymentModuleCalldata = encodeAbiParameters2([{ type: "bytes32[]" }, { type: "bytes[]" }], [dataKeys, dataValues]);
-  const primary = {
-    salt: inputs.salt.toLowerCase(),
-    fundingAmount: 0n,
-    implementationContract: impl.upInit,
-    initializationCalldata: encodeFunctionData11({ abi: UP_INIT_ABI, functionName: "initialize", args: [impl.postDeploymentModule] })
-  };
-  const secondary = {
-    fundingAmount: 0n,
-    implementationContract: impl.kmInit,
-    initializationCalldata: encodeFunctionData11({ abi: KM_INIT_ABI, functionName: "initialize", args: ["0x0000000000000000000000000000000000000000"] }).slice(0, 10),
-    addPrimaryContractAddress: true,
-    extraInitializationParams: "0x"
-  };
-  const { profile, keyManager, generatedSalt } = computeERC1167Addresses(impl.factory, primary, secondary, impl.postDeploymentModule, postDeploymentModuleCalldata);
-  const deployCalldata = encodeFunctionData11({ abi: LSP23_ABI, functionName: "deployERC1167Proxies", args: [primary, secondary, impl.postDeploymentModule, postDeploymentModuleCalldata] });
-  return {
-    factory: impl.factory,
-    postDeploymentModule: impl.postDeploymentModule,
-    implementations: {
-      universalProfileInit: { version: impl.version, address: impl.upInit },
-      keyManagerInit: { version: impl.version, address: impl.kmInit },
-      universalReceiverDelegate: { version: impl.version, address: impl.urd }
-    },
-    dataKeys,
-    dataValues,
-    primaryContractDeploymentInit: { ...primary, fundingAmount: "0" },
-    secondaryContractDeploymentInit: { ...secondary, fundingAmount: "0" },
-    postDeploymentModuleCalldata,
-    generatedSalt,
-    profile,
-    keyManager,
-    deployCalldata
-  };
-}
-function computeERC1167Addresses(factory, primary, secondary, postDeploymentModule, postDeploymentModuleCalldata) {
-  const generatedSalt = keccak25612(
-    encodeAbiParameters2(
-      [{ type: "bytes32" }, { type: "address" }, { type: "bytes" }, { type: "bool" }, { type: "bytes" }, { type: "address" }, { type: "bytes" }],
-      [primary.salt, secondary.implementationContract, secondary.initializationCalldata, secondary.addPrimaryContractAddress, secondary.extraInitializationParams, postDeploymentModule, postDeploymentModuleCalldata]
-    )
-  );
-  const profile = getContractAddress({ opcode: "CREATE2", from: factory, salt: generatedSalt, bytecodeHash: keccak25612(erc1167InitCode(primary.implementationContract)) });
-  const keyManager = getContractAddress({ opcode: "CREATE2", from: factory, salt: keccak25612(encodePacked3(["address"], [profile])), bytecodeHash: keccak25612(erc1167InitCode(secondary.implementationContract)) });
-  return { profile, keyManager, generatedSalt };
-}
-function candidateSalts(seed, count, offset = 0) {
-  if (!/^0x[0-9a-fA-F]{64}$/.test(seed)) throw new UpError("BAD_ARGS", "seed must be 32 bytes hex");
-  if (!Number.isInteger(count) || count < 1 || count > 100) throw new UpError("BAD_ARGS", "count must be 1..100");
-  return Array.from({ length: count }, (_, i) => keccak25612(encodePacked3(["bytes32", "uint256"], [seed, BigInt(offset + i)])));
-}
-async function computeOnChain(ctx, chainId, plan) {
-  const p = { ...plan.primaryContractDeploymentInit, fundingAmount: 0n };
-  const s = { ...plan.secondaryContractDeploymentInit, fundingAmount: 0n };
-  const [profile, keyManager] = await read2(ctx, chainId, plan.factory, LSP23_ABI, "computeERC1167Addresses", [p, s, plan.postDeploymentModule, plan.postDeploymentModuleCalldata]);
-  return { profile: getAddress21(profile), keyManager: getAddress21(keyManager) };
-}
-function manifestFromPlan(inputs, plan, extra = {}) {
-  const { deployCalldata, ...rest } = plan;
-  return {
-    version: 1,
-    kind: "lsp23-erc1167-up",
-    profile: plan.profile,
-    keyManager: plan.keyManager,
-    controller: getAddress21(inputs.controller),
-    preset: inputs.preset,
-    permissions: inputs.permissions,
-    permissionNames: decodePermissions(inputs.permissions).names,
-    extraControllers: inputs.extraControllers,
-    lsp3: inputs.lsp3,
-    salt: plan.primaryContractDeploymentInit.salt,
-    seed: extra.seed,
-    candidateIndex: extra.candidateIndex,
-    plan: rest,
-    deployCalldata,
-    chains: [],
-    deployments: {},
-    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    note: "Replaying deployCalldata through the LSP23 factory on another chain yields the same profile and Key Manager addresses. Changing ANY input (controller, permissions, salt, versions, LSP3 value) changes the address."
-  };
-}
-async function loadManifest(home, profile) {
-  const r = await readProfileRecord(home, profile);
-  return r.deployment;
-}
-async function saveManifest(home, m) {
-  await updateProfileRecord(home, m.profile, (latest) => {
-    const cur = latest.deployment;
-    if (!cur || cur.profile !== m.profile || cur.deployCalldata !== m.deployCalldata) return { deployment: m };
-    return { deployment: { ...m, chains: [.../* @__PURE__ */ new Set([...cur.chains ?? [], ...m.chains])], deployments: { ...cur.deployments ?? {}, ...m.deployments } } };
-  });
-}
-function verifyManifest(m) {
-  const p = m.plan;
-  const c = computeERC1167Addresses(p.factory, p.primaryContractDeploymentInit, p.secondaryContractDeploymentInit, p.postDeploymentModule, p.postDeploymentModuleCalldata);
-  const deploy = encodeFunctionData11({
-    abi: LSP23_ABI,
-    functionName: "deployERC1167Proxies",
-    args: [{ ...p.primaryContractDeploymentInit, fundingAmount: 0n }, { ...p.secondaryContractDeploymentInit, fundingAmount: 0n }, p.postDeploymentModule, p.postDeploymentModuleCalldata]
-  });
-  const ok = c.profile === getAddress21(m.profile) && c.keyManager === getAddress21(m.keyManager) && deploy.toLowerCase() === m.deployCalldata.toLowerCase();
-  return { ok, profile: c.profile, keyManager: c.keyManager };
-}
-async function checkPrerequisites(ctx, chainId, plan) {
-  const req = {
-    LSP23LinkedContractsFactory: plan.factory,
-    UniversalProfileInitPostDeploymentModule: plan.postDeploymentModule,
-    UniversalProfileInit: plan.implementations.universalProfileInit.address,
-    LSP6KeyManagerInit: plan.implementations.keyManagerInit.address,
-    LSP1UniversalReceiverDelegateUP: plan.implementations.universalReceiverDelegate.address
-  };
-  const out = {};
-  for (const [n, a] of Object.entries(req)) out[n] = await hasCode(ctx, chainId, a);
-  return out;
-}
-async function verifyDeployment(ctx, chainId, m) {
-  const km = await resolveKeyManager(ctx, chainId, m.profile);
-  const ctl = await readControllerPermissions(ctx, chainId, m.profile, m.controller);
-  const urd = await getData(ctx, chainId, m.profile, DATA_KEYS.LSP1UniversalReceiverDelegate);
-  return {
-    profileHasCode: await hasCode(ctx, chainId, m.profile),
-    keyManagerHasCode: await hasCode(ctx, chainId, m.keyManager),
-    ownerIsKeyManager: km.owner === getAddress21(m.keyManager),
-    keyManagerTargetIsProfile: km.keyManager === getAddress21(m.keyManager),
-    supportsLSP0: await supportsInterface(ctx, chainId, m.profile, INTERFACE_IDS2.LSP0ERC725Account),
-    keyManagerSupportsLSP6: await supportsInterface(ctx, chainId, m.keyManager, INTERFACE_IDS2.LSP6KeyManager),
-    controllerPermissionsMatch: ctl.permissions.hex.toLowerCase() === m.permissions.toLowerCase(),
-    universalReceiverDelegateSet: urd.toLowerCase() === m.plan.implementations.universalReceiverDelegate.address.toLowerCase()
-  };
-}
-async function deployFromManifest(ctx, signer, m, chainId, verb = "account deploy") {
-  const v = verifyManifest(m);
-  if (!v.ok) throw new UpError("INTERNAL", "deployment manifest is inconsistent (stored addresses/calldata do not re-derive)", { hint: "do not edit manifests by hand; re-run up account precompute", details: v });
-  const prerequisites = await checkPrerequisites(ctx, chainId, m.plan);
-  const missing = Object.entries(prerequisites).filter(([, ok]) => !ok).map(([n]) => n);
-  if (missing.length) {
-    throw new UpError("NOT_DEPLOYED", `the canonical LSP contracts are missing on chain ${chainId}: ${missing.join(", ")}`, {
-      hint: "these are deployed through Nick's factory with fixed salts; check: up chains verify " + chainId,
-      details: prerequisites
-    });
-  }
-  const onchain = await computeOnChain(ctx, chainId, m.plan);
-  const onChainCompute = { ...onchain, matches: onchain.profile === getAddress21(m.profile) && onchain.keyManager === getAddress21(m.keyManager) };
-  if (!onChainCompute.matches) {
-    throw new UpError("INTERNAL", `factory on chain ${chainId} computes ${onchain.profile}/${onchain.keyManager}, manifest says ${m.profile}/${m.keyManager}`, { hint: "the factory at the canonical address behaves differently on this chain; do not deploy", details: onChainCompute });
-  }
-  const confirmation = {
-    action: "deploy Universal Profile via LSP23",
-    chainId,
-    profile: m.profile,
-    keyManager: m.keyManager,
-    factory: m.plan.factory,
-    gasPayer: `controller EOA ${signer.address}`,
-    initialController: m.controller,
-    controllerPermissions: { hex: m.permissions, names: m.permissionNames, preset: m.preset },
-    universalReceiverDelegate: m.plan.implementations.universalReceiverDelegate.address,
-    implementations: m.plan.implementations,
-    salt: m.salt,
-    value: "0",
-    calldata: m.deployCalldata
-  };
-  if (await hasCode(ctx, chainId, m.profile)) {
-    const verified2 = await verifyDeployment(ctx, chainId, m);
-    const rec = { chainId, status: "already-deployed", deployedAt: (/* @__PURE__ */ new Date()).toISOString(), verified: verified2 };
-    m.deployments[String(chainId)] = { ...m.deployments[String(chainId)] ?? {}, ...rec };
-    if (!m.chains.includes(chainId)) m.chains.push(chainId);
-    if (!ctx.flags.dryRun) await saveManifest(ctx.home, m);
-    return { chainId, profile: m.profile, keyManager: m.keyManager, status: "already-deployed", verified: verified2, onChainCompute, prerequisites, confirmation };
-  }
-  await simulate(ctx, { chainId, from: signer.address, to: m.plan.factory, data: m.deployCalldata });
-  const g = await gasCheck(ctx, signer.address, { chainId, to: m.plan.factory, data: m.deployCalldata });
-  const symbol = (() => {
-    try {
-      return ctx.registry.chain(chainId).nativeSymbol;
-    } catch {
-      return "native";
-    }
-  })();
-  const gasInfo = { payer: signer.address, symbol, maxCost: formatEther3(g.maxCostWei), balance: formatEther3(g.balanceWei), enough: g.enough, ...g.enough ? {} : { missing: formatEther3(g.shortfallWei), suggestedFunding: formatEther3(g.suggestedFundingWei) } };
-  confirmation.gas = gasInfo;
-  if (!g.enough && !ctx.flags.dryRun) {
-    throw new UpError("TX_FAILED", `the agent's key ${signer.address} needs gas on chain ${chainId}: it has ${gasInfo.balance} ${symbol}, the deployment may cost up to ${gasInfo.maxCost} ${symbol}`, {
-      hint: `ask the human to send about ${gasInfo.suggestedFunding} ${symbol} to ${signer.address} (show it as a QR: up display address ${signer.address} --chain ${chainId}); then deploy`,
-      details: { reason: "needs-gas", gas: gasInfo }
-    });
-  }
-  await ctx.consent({ verb, risk: "write", chainId, summary: confirmation, value: 0n, target: m.plan.factory, selector: m.deployCalldata.slice(0, 10) });
-  if (ctx.flags.dryRun) return { chainId, profile: m.profile, keyManager: m.keyManager, status: "dry-run", onChainCompute, prerequisites, confirmation, gas: gasInfo };
-  const tx = await sendTx(ctx, signer, { chainId, to: m.plan.factory, data: m.deployCalldata });
-  const verified = await verifyDeployment(ctx, chainId, m);
-  const allOk = Object.values(verified).every(Boolean);
-  m.deployments[String(chainId)] = { chainId, status: "deployed", txHash: tx.hash, blockNumber: tx.blockNumber, deployedAt: (/* @__PURE__ */ new Date()).toISOString(), deployer: signer.address, verified };
-  if (!m.chains.includes(chainId)) m.chains.push(chainId);
-  await saveManifest(ctx.home, m);
-  if (!allOk) {
-    throw new UpError("TX_FAILED", `deployment transaction ${tx.hash} succeeded but post-deployment checks failed`, { details: verified });
-  }
-  return { chainId, profile: m.profile, keyManager: m.keyManager, status: "deployed", txHash: tx.hash, blockNumber: tx.blockNumber, gasUsed: tx.gasUsed, explorerUrl: tx.explorerUrl, verified, onChainCompute, prerequisites, confirmation };
-}
-
-// src/lsp/verbs-account.ts
+init_lsp23();
 init_profile_record();
 init_profile();
 init_controllers();
@@ -11713,7 +11900,7 @@ init_errors();
 init_json();
 init_constants();
 import { ERC725 as ERC7253 } from "./vendor-erc725.mjs";
-import { keccak256 as keccak25613, toBytes as toBytes4 } from "./vendor-viem.mjs";
+import { keccak256 as keccak25614, toBytes as toBytes4 } from "./vendor-viem.mjs";
 var LSP3_FIELDS = ["name", "description", "links", "tags", "profile-image", "background-image", "avatar"];
 var FIELD_PROP = { name: "name", description: "description", links: "links", tags: "tags", "profile-image": "profileImage", "background-image": "backgroundImage", avatar: "avatar" };
 var ARRAY_PROPS = ["links", "tags", "avatar", "profileImage", "backgroundImage"];
@@ -11883,7 +12070,7 @@ function serialiseLsp3(json2) {
   const text = JSON.stringify(json2);
   const bytes = toBytes4(text);
   if (bytes.length > LIMITS.jsonBytes) throw new UpError("BAD_ARGS", `the LSP3 JSON would be ${bytes.length} bytes (max ${LIMITS.jsonBytes})`, { hint: "shorten the description, links or tags" });
-  return { text, bytes, hash: keccak25613(bytes) };
+  return { text, bytes, hash: keccak25614(bytes) };
 }
 function encodeLsp3Value(url, jsonHash) {
   const enc = ERC7253.encodeData([{ keyName: "LSP3Profile", value: { verification: { method: "keccak256(utf8)", data: jsonHash }, url } }], LSP3Schema);
@@ -12707,14 +12894,16 @@ defineVerb({
 });
 
 // src/lsp/verbs-multichain.ts
-import { getAddress as getAddress25 } from "./vendor-viem.mjs";
+init_verbs();
 init_errors();
 init_profile_record();
 init_select();
 init_constants();
+init_lsp23();
 init_multichain();
 init_profile();
 init_read2();
+import { getAddress as getAddress25 } from "./vendor-viem.mjs";
 async function chainsToCheck(ctx, a, identity) {
   if (a.chains?.length) return [...new Set(a.chains.map((c) => ctx.registry.chain(c).chainId))];
   if (a.chain !== void 0 && a.chain !== "") return [ctx.chainId(a.chain)];
@@ -12838,13 +13027,14 @@ defineVerb({
 });
 
 // src/lsp/verbs-metadata.ts
-import { getAddress as getAddress26 } from "./vendor-viem.mjs";
+init_verbs();
 init_errors();
 init_permissions();
 init_auto();
-init_registry();
+init_registry2();
 init_client();
 init_transport();
+import { getAddress as getAddress26 } from "./vendor-viem.mjs";
 init_gateway();
 init_providers();
 init_constants();
@@ -13298,7 +13488,8 @@ defineVerb({
 });
 
 // src/lsp/verbs-permissions.ts
-import { encodeFunctionData as encodeFunctionData12, getAddress as getAddress27, keccak256 as keccak25614, toBytes as toBytes5, zeroAddress as zeroAddress5 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData12, getAddress as getAddress27, keccak256 as keccak25615, toBytes as toBytes5, zeroAddress as zeroAddress5 } from "./vendor-viem.mjs";
+init_verbs();
 init_errors();
 init_tx();
 init_auto();
@@ -13639,7 +13830,7 @@ defineVerb({
     return { data: { status: tx.status, txHash: tx.hash, chainId, profile, newOwner: owner, confirmation }, text: tx.status === "dry-run" ? `DRY RUN: ${route}` : `ownership accepted: owner is now ${owner} (tx ${tx.hash})` };
   }
 });
-var RENOUNCE_STARTED_TOPIC = keccak25614(toBytes5("RenounceOwnershipStarted()"));
+var RENOUNCE_STARTED_TOPIC = keccak25615(toBytes5("RenounceOwnershipStarted()"));
 defineVerb({
   name: "ownership renounce",
   group: "permissions",
@@ -13677,7 +13868,7 @@ ownership RENOUNCED: the profile has no owner`,
 });
 
 // src/lsp/verbs-sign.ts
-import { getAddress as getAddress28, hashMessage, hashTypedData, isHex as isHex4 } from "./vendor-viem.mjs";
+init_verbs();
 init_errors();
 init_abis();
 init_constants();
@@ -13685,6 +13876,7 @@ init_permissions();
 init_profile();
 init_multichain();
 init_read2();
+import { getAddress as getAddress28, hashMessage, hashTypedData, isHex as isHex4 } from "./vendor-viem.mjs";
 async function isValidSignature1271(ctx, chainId, address, hash, signature) {
   try {
     const r = await read2(ctx, chainId, address, ERC1271_ABI, "isValidSignature", [hash, signature]);
@@ -13870,10 +14062,11 @@ defineVerb({
 
 // src/relayer/verbs.ts
 import { getAddress as getAddress29 } from "./vendor-viem.mjs";
+init_verbs();
 init_errors();
 init_transport();
 init_client();
-init_registry();
+init_registry2();
 var LUKSO_LIVE_HOSTS = ["relayer.mainnet.lukso.network", "relayer.testnet.lukso.network"];
 defineVerb({
   name: "relayer add",
@@ -14002,12 +14195,14 @@ defineVerb({
 });
 
 // src/erc4337/verbs.ts
-import { encodeFunctionData as encodeFunctionData18, getAddress as getAddress36, isAddress as isAddress14, isHex as isHex6, parseAbiItem as parseAbiItem3, parseUnits as parseUnits2 } from "./vendor-viem.mjs";
+init_verbs();
 init_errors();
 init_transport();
+import { encodeFunctionData as encodeFunctionData18, getAddress as getAddress36, isAddress as isAddress14, isHex as isHex6, parseAbiItem as parseAbiItem3, parseUnits as parseUnits2 } from "./vendor-viem.mjs";
 
 // src/erc4337/constants.ts
 init_assets();
+init_registry();
 import { concat as concat4, pad as pad2, parseAbi as parseAbi4 } from "./vendor-viem.mjs";
 import { entryPoint06Abi } from "./vendor-viem.mjs";
 var ENTRYPOINT_V06 = LSP.ENTRYPOINT_V06;
@@ -14078,13 +14273,13 @@ var CALL_TYPES = { VALUE: 1, CALL: 2, STATICCALL: 4, DELEGATECALL: 8 };
 // src/erc4337/entrypoint.ts
 init_errors();
 init_tx();
-import { concat as concat6, encodeFunctionData as encodeFunctionData14, getAddress as getAddress31, keccak256 as keccak25616, size, slice as slice2 } from "./vendor-viem.mjs";
+import { concat as concat6, encodeFunctionData as encodeFunctionData14, getAddress as getAddress31, keccak256 as keccak25617, size, slice as slice2 } from "./vendor-viem.mjs";
 
 // src/erc4337/bytecode.ts
 init_assets();
 init_errors();
 import { createHash } from "node:crypto";
-import { concat as concat5, encodeAbiParameters as encodeAbiParameters3, getAddress as getAddress30, getContractAddress as getContractAddress2, keccak256 as keccak25615 } from "./vendor-viem.mjs";
+import { concat as concat5, encodeAbiParameters as encodeAbiParameters3, getAddress as getAddress30, getContractAddress as getContractAddress2, keccak256 as keccak25616 } from "./vendor-viem.mjs";
 function sha256Hex(code) {
   return createHash("sha256").update(Buffer.from(code.slice(2), "hex")).digest("hex");
 }
@@ -14092,7 +14287,7 @@ function create2Address(factory, salt, initCode) {
   return getContractAddress2({ opcode: "CREATE2", from: factory, salt, bytecode: initCode });
 }
 function integrity(name, code, sha, kec) {
-  if (sha256Hex(code) !== sha || keccak25615(code) !== kec) {
+  if (sha256Hex(code) !== sha || keccak25616(code) !== kec) {
     throw new UpError("INTERNAL", `bundled ${name} bytecode failed its integrity check (sha256/keccak256 mismatch); refusing to deploy`, {
       hint: "reinstall the skill package; never edit assets/bytecode by hand (regenerate with build/gen-4337-bytecode.mjs)"
     });
@@ -14186,7 +14381,7 @@ async function entryPointStatus(ctx, chainId, address = ENTRYPOINT_V06) {
   const asset = entryPointAsset();
   const code = await getCode3(ctx, chainId, address);
   const deployed = code !== "0x";
-  const codeHash2 = deployed ? keccak25616(code) : void 0;
+  const codeHash2 = deployed ? keccak25617(code) : void 0;
   return { address: getAddress31(address), deployed, codeHash: codeHash2, expectedCodeHash: asset.runtimeCodeHash, canonical: deployed && codeHash2 === asset.runtimeCodeHash };
 }
 async function deployViaNick(ctx, signer, p) {
@@ -14194,7 +14389,7 @@ async function deployViaNick(ctx, signer, p) {
   const base = { name: p.name, chainId: p.chainId, address: expected, salt: p.salt, factory: NICK_FACTORY };
   const existing = await getCode3(ctx, p.chainId, expected);
   if (existing !== "0x") {
-    const codeHash3 = keccak25616(existing);
+    const codeHash3 = keccak25617(existing);
     if (p.expectedRuntimeHash && codeHash3 !== p.expectedRuntimeHash) {
       throw new UpError("NOT_SUPPORTED", `${p.name}: ${expected} on chain ${p.chainId} holds code with hash ${codeHash3}, expected ${p.expectedRuntimeHash}`, { details: base });
     }
@@ -14217,7 +14412,7 @@ async function deployViaNick(ctx, signer, p) {
   if (tx.status === "dry-run") return { ...base, status: "dry-run" };
   const code = await getCode3(ctx, p.chainId, expected);
   if (code === "0x") throw new UpError("TX_FAILED", `${p.name}: transaction ${tx.hash} succeeded but no code exists at ${expected}`, { details: tx });
-  const codeHash2 = keccak25616(code);
+  const codeHash2 = keccak25617(code);
   if (p.expectedRuntimeHash && codeHash2 !== p.expectedRuntimeHash) {
     throw new UpError("TX_FAILED", `${p.name}: deployed code hash ${codeHash2} differs from the expected ${p.expectedRuntimeHash}`, { details: { ...base, txHash: tx.hash } });
   }
@@ -14246,22 +14441,22 @@ init_errors();
 init_policy();
 init_transport();
 init_tx();
-import { encodeFunctionData as encodeFunctionData16, getAddress as getAddress34, keccak256 as keccak25618, size as size3 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData16, getAddress as getAddress34, keccak256 as keccak25619, size as size3 } from "./vendor-viem.mjs";
 
 // src/erc4337/lsp6.ts
 init_errors();
-import { concat as concat7, getAddress as getAddress32, isAddress as isAddress13, isHex as isHex5, pad as pad3, size as size2, slice as slice3, toHex as toHex2 } from "./vendor-viem.mjs";
+import { concat as concat7, getAddress as getAddress32, isAddress as isAddress13, isHex as isHex5, pad as pad3, size as size2, slice as slice3, toHex as toHex3 } from "./vendor-viem.mjs";
 var permissionsKey2 = (a) => concat7([KEY_PREFIX_PERMISSIONS, a.toLowerCase()]);
 var allowedCallsKey2 = (a) => concat7([KEY_PREFIX_ALLOWED_CALLS, a.toLowerCase()]);
 var allowedDataKeysKey2 = (a) => concat7([KEY_PREFIX_ALLOWED_DATA_KEYS, a.toLowerCase()]);
 var arrayLengthKey = KEY_ADDRESS_PERMISSIONS_ARRAY;
-var arrayIndexKey = (i) => concat7([KEY_ADDRESS_PERMISSIONS_ARRAY_PREFIX, pad3(toHex2(BigInt(i)), { size: 16 })]);
-var encodePermissions2 = (bits) => pad3(toHex2(bits), { size: 32 });
+var arrayIndexKey = (i) => concat7([KEY_ADDRESS_PERMISSIONS_ARRAY_PREFIX, pad3(toHex3(BigInt(i)), { size: 16 })]);
+var encodePermissions2 = (bits) => pad3(toHex3(bits), { size: 32 });
 function decodePermissions2(v) {
   if (!v || v === "0x") return 0n;
   return BigInt(v);
 }
-var encodeArrayLength = (n) => pad3(toHex2(n), { size: 16 });
+var encodeArrayLength = (n) => pad3(toHex3(n), { size: 16 });
 function decodeArrayLength(v) {
   if (!v || v === "0x") return 0n;
   return BigInt(v);
@@ -14284,7 +14479,7 @@ function encodeCompactBytesArray(items) {
     items.flatMap((it) => {
       const n = size2(it);
       if (n > 65535) throw new UpError("BAD_ARGS", `CompactBytesArray item too long (${n} bytes)`);
-      return [pad3(toHex2(n), { size: 2 }), it];
+      return [pad3(toHex3(n), { size: 2 }), it];
     })
   );
 }
@@ -14332,7 +14527,7 @@ function encodeAllowedCalls2(entries) {
       const std = four(e.standard, "standard");
       const fn = four(e.function, "function");
       if (addr2 === WILD20 && std === WILD4 && fn === WILD4) throw new UpError("BAD_ARGS", "an AllowedCalls entry cannot wildcard address, standard and function at once (LSP6 rejects it: InvalidWhitelistedCall); use --ep-scope super instead");
-      return concat7([pad3(toHex2(ct), { size: 4 }), addr2, std, fn]);
+      return concat7([pad3(toHex3(ct), { size: 4 }), addr2, std, fn]);
     })
   );
 }
@@ -14396,7 +14591,7 @@ import {
   encodeFunctionData as encodeFunctionData15,
   getAddress as getAddress33,
   hexToBytes as hexToBytes3,
-  keccak256 as keccak25617
+  keccak256 as keccak25618
 } from "./vendor-viem.mjs";
 
 // src/erc4337/aa-errors.ts
@@ -14491,19 +14686,19 @@ function packUserOpForHash(op) {
     [
       op.sender,
       op.nonce,
-      keccak25617(op.initCode),
-      keccak25617(op.callData),
+      keccak25618(op.initCode),
+      keccak25618(op.callData),
       op.callGasLimit,
       op.verificationGasLimit,
       op.preVerificationGas,
       op.maxFeePerGas,
       op.maxPriorityFeePerGas,
-      keccak25617(op.paymasterAndData)
+      keccak25618(op.paymasterAndData)
     ]
   );
 }
 function getUserOpHashV06(op, entryPoint, chainId) {
-  return keccak25617(encodeAbiParameters4([{ type: "bytes32" }, { type: "address" }, { type: "uint256" }], [keccak25617(packUserOpForHash(op)), entryPoint, BigInt(chainId)]));
+  return keccak25618(encodeAbiParameters4([{ type: "bytes32" }, { type: "address" }, { type: "uint256" }], [keccak25618(packUserOpForHash(op)), entryPoint, BigInt(chainId)]));
 }
 function toRpcUserOp(op) {
   return {
@@ -14938,7 +15133,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
       const r = await tryCall(ctx, chainId, { to: linked, data: encodeFunctionData16({ abi: extension4337Abi(), functionName: "entryPoint" }) });
       if (r.ok && size3(r.data) >= 32) linkedEntryPoint = getAddress34(`0x${r.data.slice(-40)}`);
       const want = extensionRuntimeHashFor(entryPoint);
-      linkedIsBundled = want !== void 0 && keccak25618(code) === want;
+      linkedIsBundled = want !== void 0 && keccak25619(code) === want;
     }
   }
   const linkedMatches = linkedHasCode && linkedEntryPoint?.toLowerCase() === entryPoint.toLowerCase();
@@ -16033,15 +16228,17 @@ defineVerb({
 });
 
 // src/abi/verbs.ts
+init_verbs();
 init_errors();
 
 // src/core/context.ts
 init_home();
 init_errors();
 init_policy();
+init_registry();
+init_rpc();
 import { getAddress as getAddress37, isAddress as isAddress15 } from "./vendor-viem.mjs";
 import { readFileSync as readFileSync8, existsSync as existsSync14 } from "node:fs";
-init_rpc();
 var DEFAULT_CONFIG = { version: 1 };
 function createContext(opts) {
   const home = opts.home ?? upHome();
@@ -17631,8 +17828,9 @@ defineVerb({
 });
 
 // src/tokens/verbs.ts
-import { getAddress as getAddress43 } from "./vendor-viem.mjs";
+init_verbs();
 init_errors();
+import { getAddress as getAddress43 } from "./vendor-viem.mjs";
 init_read();
 init_codec();
 init_assets2();
@@ -18492,6 +18690,7 @@ defineVerb({
 });
 
 // src/social/verbs.ts
+init_verbs();
 init_errors();
 init_read();
 
@@ -18715,6 +18914,7 @@ defineVerb({
 });
 
 // src/display/verbs.ts
+init_verbs();
 init_errors();
 init_blockies();
 
@@ -18973,10 +19173,11 @@ EIP-681: ${eip681.content}` : ""}`,
 });
 
 // src/knowledge/verbs.ts
-import { existsSync as existsSync15, readdirSync as readdirSync2, readFileSync as readFileSync9 } from "node:fs";
-import { join as join11 } from "node:path";
+init_verbs();
 init_errors();
 init_assets();
+import { existsSync as existsSync15, readdirSync as readdirSync2, readFileSync as readFileSync9 } from "node:fs";
+import { join as join11 } from "node:path";
 
 // src/knowledge/standards.ts
 var LIPS = "https://github.com/lukso-network/LIPs/blob/main/LSPs";
@@ -19107,6 +19308,7 @@ defineVerb({
 });
 
 // src/knowledge/onboarding.ts
+init_verbs();
 var UNIVERSAL_RELAYER_WEBSITE = void 0;
 var UNIVERSAL_RELAYER_CHAINS = [42, 1, 8453, 56, 42161, 4663, 137, 43114];
 function chainName4(ctx, id) {
@@ -19179,6 +19381,7 @@ defineVerb({
 });
 
 // src/verbs/start.ts
+init_verbs();
 init_errors();
 var HOSTS = ["dots", "muse", "vm"];
 function chainName5(ctx, id) {
@@ -19211,7 +19414,10 @@ defineVerb({
   summary: "First thing to run: checks this machine, creates the agent's own signing key if needed (local, no approval), and returns `say`, a plain-language message for the human, plus the agent's next steps.",
   description: "Run it as soon as the skill is installed, when the human asks about a Universal Profile or the agent's account, or when you are unsure what state setup is in. Idempotent: an existing key and configuration are kept. Inside a cloud agent VM (OpenAI dots, Meta Muse, other isolated VMs) pass --host dots|muse|vm so the key is kept in a protected file there. Tell the human `data.say` in your own voice (it contains no commands or jargon) and follow `data.next` yourself; never read `data.next` or this command to the human.",
   risk: "local",
-  params: [{ name: "host", type: "string", description: "Cloud agent VM type when running inside one.", enum: [...HOSTS] }],
+  params: [
+    { name: "host", type: "string", description: "Cloud agent VM type when running inside one.", enum: [...HOSTS] },
+    { name: "backend", type: "string", description: "Key store for a new key (default auto: the strongest unattended store here).", default: "auto" }
+  ],
   examples: ["up start", "up start --host dots"],
   async run(ctx, a) {
     if (a.host) process.env.UP_AGENT_HOST = String(a.host);
@@ -19234,7 +19440,7 @@ defineVerb({
     }
     let key;
     try {
-      key = await getVerb("init").run(ctx, { backend: "auto", force: false });
+      key = await getVerb("init").run(ctx, { backend: a.backend ?? "auto", force: false });
     } catch (e) {
       if (e instanceof UpError && e.code === "SIGNER_BACKEND_UNAVAILABLE") {
         return {
@@ -19290,6 +19496,9 @@ defineVerb({
   }
 });
 
+// src/verbs/index.ts
+init_funding();
+
 // src/core/args.ts
 function parseArgv(argv) {
   const words = [];
@@ -19340,6 +19549,7 @@ function parseArgv(argv) {
 }
 
 // src/cli/main.ts
+init_verbs();
 init_lock();
 
 // src/core/output.ts
@@ -19440,6 +19650,7 @@ async function runCli(argv) {
 }
 
 // src/mcp/server.ts
+init_verbs();
 import { createInterface } from "node:readline";
 import { readdirSync as readdirSync3, readFileSync as readFileSync10, existsSync as existsSync16 } from "node:fs";
 import { join as join12 } from "node:path";
@@ -19573,6 +19784,9 @@ async function runMcpServer() {
   await new Promise((resolve6) => rl.on("close", resolve6));
   await Promise.allSettled([...pending]);
 }
+
+// src/app.ts
+init_verbs();
 export {
   GLOBAL_PARAMS,
   allVerbs,

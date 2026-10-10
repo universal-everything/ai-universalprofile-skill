@@ -383,7 +383,7 @@ export async function deployFromManifest(ctx: VerbContext, signer: Signer, m: De
   // Gas the agent's key needs, and what it holds: the dry-run answers "how much must the human send?"
   // so nobody tries a real deployment just to find out.
   const g = await gasCheck(ctx, signer.address, { chainId, to: m.plan.factory, data: m.deployCalldata });
-  const symbol = (() => { try { return ctx.registry.chain(chainId).nativeSymbol; } catch { return "native"; } })();
+  const symbol = await (async () => { try { const { displaySymbol } = await import("../chain/funding.ts"); return displaySymbol(ctx.registry.chain(chainId).nativeSymbol); } catch { return "native"; } })();
   const gasInfo = { payer: signer.address, symbol, maxCost: formatEther(g.maxCostWei), balance: formatEther(g.balanceWei), enough: g.enough, ...(g.enough ? {} : { missing: formatEther(g.shortfallWei), suggestedFunding: formatEther(g.suggestedFundingWei) }) };
   (confirmation as Record<string, unknown>).gas = gasInfo;
   if (!g.enough && !ctx.flags.dryRun) {
