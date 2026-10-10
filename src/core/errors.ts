@@ -19,6 +19,7 @@ export type ErrorCode =
   | "ABI_NOT_FOUND"
   | "ABI_UNTRUSTED"
   | "NETWORK_ERROR"
+  | "IPFS_ERROR"
   | "NOT_SUPPORTED"
   | "INTERNAL";
 

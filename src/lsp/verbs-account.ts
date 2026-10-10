@@ -23,6 +23,7 @@ import { recommend, setDataPayload, buildAddController, requireLockApproval, typ
 import { ADMIN_PERMISSIONS } from "./constants.ts";
 import { hasCode } from "./read.ts";
 import { chainLabel, onChain } from "./multichain.ts";
+import { metadataHooks, metadataPresence } from "./metadata.ts";
 import { chainControllerList } from "../signer/select.ts";
 
 // ---------------------------------------------------------------------------
@@ -223,9 +224,11 @@ defineVerb({
       }
       if (getAddress(m.controller) === signer.address) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
     }
+    // a new profile on the metadata chain (LUKSO mainnet) has no name or pictures yet: offer them (optional)
+    const next = out.status === "deployed" && chainId === metadataHooks().defaultChainId && !m.lsp3 ? ["ask the human whether they want a profile name, description, profile picture and background image (all optional, can be done later): up profile metadata set --dry-run, then with their approval"] : undefined;
     return {
-      data: { ...out, manifestSaved: out.status !== "dry-run" },
-      text: [`${out.status === "dry-run" ? "DRY RUN — " : ""}profile ${m.profile} (${out.status}) on chain ${chainId}`, `key manager ${m.keyManager}`, out.txHash ? `tx ${out.txHash}` : "", out.verified ? `checks: ${Object.entries(out.verified).map(([k, v]) => `${k}=${v ? "ok" : "FAIL"}`).join(", ")}` : ""].filter(Boolean).join("\n"),
+      data: { ...out, manifestSaved: out.status !== "dry-run", next },
+      text: [`${out.status === "dry-run" ? "DRY RUN — " : ""}profile ${m.profile} (${out.status}) on chain ${chainId}`, `key manager ${m.keyManager}`, out.txHash ? `tx ${out.txHash}` : "", out.verified ? `checks: ${Object.entries(out.verified).map(([k, v]) => `${k}=${v ? "ok" : "FAIL"}`).join(", ")}` : "", ...(next ? [`next: ${next[0]}`] : [])].filter(Boolean).join("\n"),
       warnings,
     };
   },
@@ -566,13 +569,17 @@ defineVerb({
     // chains where the agent signs with its own chain-specific key need that key authorised, not the default one
     const otherKeys = [...new Set(pending.map((s) => s.controller).filter((c): c is Address => !!c && c !== me))];
     const label = (id: number) => onChain(chainLabel(ctx, id));
+    // profile metadata lives on LUKSO mainnet: a profile without it gets the offer to add a name and pictures
+    const md = await metadataPresence(ctx, profile);
+    const metadata = { ...md, askHuman: md.deployed === true && md.hasMetadata === false };
     const lines = [
       `Your Universal Profile ${profile} — this agent's key: ${me}`,
       ...statuses.map((s) => `  ${label(s.chainId)}: ${!s.deployed ? `not deployed${s.error ? ` (${s.error})` : ""}` : s.authorised ? `AUTHORISED (${s.permissions!.join(", ")})${s.missing!.length ? `; missing recommended: ${s.missing!.join(", ")}` : ""}` : "NOT AUTHORISED yet"}${s.controller && s.controller !== me ? ` [key ${s.controller}]` : ""}${s.deployed && s.otherControllers?.length ? `; other controllers: ${s.otherControllers.length}` : ""}`),
       ...(pending.some((s) => !s.controller || s.controller === me) ? ["", `Hand this to the human (for ${pending.filter((s) => !s.controller || s.controller === me).map((s) => label(s.chainId)).join(", ")}):`, rec.text] : []),
       ...otherKeys.flatMap((k) => ["", `On ${pending.filter((s) => s.controller === k).map((s) => label(s.chainId)).join(", ")} the agent uses its key ${k}; hand this to the human for those chains:`, recommend(k, profile, opts).text]),
+      ...(metadata.askHuman ? ["", `The profile has no profile metadata on ${md.chain} yet (no name, description or pictures). Ask the human whether they want to add a name, description, profile picture and background image (optional, can be done later): up profile metadata set --dry-run first.`] : []),
     ];
-    return { data: { profile, controller: me, chains: statuses, recommendation: rec, defaultProfile: a["set-default"] ? profile : cfg.defaultProfile }, text: lines.join("\n") };
+    return { data: { profile, controller: me, chains: statuses, recommendation: rec, defaultProfile: a["set-default"] ? profile : cfg.defaultProfile, metadata }, text: lines.join("\n") };
   },
 });
 

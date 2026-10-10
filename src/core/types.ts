@@ -272,4 +272,8 @@ export interface UpConfig {
   relayers?: { name: string; baseUrl: string; chainIds: number[]; profile: "lsp15" | "lukso-live" }[];
   bundlers?: Record<string, string>; // chainId -> bundler RPC url
   explorerKeys?: Record<string, string>; // e.g. { etherscan: "<key>" } — optional, user-provided
+  /** IPFS upload settings for profile metadata (public values; credentials live in ipfsKeys). */
+  ipfs?: { provider?: "universalprofile" | "pinata" | "kubo"; gateway?: string; kuboUrl?: string };
+  /** IPFS upload credentials — optional, user-provided, never printed (redacted like explorerKeys). Env vars take precedence. */
+  ipfsKeys?: { universalprofile?: string; pinata?: string; kuboAuth?: string };
 }

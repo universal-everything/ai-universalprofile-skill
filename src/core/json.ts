@@ -13,8 +13,8 @@ export function toJson(value: unknown, pretty = true): string {
 
 /** Keys whose values must never be printed, logged or returned. */
 const SECRET_KEY = /(private.?key|secret|mnemonic|passphrase|password|apikey|api.?key|access.?token|auth.?token|bearer)$/i;
-/** Containers whose every string child is a credential (e.g. config.explorerKeys). */
-const SECRET_CONTAINER = /^(explorerKeys|apiKeys|secrets|credentials)$/i;
+/** Containers whose every string child is a credential (e.g. config.explorerKeys, config.ipfsKeys). */
+export const SECRET_CONTAINER = /^(explorerKeys|ipfsKeys|apiKeys|secrets|credentials)$/i;
 /** URLs carrying credentials in the query or as a long opaque path segment (provider API keys). */
 function maskUrl(s: string): string {
   if (!/^https?:\/\//i.test(s)) return s;

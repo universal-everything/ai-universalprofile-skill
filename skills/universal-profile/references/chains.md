@@ -14,6 +14,7 @@ Your Universal Profile is **one account**: one identity, normally at the **same 
 | Nonces, relayer quota | Counted separately on each chain. |
 | The agent's key | One default key everywhere, unless a chain has its own key (see below). |
 | The address (rarely) | A profile created with other inputs on some chain has another address there; link it (see below). |
+| Profile metadata (LSP3) | Name, description and pictures are ERC725Y data, so they are per chain too. LUKSO apps show the LUKSO mainnet metadata, so `up profile metadata …` and `up profile url` use LUKSO mainnet unless the human explicitly asks for another chain (`--chain`); see `references/profile-metadata.md`. |
 
 How to talk about it: *"your profile on Base"*, *"on LUKSO your profile already allows me to send LYX; on Base it is not deployed yet"*. Never call the deployments "separate accounts" or "your other account", and always name the chain (name and id) when you talk about balances, addresses, funding or transactions.
 

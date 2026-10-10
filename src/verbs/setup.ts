@@ -9,6 +9,9 @@ import { VERSION, SOURCE } from "../version.ts";
 import { addChain, findRpcs, refreshRegistry } from "../chain/discovery.ts";
 import { LSP } from "../chain/registry.ts";
 import type { UpConfig } from "../core/types.ts";
+import { SECRET_CONTAINER } from "../core/json.ts";
+import { IPFS_PROVIDERS, normaliseKuboUrl } from "../ipfs/providers.ts";
+import { normaliseGateway } from "../ipfs/gateway.ts";
 
 defineVerb({
   name: "doctor",
@@ -66,16 +69,26 @@ defineVerb({
   },
 });
 
-const CONFIG_KEYS = ["default-chain", "default-profile", "chains", "alias", "etherscan-key"] as const;
+const CONFIG_KEYS = ["default-chain", "default-profile", "chains", "alias", "etherscan-key", "ipfs-provider", "ipfs-gateway", "ipfs-upload-key", "pinata-jwt", "kubo-url", "kubo-auth"] as const;
+
+/** The config as shown to anyone: every credential container's values replaced by "[redacted]" (only whether one is set is visible). */
+export function publicConfig(cfg: UpConfig): UpConfig {
+  const out: Record<string, unknown> = { ...cfg };
+  for (const k of Object.keys(out)) {
+    const v = out[k];
+    if (SECRET_CONTAINER.test(k) && v && typeof v === "object") out[k] = Object.fromEntries(Object.entries(v).map(([n, s]) => [n, typeof s === "string" && s ? "[redacted]" : s]));
+  }
+  return out as unknown as UpConfig;
+}
 
 defineVerb({
   name: "config get",
   group: "setup",
-  summary: "Show the local configuration (public data only).",
+  summary: "Show the local configuration (public data only; credentials such as etherscan-key and IPFS upload keys show as [redacted]).",
   risk: "local",
-  params: [{ name: "key", type: "string", description: "Optional top-level key, e.g. aliases, chains, relayers.", positional: 0 }],
+  params: [{ name: "key", type: "string", description: "Optional top-level key, e.g. aliases, chains, relayers, ipfs.", positional: 0 }],
   async run(ctx, a) {
-    const cfg = await ctx.config();
+    const cfg = publicConfig(await ctx.config());
     const data = a.key ? (cfg as any)[a.key] ?? (cfg as any)[String(a.key).replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase())] : cfg;
     return { data };
   },
@@ -84,7 +97,9 @@ defineVerb({
 defineVerb({
   name: "config set",
   group: "setup",
-  summary: "Set default-chain, default-profile, chains (comma list), alias <name>=<address>, or etherscan-key.",
+  summary: "Set default-chain, default-profile, chains (comma list), alias <name>=<address>, etherscan-key, or the IPFS upload settings for profile metadata (ipfs-provider, ipfs-gateway, ipfs-upload-key, pinata-jwt, kubo-url, kubo-auth).",
+  description:
+    "IPFS: ipfs-provider is universalprofile (default), pinata or kubo; ipfs-gateway is used to read and verify IPFS content (default https://api.universalprofile.cloud/ipfs/). Credentials (ipfs-upload-key, pinata-jwt, kubo-auth) are stored in config.json (0600) and never shown again; the environment variables UP_IPFS_UPLOAD_KEY, UP_PINATA_JWT and UP_KUBO_AUTH take precedence and keep them out of shell history. An empty value removes an IPFS setting.",
   risk: "local",
   params: [
     { name: "key", type: "string", description: `one of ${CONFIG_KEYS.join(", ")}`, positional: 0, required: true, enum: CONFIG_KEYS },
@@ -92,6 +107,18 @@ defineVerb({
   ],
   async run(ctx, a) {
     const cfg: UpConfig = { ...(await ctx.config()) };
+    const v = String(a.value).trim();
+    const setIpfs = (k: "provider" | "gateway" | "kuboUrl", val: string | undefined) => {
+      const next: Record<string, unknown> = { ...(cfg.ipfs ?? {}), [k]: val };
+      if (val === undefined) delete next[k];
+      cfg.ipfs = next as UpConfig["ipfs"];
+    };
+    const setKey = (k: "universalprofile" | "pinata" | "kuboAuth", val: string | undefined) => {
+      const next: Record<string, string> = { ...(cfg.ipfsKeys ?? {}) };
+      if (val) next[k] = val;
+      else delete next[k];
+      cfg.ipfsKeys = next;
+    };
     switch (a.key) {
       case "default-chain":
         cfg.defaultChain = ctx.registry.chain(a.value).chainId;
@@ -113,9 +140,30 @@ defineVerb({
       case "etherscan-key":
         cfg.explorerKeys = { ...(cfg.explorerKeys ?? {}), etherscan: a.value };
         break;
+      case "ipfs-provider":
+        if (v && !(IPFS_PROVIDERS as readonly string[]).includes(v)) throw new UpError("BAD_ARGS", `ipfs-provider must be one of ${IPFS_PROVIDERS.join(", ")}`);
+        setIpfs("provider", v || undefined);
+        break;
+      case "ipfs-gateway":
+        setIpfs("gateway", v ? normaliseGateway(v) : undefined);
+        break;
+      case "kubo-url":
+        setIpfs("kuboUrl", v ? normaliseKuboUrl(v) : undefined);
+        break;
+      case "ipfs-upload-key":
+        setKey("universalprofile", v || undefined);
+        break;
+      case "pinata-jwt":
+        setKey("pinata", v || undefined);
+        break;
+      case "kubo-auth":
+        setKey("kuboAuth", v || undefined);
+        break;
     }
     await ctx.saveConfig(cfg);
-    return { data: { saved: a.key }, text: `saved ${a.key}` };
+    // never echo values: credentials must not come back into the conversation
+    const secret = a.key === "ipfs-upload-key" || a.key === "pinata-jwt" || a.key === "kubo-auth" || a.key === "etherscan-key";
+    return { data: { saved: a.key, ...(secret ? { stored: v ? "[redacted]" : "removed" } : {}) }, text: secret && !v ? `removed ${a.key}` : `saved ${a.key}` };
   },
 });
 

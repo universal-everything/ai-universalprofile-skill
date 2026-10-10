@@ -44,10 +44,11 @@ Most "crypto skills" for AI agents hand the agent a raw private key. Whoever hol
 - **Hold and move value:** send native coins and tokens, receive assets, and list what the profile owns.
 - **Use any contract:** read, encode, simulate and call any function on any of the supported chains, with decoded results, errors and events.
 - **Sign as the profile:** produce ERC-1271 signatures that apps and other contracts can verify against the profile address.
+- **Give the profile a face:** set its name, description, links, tags, profile picture and background image ([LSP3](https://github.com/lukso-network/LIPs/blob/main/LSPs/LSP-3-Profile-Metadata.md)). Pictures you send in chat are checked, uploaded to IPFS, verified by hash and written on LUKSO after a dry run and your approval; the agent then shares the profile link (`profile.link/<name>`).
 - **Be social:** follow and unfollow profiles, and read followers ([LSP26](https://github.com/lukso-network/LIPs/blob/main/LSPs/LSP-26-FollowerSystem.md)).
 - **Choose how to execute:** directly through the Key Manager, directly on the account, via relayers (gasless), or via ERC-4337.
 
-The skill has 102 commands in total. Each is both a CLI command and an MCP tool. Full reference: [`references/verbs.md`](references/verbs.md).
+The skill has 105 commands in total. Each is both a CLI command and an MCP tool. Full reference: [`references/verbs.md`](references/verbs.md).
 
 ## How it fits together
 

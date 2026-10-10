@@ -9,7 +9,7 @@ import "../../../src/relayer/verbs.ts";
 import { allVerbs, inputSchema, mcpToolName } from "../../../src/core/verbs.ts";
 
 const chainDir = join(import.meta.dirname, "..", "..", "chain");
-const sources = ["account.test.ts", "permissions.test.ts", "relay.test.ts", "exec.test.ts", "multichain.test.ts"].map((f) => readFileSync(join(chainDir, f), "utf8")).join("\n");
+const sources = ["account.test.ts", "permissions.test.ts", "relay.test.ts", "exec.test.ts", "multichain.test.ts", "metadata.test.ts"].map((f) => readFileSync(join(chainDir, f), "utf8")).join("\n");
 const ours = allVerbs();
 
 describe("account-core verb surface", () => {
@@ -18,6 +18,7 @@ describe("account-core verb surface", () => {
     for (const n of [
       "account precompute", "account deploy", "account info", "account data get", "account data set", "account manifest show", "account manifest export",
       "account extensions add", "account extensions remove", "account urd set", "profile join",
+      "profile metadata show", "profile metadata set", "profile url",
       "permissions list", "permissions show", "permissions encode", "permissions decode", "permissions presets", "permissions recommend",
       "controller add", "controller edit", "controller remove", "allowed-calls set", "allowed-calls show", "allowed-keys set", "allowed-keys show",
       "ownership transfer", "ownership accept", "ownership renounce",
