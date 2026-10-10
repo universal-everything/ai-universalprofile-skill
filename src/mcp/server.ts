@@ -91,7 +91,11 @@ export async function handleMcpMessage(msg: any): Promise<unknown | undefined> {
             if (cancelled.delete(id)) throw new UpError("BAD_ARGS", "request cancelled by the client before it started; nothing was signed or sent");
             const ctx = createContext({ flags: { json: true, dryRun: args["dry-run"] === true, yes: args.yes === true, approval: args.approval, chain: args.chain, profile: args.profile } });
             await preloadConfig(ctx);
-            return v.risk === "local" || v.risk === "read" ? v.run(ctx, args) : withLock(ctx.home, "write", () => v.run(ctx, args));
+            return v.risk === "local" || v.risk === "read" ? v.run(ctx, args) : withLock(ctx.home, "write", async () => {
+              // re-read the config inside the lock: another command may have switched keys meanwhile
+              await ctx.refreshConfig?.();
+              return v.run(ctx, args);
+            });
           };
           const r = v.risk === "local" || v.risk === "read" ? await execute() : await serialised(execute);
           const payload = redact({ ok: true, verb: v.name, data: r.data, media: r.media, warnings: r.warnings });

@@ -105,7 +105,7 @@ describe("macos-keychain (mocked /usr/bin/security)", () => {
     expect((await catchErr(new MacosKeychainBackend({ run: noBin, ...darwin }).load(addr))).code).toBe("SIGNER_BACKEND_UNAVAILABLE");
   });
 
-  it("discards the item and fails closed when the key cannot be read back after storing", async () => {
+  it("keeps the item (keys are never deleted) and fails closed when the key cannot be read back after storing", async () => {
     const items = new Map<string, string>();
     const run = fakeRun((_cmd, args, input) => {
       if (args[0] === "-i") {
@@ -123,7 +123,10 @@ describe("macos-keychain (mocked /usr/bin/security)", () => {
     const b = new MacosKeychainBackend({ run, ...darwin });
     const e = await catchErr(b.create());
     expect(e.code).toBe("SIGNER_LOCKED");
-    expect(items.size).toBe(0);
+    expect(items.size).toBe(1);
+    expect(run.calls.some((c) => c.args[0] === "delete-generic-password")).toBe(false);
+    expect(e.details).toMatchObject({ address: expect.stringMatching(/^0x[0-9a-fA-F]{40}$/), backend: "macos-keychain", kept: true, problem: "read-back-failed" });
+    expect(e.message).toMatch(/kept in the store, nothing was deleted/);
     const secret = /-w ([0-9a-f]{64})\n$/.exec(run.calls.find((c) => c.args[0] === "-i")!.input)![1];
     expect(errorText(e)).not.toContain(secret);
   });

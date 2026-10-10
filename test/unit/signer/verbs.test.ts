@@ -157,10 +157,11 @@ describe("concurrency", () => {
     // Real-context-like contexts: config persisted to <home>/config.json and re-read from disk under the lock.
     const mk = () => {
       const f = fakeContext(home.dir);
-      const save = f.ctx.saveConfig;
-      f.ctx.saveConfig = async (c) => {
-        await save(c);
+      const update = f.ctx.updateConfig;
+      f.ctx.updateConfig = async (fn) => {
+        const c = await update(fn);
         await wf(join(home.dir, "config.json"), JSON.stringify(c));
+        return c;
       };
       return f;
     };

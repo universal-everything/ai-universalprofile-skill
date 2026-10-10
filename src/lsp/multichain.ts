@@ -95,6 +95,8 @@ export interface ChainProfileStatus {
   controller?: ChainControllerStatus;
   /** Another local key of this agent that IS a controller here (when the chain's key is not). */
   otherLocalController?: { address: Address; permissions: string[] };
+  /** Local keys of this agent that are controllers here but missing from their key store (still listed, never dropped). */
+  missingLocalControllers?: { address: Address; backend: string }[];
   relayer?: { name: string; baseUrl: string } | null;
   /** A relayer covers the chain and the key has EXECUTE_RELAY_CALL (quota is not checked: that needs a signature). */
   relayUsable: boolean;
@@ -198,7 +200,11 @@ export async function readChainStatus(ctx: VerbContext, identity: Address, chain
         s.controller.lowGas = gasPrice !== undefined ? keyBalance < gasPrice * DIRECT_ACTION_GAS : keyBalance === 0n;
       }
       s.relayUsable = !!s.relayer && s.controller.canRelay;
-      if (deployed && s.keyManager && !s.controller.isController) s.otherLocalController = await otherLocalController(ctx, cfg, chainId, s.profile, key.address);
+      if (deployed && s.keyManager && !s.controller.isController) {
+        const missing: { address: Address; backend: string }[] = [];
+        s.otherLocalController = await otherLocalController(ctx, cfg, chainId, s.profile, key.address, missing);
+        if (missing.length) s.missingLocalControllers = missing;
+      }
     }
   } catch (e) {
     s.error = (e as Error).message;
@@ -209,17 +215,28 @@ export async function readChainStatus(ctx: VerbContext, identity: Address, chain
   return s;
 }
 
-/** Another local key (default, chain-specific or a previous key the agent keeps) that is a controller of `profile` on `chainId`. */
-async function otherLocalController(ctx: VerbContext, cfg: UpConfig, chainId: number, profile: Address, except: Address): Promise<{ address: Address; permissions: string[] } | undefined> {
-  const candidates = new Set<Address>();
-  if (cfg.controller?.address) candidates.add(getAddress(cfg.controller.address));
-  for (const c of Object.values(cfg.chainControllers ?? {})) if (c?.address) candidates.add(getAddress(c.address));
+/**
+ * Another local key (default, chain-specific or a previous key the agent keeps) that is a
+ * controller of `profile` on `chainId` AND present in its key store. Controllers whose key is
+ * missing from its store are collected in `missing` (reported, never recommended).
+ */
+async function otherLocalController(ctx: VerbContext, cfg: UpConfig, chainId: number, profile: Address, except: Address, missing: { address: Address; backend: string }[] = []): Promise<{ address: Address; permissions: string[] } | undefined> {
+  const candidates = new Map<Address, string>();
+  const add = (c: { address?: string; backend?: string } | undefined) => {
+    if (c?.address && typeof c.backend === "string" && isAddress(c.address, { strict: false }) && !candidates.has(getAddress(c.address))) candidates.set(getAddress(c.address), c.backend);
+  };
+  add(cfg.controller);
+  for (const c of Object.values(cfg.chainControllers ?? {})) add(c);
   // e.g. the key that created the profile: on networks deployed later only the first owners have access
-  for (const c of cfg.previousControllers ?? []) if (c?.address && isAddress(c.address, { strict: false })) candidates.add(getAddress(c.address));
+  for (const c of cfg.previousControllers ?? []) add(c);
   candidates.delete(getAddress(except));
-  for (const a of candidates) {
+  const { internalBackend } = await import("../signer/index.ts");
+  for (const [a, backend] of candidates) {
     const p = await readControllerPermissions(ctx, chainId, profile, a).catch(() => undefined);
-    if (p && p.permissions.value !== 0n) return { address: a, permissions: p.permissions.names };
+    if (!p || p.permissions.value === 0n) continue;
+    const present = await Promise.resolve().then(() => internalBackend(backend).has(a)).catch(() => false);
+    if (present) return { address: a, permissions: p.permissions.names };
+    missing.push({ address: a, backend });
   }
   return undefined;
 }
@@ -249,6 +266,7 @@ export function nextStepsFor(s: ChainProfileStatus): string[] {
   if (!c.isController) {
     const steps = [`ask the human to authorise this agent's key ${c.address} on ${where} (permissions are per chain; a grant on another chain does not count here): up permissions recommend --chain ${arg} prints the recommended set to hand over`];
     if (s.otherLocalController) steps.push(`or use the agent's key ${s.otherLocalController.address}, which already is a controller on ${s.chain}: up key activate ${s.otherLocalController.address} --chain ${arg} (needs the human's approval)`);
+    for (const m of s.missingLocalControllers ?? []) steps.push(`the agent's key ${m.address} is a controller on ${s.chain} but missing from ${m.backend}: restore it from its backup (it stays listed; never replaced)`);
     return steps;
   }
   const steps: string[] = [];

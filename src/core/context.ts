@@ -2,7 +2,8 @@
 import { getAddress, isAddress, type Address } from "viem";
 import { readFileSync, existsSync } from "node:fs";
 import type { Flags, UpConfig, VerbContext } from "./types.ts";
-import { upHome, paths, readJson, writeJson, ensureDir } from "./home.ts";
+import { upHome, paths, readJsonStrict, writeJsonWithBackup, ensureDir } from "./home.ts";
+import { withLock } from "./lock.ts";
 import { UpError } from "./errors.ts";
 import { requireConsent } from "./policy.ts";
 import { createRegistry } from "../chain/registry.ts";
@@ -28,6 +29,52 @@ export function upgradeConfig<T>(raw: T): T {
   return (prev.length ? { ...rest, previousControllers: prev } : rest) as T;
 }
 
+/** config.json as stored (upgraded), or the default when there is none. Throws on an unreadable or invalid file. */
+export async function readConfigFile(home: string): Promise<UpConfig> {
+  const raw = await readJsonStrict<unknown>(paths.config(home), null);
+  if (raw === null) return { ...DEFAULT_CONFIG };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new UpError("INTERNAL", `${paths.config(home)} does not hold a config object; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${paths.config(home)}.bak)` });
+  }
+  return { ...DEFAULT_CONFIG, ...upgradeConfig(raw as UpConfig) };
+}
+
+type KeyRef = { address: string; backend: string; chainId?: number };
+
+/** Every key address the config lists: the default key, per-chain keys and previous keys. */
+export function configKeys(cfg: UpConfig): KeyRef[] {
+  const out: KeyRef[] = [];
+  if (cfg.controller?.address) out.push({ address: cfg.controller.address, backend: cfg.controller.backend });
+  for (const [id, k] of Object.entries(cfg.chainControllers ?? {})) if (k?.address) out.push({ address: k.address, backend: k.backend, chainId: Number(id) });
+  for (const k of cfg.previousControllers ?? []) if (k?.address) out.push({ address: k.address, backend: k.backend, ...(k.chainId !== undefined ? { chainId: k.chainId } : {}) });
+  return out;
+}
+
+/**
+ * Keys are permanent: whatever a writer did, every key listed in `latest` stays listed in the
+ * result. A key that would disappear (from controller, chainControllers or previousControllers)
+ * is appended to previousControllers.
+ */
+export function preserveKeyInventory(latest: UpConfig, next: UpConfig, now = new Date().toISOString()): UpConfig {
+  const have = new Set(configKeys(next).map((k) => k.address.toLowerCase()));
+  const missing = configKeys(latest).filter((k) => !have.has(k.address.toLowerCase()) && (have.add(k.address.toLowerCase()), true));
+  if (!missing.length) return next;
+  return { ...next, previousControllers: [...(next.previousControllers ?? []), ...missing.map((k) => ({ address: k.address as Address, backend: k.backend, switchedAt: now, ...(k.chainId !== undefined ? { chainId: k.chainId } : {}) }))] };
+}
+
+/** Applies only the top-level fields a writer changed relative to what it read (`base`) onto `latest`. */
+export function applyChangedFields(latest: UpConfig, base: UpConfig, next: UpConfig): UpConfig {
+  const out: Record<string, unknown> = { ...latest };
+  const b = base as unknown as Record<string, unknown>;
+  const n = next as unknown as Record<string, unknown>;
+  for (const k of new Set([...Object.keys(b), ...Object.keys(n)])) {
+    if (JSON.stringify(b[k]) === JSON.stringify(n[k])) continue;
+    if (n[k] === undefined) delete out[k];
+    else out[k] = n[k];
+  }
+  return out as unknown as UpConfig;
+}
+
 export interface ContextOptions {
   home?: string;
   flags: Flags;
@@ -38,7 +85,17 @@ export interface ContextOptions {
 export function createContext(opts: ContextOptions): VerbContext {
   const home = opts.home ?? upHome();
   let cfgCache: UpConfig | undefined;
-  const config = async () => (cfgCache ??= { ...DEFAULT_CONFIG, ...upgradeConfig(await readJson<UpConfig>(paths.config(home), DEFAULT_CONFIG)) });
+  // What this context last read or wrote, untouched by callers that mutate the returned config:
+  // saveConfig() writes only the fields that differ from it.
+  let loaded: UpConfig | undefined;
+  const config = async () => {
+    if (!cfgCache) {
+      const c = await readConfigFile(home);
+      cfgCache ??= c;
+      loaded ??= structuredClone(c);
+    }
+    return cfgCache;
+  };
   const registry = createRegistry(home);
   const rpc = createRpcManager(home, registry, config);
 
@@ -49,9 +106,27 @@ export function createContext(opts: ContextOptions): VerbContext {
     rpc,
     config,
     async saveConfig(cfg) {
+      const base = loaded ?? { ...DEFAULT_CONFIG };
+      await ctx.updateConfig((latest) => applyChangedFields(latest, base, cfg));
+    },
+    async updateConfig(fn) {
       await ensureDir(home);
-      cfgCache = cfg;
-      await writeJson(paths.config(home), cfg);
+      // One shared lock for every config write; the latest file is re-read inside it, so no
+      // writer ever puts back a stale copy, and key inventory fields are never dropped.
+      return withLock(home, "config", async () => {
+        const latest = await readConfigFile(home);
+        const draft = structuredClone(latest);
+        const next = preserveKeyInventory(latest, (await fn(draft)) ?? draft);
+        await writeJsonWithBackup(paths.config(home), next);
+        cfgCache = next;
+        loaded = structuredClone(next);
+        return next;
+      });
+    },
+    async refreshConfig() {
+      cfgCache = undefined;
+      loaded = undefined;
+      return config();
     },
     async signer(chainId) {
       const { loadSignerFromConfig } = await import("../signer/index.ts");
@@ -73,7 +148,9 @@ export function createContext(opts: ContextOptions): VerbContext {
       if (v !== undefined && v !== "") return registry.chain(v).chainId;
       if (!cfgCache && existsSync(paths.config(home))) {
         try {
-          cfgCache = { ...DEFAULT_CONFIG, ...upgradeConfig(JSON.parse(readFileSync(paths.config(home), "utf8"))) };
+          const c = { ...DEFAULT_CONFIG, ...upgradeConfig(JSON.parse(readFileSync(paths.config(home), "utf8"))) };
+          cfgCache = c;
+          loaded ??= structuredClone(c);
         } catch {}
       }
       if (cfgCache?.defaultChain) return cfgCache.defaultChain;

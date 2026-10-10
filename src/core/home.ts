@@ -2,7 +2,7 @@
 // 0700; every file is written atomically (temp + rename) with mode 0600.
 // Never store key material here except through a signer backend that encrypts
 // it or the owner-approved protected-file backend.
-import { mkdir, readFile, rename, writeFile, chmod, stat } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, readFile, rename, writeFile, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -42,6 +42,43 @@ export async function readJson<T>(file: string, fallback: T): Promise<T> {
 export async function writeJson(file: string, value: unknown): Promise<void> {
   const { toJson } = await import("./json.ts");
   await writeFileAtomic(file, toJson(value) + "\n");
+}
+
+/**
+ * Reads a state file that must never be silently replaced (config.json, keys/candidates.json):
+ * a missing file gives `fallback`; an unreadable file or invalid JSON throws, so nothing is
+ * written over a file that could still hold the agent's key inventory.
+ */
+export async function readJsonStrict<T>(file: string, fallback: T): Promise<T> {
+  let text: string;
+  try {
+    text = await readFile(file, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return fallback;
+    const { UpError } = await import("./errors.ts");
+    throw new UpError("INTERNAL", `cannot read ${file} (${(e as NodeJS.ErrnoException).code ?? "error"}); nothing was changed`, { hint: `fix its permissions or restore it (a previous copy may be at ${file}.bak)` });
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const { UpError } = await import("./errors.ts");
+    throw new UpError("INTERNAL", `${file} is not valid JSON; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${file}.bak); never delete it: it lists the agent's keys` });
+  }
+}
+
+/** writeJson that first keeps the current file as `<file>.bak` (0600). */
+export async function writeJsonWithBackup(file: string, value: unknown): Promise<void> {
+  if (existsSync(file)) {
+    await copyFile(file, `${file}.bak`);
+    if (process.platform !== "win32") await chmod(`${file}.bak`, 0o600).catch(() => {});
+  }
+  await writeJson(file, value);
+}
+
+/** Appends one line to an append-only log file (0600); the file is never rewritten. */
+export async function appendLine(file: string, line: string): Promise<void> {
+  await ensureDir(dirname(file));
+  await appendFile(file, line.endsWith("\n") ? line : line + "\n", { mode: 0o600 });
 }
 
 export const paths = {

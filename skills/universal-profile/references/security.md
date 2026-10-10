@@ -36,6 +36,7 @@ Your key is the private key of a blockchain account. It stays forever: it is nev
 - Back it up where the host allows: `up key backup` (encrypted keystore v3, run by the human only).
 - If it is missing from its store, say so plainly; restore it from its backup. If it is truly lost, a co-owner or admin wallet adds a new additional key for the agent on each network (`up key new-candidate`, then `up key activate <address>`); the lost key stays listed.
 - Switching the key the agent signs with (`up key activate`, also per chain) keeps the previous key in its store and listed (`up key address`).
+- Every key is also recorded when it is created in `keys/inventory.jsonl` (append-only, public addresses only), so it stays listed even if saving the config failed. A damaged `config.json` or `keys/candidates.json` is never overwritten: commands stop with an error; a previous copy is kept as `.bak`. Never delete these files.
 
 ### The honest boundary
 

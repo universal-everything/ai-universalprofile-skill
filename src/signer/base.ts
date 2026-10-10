@@ -1,7 +1,7 @@
 // Common lifecycle for every key-holding backend:
 //   create  = generate in-process → store over a pipe/file → read back and
-//             verify it derives to the same address (never hand out an
-//             address whose key cannot be loaded again)
+//             verify it derives to the same address (a key that cannot be read
+//             back is reported, never handed out as usable, and never deleted)
 //   load    = read secret → build an in-memory Signer (address verified)
 // Subclasses implement only the raw secret store operations.
 import { getAddress } from "viem";
@@ -69,21 +69,25 @@ export abstract class KeyBackend implements SignerBackend {
     const address = addressOf(key);
     const id = storageId(address);
     await this.storeSecret(id, key);
+    // Keys are never deleted: once stored, the item stays even if the check below fails. The
+    // error carries the (public) address with kept: true so the caller records it in the
+    // recovery inventory (keys/inventory.jsonl) and it stays listed.
     let readBack: Hex;
     try {
       readBack = normalizePrivateKey(await this.readSecret(id));
     } catch (e) {
-      // The address was never shown to anyone, so the orphaned item is useless: remove it (best effort).
-      await this.deleteSecret(id).catch(() => {});
       const inner = e instanceof UpError ? e : undefined;
-      throw new UpError(inner?.code ?? "SIGNER_LOCKED", `${this.label}: the new key was stored but could not be read back (${inner?.message ?? "unknown error"}); it was discarded`, {
-        hint: inner?.hint ?? `run: up key backend`,
+      throw new UpError(inner?.code ?? "SIGNER_LOCKED", `${this.label}: the new key ${address} was stored but could not be read back (${inner?.message ?? "unknown error"}); it was kept in the store, nothing was deleted`, {
+        hint: inner?.hint ?? `run: up key backend; the key stays listed (up key address)`,
+        details: { address, backend: this.id, kept: true, problem: "read-back-failed" },
         cause: e instanceof UpError ? e : undefined,
       });
     }
     if (readBack !== key) {
-      await this.deleteSecret(id).catch(() => {});
-      throw new UpError("SIGNER_LOCKED", `${this.label}: the stored key did not read back identically; the item was removed`, { hint: "run: up key backend" });
+      throw new UpError("SIGNER_LOCKED", `${this.label}: WARNING: the stored key for ${address} did not read back identically; it was kept in the store (nothing deleted) and must not be used until checked`, {
+        hint: "run: up key backend; the key stays listed (up key address)",
+        details: { address, backend: this.id, kept: true, problem: "read-back-mismatch" },
+      });
     }
     return address;
   }

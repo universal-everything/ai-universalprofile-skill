@@ -74,7 +74,11 @@ export async function runCli(argv: string[]): Promise<number> {
       log: (msg) => process.stderr.write(`· ${msg}\n`),
     });
     await preloadConfig(ctx);
-    const result = verb.risk === "local" || verb.risk === "read" ? await verb.run(ctx, args) : await withLock(ctx.home, "write", () => verb.run(ctx, args));
+    const result = verb.risk === "local" || verb.risk === "read" ? await verb.run(ctx, args) : await withLock(ctx.home, "write", async () => {
+          // re-read the config inside the lock: another command may have switched keys meanwhile
+          await ctx.refreshConfig?.();
+          return verb.run(ctx, args);
+        });
     process.stdout.write(renderResult(verb.name, result, json) + "\n");
     return 0;
   } catch (e) {

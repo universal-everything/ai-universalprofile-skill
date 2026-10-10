@@ -82,4 +82,19 @@ describe("initial controllers", () => {
     await run(ctx, "key activate", { address: agentKey }); // back to the first key; k2 stays listed
     expect((await ctx.config()).previousControllers!.map((k) => k.address)).toEqual([k2]);
   });
+
+  it("status never recommends a previous key that is missing from its store; it lists it as missing and finds the next usable one", async () => {
+    const k3 = ((await run(ctx, "key new-candidate", {})) as any).data.address as Address;
+    await run(ctx, "key activate", { address: k3 }); // agentKey becomes a previous key
+    // `later` is a controller on A, listed first among the previous keys, but its key is not in the store
+    await ctx.updateConfig((cur) => ({ ...cur, previousControllers: [{ address: later, backend: "memory", switchedAt: "x" }, ...(cur.previousControllers ?? [])] }));
+    expect(await getBackend("memory").has(later)).toBe(false);
+    const st: any = await run(ctx, "profile status", { profile: deployed, chains: [String(hA.chainId)] });
+    const a = st.data.chains[0];
+    expect(a.otherLocalController).toMatchObject({ address: agentKey });
+    expect(a.missingLocalControllers).toEqual([{ address: later, backend: "memory" }]);
+    expect(a.nextSteps.join(" ")).toContain(`the agent's key ${later} is a controller on`);
+    await run(ctx, "key activate", { address: agentKey });
+    expect((await ctx.config()).previousControllers!.map((k) => k.address)).toEqual(expect.arrayContaining([later, k3]));
+  });
 });

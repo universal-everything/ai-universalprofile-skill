@@ -121,6 +121,7 @@ export function fakeCtx(rpc: RpcManager, cfg: Partial<UpConfig> = {}, home = tmp
     rpc,
     config: async () => config,
     saveConfig: async () => {},
+    updateConfig: async (fn) => (await fn(config)) ?? config,
     signer: async () => {
       throw new Error("no signer in unit tests");
     },

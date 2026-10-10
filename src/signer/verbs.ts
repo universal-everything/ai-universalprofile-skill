@@ -18,10 +18,12 @@ import { randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { getAddress, isAddress } from "viem";
 import { UpError } from "../core/errors.ts";
-import { ensureDir, paths, readJson, writeJson } from "../core/home.ts";
+import { existsSync } from "node:fs";
+import { ensureDir, paths, readJsonStrict, writeJsonWithBackup } from "../core/home.ts";
 import type { Address, UpConfig, VerbContext, VerbResult } from "../core/types.ts";
 import { defineVerb } from "../core/verbs.ts";
-import { upgradeConfig } from "../core/context.ts";
+import { readConfigFile } from "../core/context.ts";
+import { readInventory, recordKey } from "./inventory.ts";
 import { missingKeyHint } from "./base.ts";
 import { BACKEND_IDS, chooseBackend, custodyWarnings, environment, internalBackend, plainProtection, probeAll } from "./index.ts";
 import { chainControllerList, controllerFor } from "./select.ts";
@@ -41,17 +43,64 @@ function candidatesFile(home: string): string {
   return join(paths.keys(home), "candidates.json");
 }
 
-export async function readCandidates(home: string): Promise<CandidateKey[]> {
-  const v = await readJson<unknown>(candidatesFile(home), []);
-  return Array.isArray(v) ? v.filter((c): c is CandidateKey => Boolean(c && typeof c === "object" && isAddress((c as any).address, { strict: false }) && typeof (c as any).backend === "string")) : [];
+/** The raw candidates list. Missing file = empty; an unreadable or damaged file throws (it is never overwritten). */
+async function readCandidatesRaw(home: string): Promise<unknown[]> {
+  const f = candidatesFile(home);
+  const v = await readJsonStrict<unknown>(f, []);
+  if (!Array.isArray(v)) throw new UpError("INTERNAL", `${f} does not hold a list; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${f}.bak)` });
+  return v;
 }
 
-async function writeCandidates(home: string, list: CandidateKey[]): Promise<void> {
-  await writeJson(candidatesFile(home), list);
+function isCandidate(c: unknown): c is CandidateKey {
+  return Boolean(c && typeof c === "object" && isAddress((c as any).address, { strict: false }) && typeof (c as any).backend === "string");
+}
+
+export async function readCandidates(home: string): Promise<CandidateKey[]> {
+  return (await readCandidatesRaw(home)).filter(isCandidate);
+}
+
+/** Read-modify-write of candidates.json (call under withKeyLock). Unknown entries are kept as they are; the old file is kept as .bak. */
+async function updateCandidates(home: string, fn: (list: unknown[]) => unknown[]): Promise<void> {
+  await writeJsonWithBackup(candidatesFile(home), fn(await readCandidatesRaw(home)));
+}
+
+/** An activated key is no longer "not used yet": take it off the candidates list (it is listed in the config now). */
+async function dropCandidate(home: string, address: string): Promise<void> {
+  const raw = await readCandidatesRaw(home);
+  if (raw.some((k) => isCandidate(k) && sameAddress(k.address, address))) await updateCandidates(home, (list) => list.filter((k) => !(isCandidate(k) && sameAddress(k.address, address))));
 }
 
 function sameAddress(a: string | undefined, b: string | undefined): boolean {
   return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+}
+
+/** Like sameAddress, but "no key" equals "no key" (for the changed-while-waiting guards). */
+function sameKey(a: string | undefined, b: string | undefined): boolean {
+  return (!a && !b) || sameAddress(a, b);
+}
+
+/**
+ * Creates a key in `backend` and records it at once in the append-only recovery inventory
+ * (keys/inventory.jsonl), before any other bookkeeping. A key kept after a failed read-back
+ * check is recorded too, so it stays listed.
+ */
+async function createRecorded(home: string, backend: { id: string; create(): Promise<Address> }, note?: string): Promise<Address> {
+  let address: Address;
+  try {
+    address = await backend.create();
+  } catch (e) {
+    const d = (e as UpError)?.details as { address?: string; kept?: boolean; problem?: string } | undefined;
+    if (e instanceof UpError && d?.kept && d.address) await recordKey(home, { address: d.address, backend: backend.id, note: `kept after ${d.problem ?? "a failed check"}` }).catch(() => {});
+    throw e;
+  }
+  try {
+    await recordKey(home, { address, backend: backend.id, ...(note ? { note } : {}) });
+  } catch (e) {
+    throw new UpError("INTERNAL", `the new key ${address} was created in ${backend.id} but could not be recorded (${(e as Error).message}); it stays in its store`, {
+      hint: `fix the state directory, then record it with: up key activate ${address} --backend ${backend.id}`,
+    });
+  }
+  return address;
 }
 
 function requireController(cfg: UpConfig): NonNullable<UpConfig["controller"]> {
@@ -111,15 +160,16 @@ export async function withKeyLock<T>(home: string, fn: () => Promise<T>): Promis
   }
 }
 
-/** Config with the key fields re-read from disk (another process may have changed them). */
+/**
+ * Config with the whole key inventory (default key, per-chain keys, previous keys) always
+ * re-read from config.json: another process may have changed it, even if the active key is
+ * the same address again.
+ */
 async function freshConfig(ctx: VerbContext): Promise<UpConfig> {
   const c = await ctx.config();
-  const disk = await readJson<UpConfig | null>(paths.config(ctx.home), null);
-  if (disk && typeof disk === "object" && (!sameAddress(disk.controller?.address, c.controller?.address) || JSON.stringify(disk.chainControllers ?? {}) !== JSON.stringify(c.chainControllers ?? {}))) {
-    const d = upgradeConfig(disk);
-    return { ...c, controller: d.controller, previousControllers: d.previousControllers, chainControllers: d.chainControllers };
-  }
-  return c;
+  if (!existsSync(paths.config(ctx.home))) return c;
+  const d = await readConfigFile(ctx.home);
+  return { ...c, controller: d.controller, previousControllers: d.previousControllers, chainControllers: d.chainControllers };
 }
 
 /** True when the verb got an explicit --chain (key verbs never fall back to the default chain). */
@@ -141,18 +191,27 @@ function perChainLines(ctx: VerbContext, cfg: UpConfig): string[] {
   return own.length ? [`Own key per chain (used there instead of the default): ${own.map((c) => `${chainText(ctx, c.chainId)} → ${c.address} (${c.backend})`).join("; ")}`] : [];
 }
 
-/** Keys the agent keeps besides the ones in use: additional keys not used yet and previous keys. Public data only. */
-async function keptKeys(home: string, cfg: UpConfig): Promise<{ address: Address; backend: string; kind: "additional" | "previous"; chainId?: number }[]> {
+type KeptKind = "additional" | "previous" | "recovered";
+type KeptKey = { address: Address; backend: string; kind: KeptKind; chainId?: number; note?: string };
+
+/**
+ * Keys the agent keeps besides the ones in use: previous keys, additional keys not used yet, and
+ * keys only the recovery inventory knows (created, but their bookkeeping failed). Public data only.
+ */
+async function keptKeys(home: string, cfg: UpConfig): Promise<KeptKey[]> {
   const inUse = [cfg.controller?.address, ...chainControllerList(cfg).map((k) => k.address)];
-  const out: { address: Address; backend: string; kind: "additional" | "previous"; chainId?: number }[] = [];
-  const add = (k: { address: string; backend: string; chainId?: number }, kind: "additional" | "previous") => {
+  const out: KeptKey[] = [];
+  const add = (k: { address: string; backend: string; chainId?: number; note?: string }, kind: KeptKind) => {
     if (!isAddress(k.address, { strict: false }) || inUse.some((a) => sameAddress(a, k.address)) || out.some((o) => sameAddress(o.address, k.address))) return;
-    out.push({ address: getAddress(k.address), backend: k.backend, kind, ...(k.chainId !== undefined ? { chainId: k.chainId } : {}) });
+    out.push({ address: getAddress(k.address), backend: k.backend, kind, ...(k.chainId !== undefined ? { chainId: k.chainId } : {}), ...(kind === "recovered" && k.note ? { note: k.note } : {}) });
   };
   for (const k of cfg.previousControllers ?? []) add(k, "previous");
   for (const k of await readCandidates(home)) add(k, "additional");
+  for (const k of await readInventory(home)) add(k, "recovered");
   return out;
 }
+
+const KIND_TEXT: Record<KeptKind, string> = { additional: "not used yet", previous: "used before", recovered: "created, not recorded in the config" };
 
 function existingResult(home: string, c: NonNullable<UpConfig["controller"]>, warnings: string[]): VerbResult {
   const custody = custodyWarnings(c.backend, home);
@@ -213,15 +272,20 @@ export const initVerb = defineVerb({
       const latest = await freshConfig(ctx);
       if (latest.controller) return existingResult(ctx.home, latest.controller, ["another process created the controller key at the same time; kept that one"]);
 
-      const address = await backend.create();
+      // Recorded in keys/inventory.jsonl at creation, so it stays listed whatever happens next.
+      const address = await createRecorded(ctx.home, backend);
       const createdAt = new Date().toISOString();
-      const next: UpConfig = { ...latest, version: 1, controller: { address, backend: backend.id, createdAt } };
       try {
-        await ctx.saveConfig(next);
+        await ctx.updateConfig((cur) => {
+          if (cur.controller && !sameAddress(cur.controller.address, address)) {
+            throw new UpError("BAD_ARGS", `another process set the agent's key ${cur.controller.address} meanwhile; it was kept`);
+          }
+          return { ...cur, version: 1, controller: { address, backend: backend.id, createdAt } };
+        });
       } catch (e) {
-        // Keys are never deleted: the new key stays in its store and can still be recorded.
+        // Keys are never deleted: the new key stays in its store and in the recovery inventory.
         throw new UpError("INTERNAL", `the new key ${address} was created in ${backend.id} but the config could not be saved (${(e as Error).message})`, {
-          hint: `the key stays in its store; once the config is writable, record it with: up key activate ${address} --backend ${backend.id}`,
+          hint: `the key stays in its store and is listed by: up key address; record it with: up key activate ${address} --backend ${backend.id}`,
         });
       }
       ctx.log(`controller key created in ${backend.id}: ${address}`);
@@ -250,6 +314,13 @@ export const keyAddressVerb = defineVerb({
     const chainId = explicitChain(args) ? ctx.chainId(args.chain) : undefined;
     const c = chainId !== undefined ? controllerFor(cfg, chainId) : undefined;
     const def = cfg.controller;
+    if (!c && !def && otherKeys.length) {
+      // no key in use, but keys exist (e.g. created while saving the config failed): list them, never hide them
+      throw new UpError("NO_SIGNER", `no default key is configured, but the agent keeps these keys: ${otherKeys.map((k) => `${k.address} (${k.backend}, ${KIND_TEXT[k.kind]})`).join("; ")}`, {
+        hint: `use one of them with: up key activate <address>`,
+        details: { otherKeys },
+      });
+    }
     const used = c ?? requireController(cfg);
     const protection = internalBackend(used.backend).protectionInfo();
     const chainControllers = chainControllerList(cfg).map((k) => ({ chainId: k.chainId, address: k.address, backend: k.backend }));
@@ -267,7 +338,7 @@ export const keyAddressVerb = defineVerb({
       text: [
         chainId !== undefined ? `${used.address} (${used.backend}) — the agent's ${c?.scope === "chain" ? "own key" : "default key"} on ${chainText(ctx, chainId)}` : `${used.address} (${used.backend})`,
         ...perChainLines(ctx, cfg),
-        ...(otherKeys.length ? [`Other keys of the agent (kept in their store, never deleted): ${otherKeys.map((k) => `${k.address} (${k.backend}, ${k.kind === "additional" ? "not used yet" : `used before${k.chainId !== undefined ? ` on ${chainText(ctx, k.chainId)}` : ""}`})`).join("; ")}`] : []),
+        ...(otherKeys.length ? [`Other keys of the agent (kept in their store, never deleted): ${otherKeys.map((k) => `${k.address} (${k.backend}, ${KIND_TEXT[k.kind]}${k.kind === "previous" && k.chainId !== undefined ? ` on ${chainText(ctx, k.chainId)}` : ""}${k.note ? `; ${k.note}` : ""})`).join("; ")}`] : []),
       ].join("\n"),
     };
   },
@@ -443,15 +514,15 @@ export const keyNewCandidateVerb = defineVerb({
       return { data: { dryRun: true, backend: c.backend }, text: `Dry run: a new inactive key would be created in ${c.backend}.` };
     }
     const address = await withKeyLock(ctx.home, async () => {
-      const a = await backend.create();
+      await readCandidatesRaw(ctx.home); // a damaged candidates list stops here, before any key is created
+      // Recorded in keys/inventory.jsonl at creation, so it stays listed whatever happens next.
+      const a = await createRecorded(ctx.home, backend);
       try {
-        const list = await readCandidates(ctx.home);
-        list.push({ address: a, backend: c.backend, createdAt: new Date().toISOString() });
-        await writeCandidates(ctx.home, list);
+        await updateCandidates(ctx.home, (list) => [...list, { address: a, backend: c.backend, createdAt: new Date().toISOString() }]);
       } catch (e) {
-        // Keys are never deleted: the new key stays in its store; its address is reported here.
-        throw new UpError("INTERNAL", `the additional key ${a} was created in ${c.backend} but could not be recorded (${(e as Error).message})`, {
-          hint: `the key stays in its store; it can still be used with: up key activate ${a} --backend ${c.backend} (add --chain <id> for one network)`,
+        // Keys are never deleted: the new key stays in its store and in the recovery inventory.
+        throw new UpError("INTERNAL", `the additional key ${a} was created in ${c.backend} but could not be added to the candidates list (${(e as Error).message})`, {
+          hint: `the key stays in its store and is listed by: up key address; use it with: up key activate ${a} --backend ${c.backend} (add --chain <id> for one network)`,
         });
       }
       return a;
@@ -489,7 +560,8 @@ export const keyActivateVerb = defineVerb({
     const previous = cfg.previousControllers?.find((r) => sameAddress(r.address, address));
     const own = chainControllerList(cfg);
     const chainKey = own.find((k) => sameAddress(k.address, address));
-    const backendId: string | undefined = args.backend ?? cand?.backend ?? previous?.backend ?? chainKey?.backend ?? current?.backend;
+    const recorded = (await readInventory(ctx.home)).find((k) => sameAddress(k.address, address));
+    const backendId: string | undefined = args.backend ?? cand?.backend ?? previous?.backend ?? chainKey?.backend ?? recorded?.backend ?? current?.backend;
     if (!backendId) throw new UpError("BAD_ARGS", "cannot tell which key store holds this key; pass --backend", { hint: "run: up key backend" });
     const backend = internalBackend(backendId);
     if (!(await backend.has(address))) {
@@ -512,27 +584,28 @@ export const keyActivateVerb = defineVerb({
       return { data: { dryRun: true, address, backend: backendId, previous: current?.address ?? null }, text: `Dry run: ${address} (${backendId}) would become the active controller.` };
     }
 
+    const changed = () => new UpError("BAD_ARGS", "the active controller changed while waiting for approval; nothing was switched", { hint: "run: up key address, then decide again" });
     await withKeyLock(ctx.home, async () => {
       const latest = await freshConfig(ctx);
-      if (!sameAddress(latest.controller?.address, current?.address)) {
-        throw new UpError("BAD_ARGS", "the active controller changed while waiting for approval; nothing was switched", { hint: "run: up key address, then decide again" });
-      }
+      if (!sameKey(latest.controller?.address, current?.address)) throw changed();
       // Prove the key is usable (and really belongs to this address) before switching.
       await backend.load(address);
       const now = new Date().toISOString();
-      // the previous default key is kept: it stays in its store and stays listed
-      const previousList = (latest.previousControllers ?? []).filter((r) => !sameAddress(r.address, address));
-      if (current) previousList.push({ address: current.address, backend: current.backend, switchedAt: now });
-      const next: UpConfig = { ...latest, version: 1, controller: { address, backend: backendId, createdAt: cand?.createdAt ?? now }, previousControllers: previousList };
-      // a chain whose own key is now the default key simply uses the default
-      if (next.chainControllers) {
-        const kept = Object.fromEntries(Object.entries(next.chainControllers).filter(([, k]) => !sameAddress(k.address, address)));
-        if (Object.keys(kept).length) next.chainControllers = kept;
-        else delete next.chainControllers;
-      }
-      await ctx.saveConfig(next);
-      const fresh = await readCandidates(ctx.home);
-      if (fresh.some((k) => sameAddress(k.address, address))) await writeCandidates(ctx.home, fresh.filter((k) => !sameAddress(k.address, address)));
+      await ctx.updateConfig((cur) => {
+        if (!sameKey(cur.controller?.address, current?.address)) throw changed();
+        // the previous default key is kept: it stays in its store and stays listed
+        const previousList = (cur.previousControllers ?? []).filter((r) => !sameAddress(r.address, address) && !sameAddress(r.address, cur.controller?.address));
+        if (cur.controller) previousList.push({ address: cur.controller.address, backend: cur.controller.backend, switchedAt: now });
+        const next: UpConfig = { ...cur, version: 1, controller: { address, backend: backendId, createdAt: cand?.createdAt ?? recorded?.createdAt ?? now }, previousControllers: previousList };
+        // a chain whose own key is now the default key simply uses the default
+        if (next.chainControllers) {
+          const kept = Object.fromEntries(Object.entries(next.chainControllers).filter(([, k]) => !sameAddress(k.address, address)));
+          if (Object.keys(kept).length) next.chainControllers = kept;
+          else delete next.chainControllers;
+        }
+        return next;
+      });
+      await dropCandidate(ctx.home, address);
     });
     ctx.log(`active controller switched to ${address} (${backendId})`);
     const ownAfter = own.filter((k) => !sameAddress(k.address, address));
@@ -561,7 +634,8 @@ async function activateForChain(ctx: VerbContext, args: Record<string, any>, add
   const cand = candidates.find((k) => sameAddress(k.address, address));
   const previous = cfg.previousControllers?.find((r) => sameAddress(r.address, address));
   const usedElsewhere = chainControllerList(cfg).find((k) => sameAddress(k.address, address));
-  const backendId: string | undefined = args.backend ?? (toDefault ? def!.backend : undefined) ?? usedElsewhere?.backend ?? cand?.backend ?? previous?.backend ?? def?.backend;
+  const recorded = (await readInventory(ctx.home)).find((k) => sameAddress(k.address, address));
+  const backendId: string | undefined = args.backend ?? (toDefault ? def!.backend : undefined) ?? usedElsewhere?.backend ?? cand?.backend ?? previous?.backend ?? recorded?.backend ?? def?.backend;
   if (!backendId) throw new UpError("BAD_ARGS", "cannot tell which key store holds this key; pass --backend", { hint: "run: up key backend" });
   const backend = internalBackend(backendId);
   if (!(await backend.has(address))) {
@@ -585,29 +659,30 @@ async function activateForChain(ctx: VerbContext, args: Record<string, any>, add
     return { data: { dryRun: true, address, backend: backendId, chainId, previous: current?.address ?? null }, text: `Dry run: ${address} (${backendId}) would become the agent's key on ${where}.` };
   }
 
+  const changed = () => new UpError("BAD_ARGS", `the agent's key on ${where} changed while waiting for approval; nothing was switched`, { hint: `run: up key address --chain ${chainId}, then decide again` });
   await withKeyLock(ctx.home, async () => {
     const latest = await freshConfig(ctx);
-    if (!sameAddress(controllerFor(latest, chainId)?.address, current?.address)) {
-      throw new UpError("BAD_ARGS", `the agent's key on ${where} changed while waiting for approval; nothing was switched`, { hint: `run: up key address --chain ${chainId}, then decide again` });
-    }
+    if (!sameKey(controllerFor(latest, chainId)?.address, current?.address)) throw changed();
     await backend.load(address);
     const now = new Date().toISOString();
-    const own = { ...(latest.chainControllers ?? {}) };
-    const previousOwn = own[String(chainId)];
-    if (toDefault) delete own[String(chainId)];
-    else own[String(chainId)] = { address, backend: backendId, createdAt: cand?.createdAt ?? usedElsewhere?.createdAt ?? now };
-    let previousList = (latest.previousControllers ?? []).filter((r) => !sameAddress(r.address, address));
-    // the chain's previous own key is kept and listed (unless it is still in use as default or on another chain)
-    if (previousOwn && !sameAddress(previousOwn.address, latest.controller?.address) && !Object.values(own).some((k) => sameAddress(k.address, previousOwn.address))) {
-      previousList = [...previousList.filter((r) => !sameAddress(r.address, previousOwn.address)), { address: previousOwn.address, backend: previousOwn.backend, switchedAt: now, chainId }];
-    }
-    const next: UpConfig = { ...latest, version: 1, previousControllers: previousList.length ? previousList : undefined };
-    if (Object.keys(own).length) next.chainControllers = own;
-    else delete next.chainControllers;
-    if (!next.previousControllers) delete next.previousControllers;
-    await ctx.saveConfig(next);
-    const fresh = await readCandidates(ctx.home);
-    if (fresh.some((k) => sameAddress(k.address, address))) await writeCandidates(ctx.home, fresh.filter((k) => !sameAddress(k.address, address)));
+    await ctx.updateConfig((cur) => {
+      if (!sameKey(controllerFor(cur, chainId)?.address, current?.address)) throw changed();
+      const own = { ...(cur.chainControllers ?? {}) };
+      const previousOwn = own[String(chainId)];
+      if (toDefault) delete own[String(chainId)];
+      else own[String(chainId)] = { address, backend: backendId, createdAt: cand?.createdAt ?? usedElsewhere?.createdAt ?? recorded?.createdAt ?? now };
+      let previousList = (cur.previousControllers ?? []).filter((r) => !sameAddress(r.address, address));
+      // the chain's previous own key is kept and listed (unless it is still in use as default or on another chain)
+      if (previousOwn && !sameAddress(previousOwn.address, cur.controller?.address) && !Object.values(own).some((k) => sameAddress(k.address, previousOwn.address))) {
+        previousList = [...previousList.filter((r) => !sameAddress(r.address, previousOwn.address)), { address: previousOwn.address, backend: previousOwn.backend, switchedAt: now, chainId }];
+      }
+      const next: UpConfig = { ...cur, version: 1, previousControllers: previousList.length ? previousList : undefined };
+      if (Object.keys(own).length) next.chainControllers = own;
+      else delete next.chainControllers;
+      if (!next.previousControllers) delete next.previousControllers;
+      return next;
+    });
+    await dropCandidate(ctx.home, address);
   });
   ctx.log(`agent key on chain ${chainId} switched to ${address} (${backendId})`);
   return {

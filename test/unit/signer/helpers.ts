@@ -56,6 +56,11 @@ export function fakeContext(home: string, flags: Partial<Flags> = {}, initial: U
     saveConfig: async (c: UpConfig) => {
       cfg = structuredClone(c);
     },
+    updateConfig: async (fn: (latest: UpConfig) => UpConfig | void | Promise<UpConfig | void>) => {
+      const draft = structuredClone(cfg);
+      cfg = structuredClone((await fn(draft)) ?? draft);
+      return structuredClone(cfg);
+    },
     signer: async () => {
       throw new Error("not used");
     },

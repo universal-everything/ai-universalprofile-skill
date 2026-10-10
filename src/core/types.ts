@@ -228,7 +228,18 @@ export interface VerbContext {
   readonly registry: Registry;
   readonly rpc: RpcManager;
   config(): Promise<UpConfig>;
+  /**
+   * Saves the fields the caller changed relative to the config it read, merged into the latest
+   * config.json under the shared config lock (never writes back a stale copy; keys stay listed).
+   */
   saveConfig(cfg: UpConfig): Promise<void>;
+  /**
+   * Fresh read-modify-write under the shared config lock: `fn` gets the latest config.json and
+   * returns (or mutates) the next one. Keys listed before stay listed (keys are permanent).
+   */
+  updateConfig(fn: (latest: UpConfig) => UpConfig | void | Promise<UpConfig | void>): Promise<UpConfig>;
+  /** Drops the cached config and reads config.json again (used after taking the write lock). */
+  refreshConfig?(): Promise<UpConfig>;
   /**
    * Loads the controller signer for `chainId`: the chain's own key (config.chainControllers)
    * or the default key (config.controller). Without `chainId` the verb's chain (--chain or the

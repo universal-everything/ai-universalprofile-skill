@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 26e620016cbc (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint b9011cc052a4 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -20,6 +20,11 @@ var __export = (target, all) => {
 };
 
 // src/core/errors.ts
+var errors_exports = {};
+__export(errors_exports, {
+  UpError: () => UpError,
+  asUpError: () => asUpError
+});
 function asUpError(e) {
   if (e instanceof UpError) return e;
   const msg = e instanceof Error ? e.message : String(e);
@@ -259,7 +264,7 @@ var init_json = __esm({
 });
 
 // src/core/home.ts
-import { mkdir, readFile, rename, writeFile, chmod, stat } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, readFile, rename, writeFile, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -296,6 +301,34 @@ async function writeJson(file2, value) {
   const { toJson: toJson2 } = await Promise.resolve().then(() => (init_json(), json_exports));
   await writeFileAtomic(file2, toJson2(value) + "\n");
 }
+async function readJsonStrict(file2, fallback) {
+  let text;
+  try {
+    text = await readFile(file2, "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT") return fallback;
+    const { UpError: UpError2 } = await Promise.resolve().then(() => (init_errors(), errors_exports));
+    throw new UpError2("INTERNAL", `cannot read ${file2} (${e.code ?? "error"}); nothing was changed`, { hint: `fix its permissions or restore it (a previous copy may be at ${file2}.bak)` });
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    const { UpError: UpError2 } = await Promise.resolve().then(() => (init_errors(), errors_exports));
+    throw new UpError2("INTERNAL", `${file2} is not valid JSON; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${file2}.bak); never delete it: it lists the agent's keys` });
+  }
+}
+async function writeJsonWithBackup(file2, value) {
+  if (existsSync(file2)) {
+    await copyFile(file2, `${file2}.bak`);
+    if (process.platform !== "win32") await chmod(`${file2}.bak`, 384).catch(() => {
+    });
+  }
+  await writeJson(file2, value);
+}
+async function appendLine(file2, line) {
+  await ensureDir(dirname(file2));
+  await appendFile(file2, line.endsWith("\n") ? line : line + "\n", { mode: 384 });
+}
 var paths;
 var init_home = __esm({
   "src/core/home.ts"() {
@@ -325,7 +358,7 @@ __export(policy_exports, {
   requireConsent: () => requireConsent,
   savePolicy: () => savePolicy
 });
-import { appendFile } from "node:fs/promises";
+import { appendFile as appendFile2 } from "node:fs/promises";
 import { toFunctionSelector } from "./vendor-viem.mjs";
 async function loadPolicy(home) {
   return { ...DEFAULT_POLICY, ...await readJson(paths.policy(home), {}) };
@@ -380,7 +413,7 @@ async function requireConsent(home, flags, req) {
     });
   }
   await ensureDir(home);
-  await appendFile(paths.audit(home), toJson({ at: (/* @__PURE__ */ new Date()).toISOString(), decision, approval: flags.approval, ...block }, false) + "\n", { mode: 384 });
+  await appendFile2(paths.audit(home), toJson({ at: (/* @__PURE__ */ new Date()).toISOString(), decision, approval: flags.approval, ...block }, false) + "\n", { mode: 384 });
 }
 var VALUE_MOVING_SIGNATURES, VALUE_MOVING_SELECTORS, ALWAYS_HUMAN_VERBS, DEFAULT_POLICY;
 var init_policy = __esm({
@@ -5003,18 +5036,18 @@ var init_base = __esm({
         try {
           readBack2 = normalizePrivateKey(await this.readSecret(id));
         } catch (e) {
-          await this.deleteSecret(id).catch(() => {
-          });
           const inner = e instanceof UpError ? e : void 0;
-          throw new UpError(inner?.code ?? "SIGNER_LOCKED", `${this.label}: the new key was stored but could not be read back (${inner?.message ?? "unknown error"}); it was discarded`, {
-            hint: inner?.hint ?? `run: up key backend`,
+          throw new UpError(inner?.code ?? "SIGNER_LOCKED", `${this.label}: the new key ${address} was stored but could not be read back (${inner?.message ?? "unknown error"}); it was kept in the store, nothing was deleted`, {
+            hint: inner?.hint ?? `run: up key backend; the key stays listed (up key address)`,
+            details: { address, backend: this.id, kept: true, problem: "read-back-failed" },
             cause: e instanceof UpError ? e : void 0
           });
         }
         if (readBack2 !== key) {
-          await this.deleteSecret(id).catch(() => {
+          throw new UpError("SIGNER_LOCKED", `${this.label}: WARNING: the stored key for ${address} did not read back identically; it was kept in the store (nothing deleted) and must not be used until checked`, {
+            hint: "run: up key backend; the key stays listed (up key address)",
+            details: { address, backend: this.id, kept: true, problem: "read-back-mismatch" }
           });
-          throw new UpError("SIGNER_LOCKED", `${this.label}: the stored key did not read back identically; the item was removed`, { hint: "run: up key backend" });
         }
         return address;
       }
@@ -6096,6 +6129,91 @@ var init_signer = __esm({
   }
 });
 
+// src/core/lock.ts
+import { writeFile as writeFile3, link, readFile as readFile5, unlink, mkdir as mkdir2, stat as stat3, open } from "node:fs/promises";
+import { randomBytes as randomBytes4 } from "node:crypto";
+import { join as join7 } from "node:path";
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e?.code === "EPERM";
+  }
+}
+async function withLock(home, name, fn) {
+  const dir = join7(home, "locks");
+  await mkdir2(dir, { recursive: true, mode: 448 });
+  const file2 = join7(dir, `${name}.lock`);
+  const started = Date.now();
+  let delay = 50;
+  for (; ; ) {
+    const tmp = `${file2}.${process.pid}.${randomBytes4(4).toString("hex")}`;
+    await writeFile3(tmp, JSON.stringify({ pid: process.pid, at: Date.now() }), { mode: 384 });
+    try {
+      await link(tmp, file2);
+      await unlink(tmp).catch(() => {
+      });
+      break;
+    } catch (e) {
+      await unlink(tmp).catch(() => {
+      });
+      if (["EPERM", "ENOTSUP", "ENOSYS", "EXDEV", "EOPNOTSUPP"].includes(e?.code)) {
+        try {
+          const fh = await open(file2, "wx", 384);
+          await fh.writeFile(JSON.stringify({ pid: process.pid, at: Date.now() }));
+          await fh.close();
+          break;
+        } catch (e2) {
+          if (e2?.code !== "EEXIST") throw e2;
+        }
+      } else if (e?.code !== "EEXIST") throw e;
+    }
+    let stale = false;
+    try {
+      const info = JSON.parse(await readFile5(file2, "utf8"));
+      stale = !alive(info.pid) || Date.now() - info.at > STALE_MS;
+    } catch {
+      const st = await stat3(file2).catch(() => void 0);
+      stale = st ? Date.now() - st.mtimeMs > 3e4 : true;
+    }
+    if (stale) {
+      const again = await readFile5(file2, "utf8").catch(() => void 0);
+      const st = await stat3(file2).catch(() => void 0);
+      if (again !== void 0 && st && (() => {
+        try {
+          const i = JSON.parse(again);
+          return !alive(i.pid) || Date.now() - i.at > STALE_MS;
+        } catch {
+          return Date.now() - st.mtimeMs > 3e4;
+        }
+      })()) {
+        await unlink(file2).catch(() => {
+        });
+      }
+      continue;
+    }
+    if (Date.now() - started > WAIT_MS) throw new UpError("INTERNAL", `another up process is still sending (lock ${file2})`, { hint: "wait for it to finish, then retry" });
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay * 2, 1e3);
+  }
+  try {
+    return await fn();
+  } finally {
+    await unlink(file2).catch(() => {
+    });
+  }
+}
+var STALE_MS, WAIT_MS;
+var init_lock = __esm({
+  "src/core/lock.ts"() {
+    "use strict";
+    init_errors();
+    STALE_MS = Number(process.env.UP_LOCK_STALE_MS ?? 15 * 6e4);
+    WAIT_MS = Number(process.env.UP_LOCK_WAIT_MS ?? 10 * 6e4);
+  }
+});
+
 // src/core/token-guard.ts
 var token_guard_exports = {};
 __export(token_guard_exports, {
@@ -6204,91 +6322,6 @@ var init_token_guard = __esm({
     NFT_IDS = ["0x80ac58cd", "0xd9b67a26"];
     probeAbi = parseAbi3(["function supportsInterface(bytes4) view returns (bool)", "function totalSupply() view returns (uint256)", "function balanceOf(address) view returns (uint256)"]);
     cache = /* @__PURE__ */ new Map();
-  }
-});
-
-// src/core/lock.ts
-import { writeFile as writeFile3, link, readFile as readFile5, unlink, mkdir as mkdir2, stat as stat3, open } from "node:fs/promises";
-import { randomBytes as randomBytes4 } from "node:crypto";
-import { join as join7 } from "node:path";
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e?.code === "EPERM";
-  }
-}
-async function withLock(home, name, fn) {
-  const dir = join7(home, "locks");
-  await mkdir2(dir, { recursive: true, mode: 448 });
-  const file2 = join7(dir, `${name}.lock`);
-  const started = Date.now();
-  let delay = 50;
-  for (; ; ) {
-    const tmp = `${file2}.${process.pid}.${randomBytes4(4).toString("hex")}`;
-    await writeFile3(tmp, JSON.stringify({ pid: process.pid, at: Date.now() }), { mode: 384 });
-    try {
-      await link(tmp, file2);
-      await unlink(tmp).catch(() => {
-      });
-      break;
-    } catch (e) {
-      await unlink(tmp).catch(() => {
-      });
-      if (["EPERM", "ENOTSUP", "ENOSYS", "EXDEV", "EOPNOTSUPP"].includes(e?.code)) {
-        try {
-          const fh = await open(file2, "wx", 384);
-          await fh.writeFile(JSON.stringify({ pid: process.pid, at: Date.now() }));
-          await fh.close();
-          break;
-        } catch (e2) {
-          if (e2?.code !== "EEXIST") throw e2;
-        }
-      } else if (e?.code !== "EEXIST") throw e;
-    }
-    let stale = false;
-    try {
-      const info = JSON.parse(await readFile5(file2, "utf8"));
-      stale = !alive(info.pid) || Date.now() - info.at > STALE_MS;
-    } catch {
-      const st = await stat3(file2).catch(() => void 0);
-      stale = st ? Date.now() - st.mtimeMs > 3e4 : true;
-    }
-    if (stale) {
-      const again = await readFile5(file2, "utf8").catch(() => void 0);
-      const st = await stat3(file2).catch(() => void 0);
-      if (again !== void 0 && st && (() => {
-        try {
-          const i = JSON.parse(again);
-          return !alive(i.pid) || Date.now() - i.at > STALE_MS;
-        } catch {
-          return Date.now() - st.mtimeMs > 3e4;
-        }
-      })()) {
-        await unlink(file2).catch(() => {
-        });
-      }
-      continue;
-    }
-    if (Date.now() - started > WAIT_MS) throw new UpError("INTERNAL", `another up process is still sending (lock ${file2})`, { hint: "wait for it to finish, then retry" });
-    await new Promise((r) => setTimeout(r, delay));
-    delay = Math.min(delay * 2, 1e3);
-  }
-  try {
-    return await fn();
-  } finally {
-    await unlink(file2).catch(() => {
-    });
-  }
-}
-var STALE_MS, WAIT_MS;
-var init_lock = __esm({
-  "src/core/lock.ts"() {
-    "use strict";
-    init_errors();
-    STALE_MS = Number(process.env.UP_LOCK_STALE_MS ?? 15 * 6e4);
-    WAIT_MS = Number(process.env.UP_LOCK_WAIT_MS ?? 10 * 6e4);
   }
 });
 
@@ -7127,7 +7160,7 @@ var init_permissions = __esm({
 });
 
 // src/lsp/allowed.ts
-import { getAddress as getAddress12, isAddress as isAddress9 } from "./vendor-viem.mjs";
+import { getAddress as getAddress13, isAddress as isAddress10 } from "./vendor-viem.mjs";
 function hex4(v, field) {
   if (v === void 0 || v === "*" || v === "any") return WILDCARD_BYTES4;
   const s = strip(v);
@@ -7156,7 +7189,7 @@ function normaliseAllowedCall(input) {
   const rawAddr = i.address ?? i.to;
   let address;
   if (rawAddr === void 0 || rawAddr === "*" || rawAddr === "any" || strip(rawAddr) === "f".repeat(40)) address = WILDCARD_ADDRESS;
-  else if (isAddress9(rawAddr, { strict: false })) address = getAddress12(rawAddr);
+  else if (isAddress10(rawAddr, { strict: false })) address = getAddress13(rawAddr);
   else throw new Error(`AllowedCalls address must be an address or "*", got "${rawAddr}"`);
   return {
     callTypes: parseCallTypes(i.callTypes),
@@ -7203,7 +7236,7 @@ function decodeAllowedCalls(value) {
     const address = "0x" + e.slice(8, 48);
     out.push({
       callTypes: parseInt(e.slice(0, 8), 16) >>> 0,
-      address: isWildcardAddress(address) ? WILDCARD_ADDRESS : getAddress12(address),
+      address: isWildcardAddress(address) ? WILDCARD_ADDRESS : getAddress13(address),
       standard: "0x" + e.slice(48, 56),
       selector: "0x" + e.slice(56, 64)
     });
@@ -7259,17 +7292,17 @@ var init_allowed = __esm({
 });
 
 // src/lsp/profile.ts
-import { getAddress as getAddress13, isAddress as isAddress10, keccak256 as keccak2568, toBytes, zeroAddress } from "./vendor-viem.mjs";
+import { getAddress as getAddress14, isAddress as isAddress11, keccak256 as keccak2568, toBytes, zeroAddress } from "./vendor-viem.mjs";
 import { ERC725 } from "./vendor-erc725.mjs";
 async function resolveKeyManager(ctx, chainId, profile) {
   if (!await hasCode(ctx, chainId, profile)) {
     throw new UpError("NOT_DEPLOYED", `no contract at ${profile} on chain ${chainId}`, { hint: `deploy it there (up account deploy --profile ${profile} --chain ${chainId}) or pick the chain where it exists` });
   }
-  const owner = getAddress13(await read2(ctx, chainId, profile, UP_ABI, "owner"));
+  const owner = getAddress14(await read2(ctx, chainId, profile, UP_ABI, "owner"));
   if (owner === zeroAddress) return { chainId, profile, owner, ownerKind: "none" };
   if (!await hasCode(ctx, chainId, owner)) return { chainId, profile, owner, ownerKind: "eoa" };
   const target = await tryRead2(ctx, chainId, owner, KM_ABI, "target");
-  if (target && getAddress13(target) === profile) {
+  if (target && getAddress14(target) === profile) {
     const v = await tryRead2(ctx, chainId, owner, KM_ABI, "VERSION");
     return { chainId, profile, owner, ownerKind: "key-manager", keyManager: owner, keyManagerVersion: v };
   }
@@ -7333,7 +7366,7 @@ async function readControllers(ctx, chainId, profile, opts = {}) {
   const addrs2 = [];
   const invalidEntries = [];
   entries.forEach((v, i) => {
-    if (v && v.length === 42 && isAddress10(v, { strict: false })) addrs2.push({ index: i, address: getAddress13(v) });
+    if (v && v.length === 42 && isAddress11(v, { strict: false })) addrs2.push({ index: i, address: getAddress14(v) });
     else invalidEntries.push({ index: i, value: v });
   });
   const keys = addrs2.flatMap((a) => [permissionsKey(a.address), allowedCallsKey(a.address), allowedDataKeysKey(a.address)]);
@@ -7349,7 +7382,7 @@ function decodeExtensionValue(selector, raw) {
   return {
     selector,
     label: KNOWN_EXTENSION_SELECTORS[selector.toLowerCase()],
-    address: s.length >= 40 ? getAddress13("0x" + s.slice(0, 40)) : void 0,
+    address: s.length >= 40 ? getAddress14("0x" + s.slice(0, 40)) : void 0,
     forwardsValue: s.length === 42 && s.slice(40, 42) === "01",
     raw
   };
@@ -7415,7 +7448,7 @@ async function readProfileInfo(ctx, chainId, profile, opts = {}) {
   if (ctl.invalidEntries.length) warnings.push(`${ctl.invalidEntries.length} AddressPermissions[] entr${ctl.invalidEntries.length === 1 ? "y is" : "ies are"} not a 20-byte address`);
   if (ctl.truncated) warnings.push(`only the first ${ctl.controllers.length} of ${ctl.length} controllers were read`);
   const [urdRaw, lsp3Raw, lsp5Len, lsp12Len] = await getDataBatch(ctx, chainId, profile, [DATA_KEYS.LSP1UniversalReceiverDelegate, DATA_KEYS.LSP3Profile, DATA_KEYS["LSP5ReceivedAssets[]"], DATA_KEYS["LSP12IssuedAssets[]"]]);
-  const urd = urdRaw && urdRaw.length === 42 ? getAddress13(urdRaw) : void 0;
+  const urd = urdRaw && urdRaw.length === 42 ? getAddress14(urdRaw) : void 0;
   if (!urd) warnings.push("no LSP1 Universal Receiver Delegate set: received tokens are not registered in LSP5ReceivedAssets");
   const extensions = await readExtensions(ctx, chainId, profile, opts.extensions);
   let lsp3 = decodeLsp3(lsp3Raw);
@@ -7427,7 +7460,7 @@ async function readProfileInfo(ctx, chainId, profile, opts = {}) {
     version,
     balance: (await getBalance(ctx, chainId, profile)).toString(),
     km,
-    pendingOwner: pending && pending !== zeroAddress ? getAddress13(pending) : void 0,
+    pendingOwner: pending && pending !== zeroAddress ? getAddress14(pending) : void 0,
     interfaces,
     keyManagerInterfaces,
     controllers: ctl.controllers,
@@ -7456,12 +7489,12 @@ var init_profile = __esm({
 });
 
 // src/relayer/client.ts
-import { encodePacked, getAddress as getAddress14, keccak256 as keccak2569 } from "./vendor-viem.mjs";
+import { encodePacked, getAddress as getAddress15, keccak256 as keccak2569 } from "./vendor-viem.mjs";
 function joinUrl(base, path) {
   return base.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
 }
 function quotaMessageHash(address, timestamp, chainId) {
-  return chainId === void 0 ? keccak2569(encodePacked(["address", "uint256"], [getAddress14(address), BigInt(timestamp)])) : keccak2569(encodePacked(["address", "uint256", "uint256"], [getAddress14(address), BigInt(timestamp), BigInt(chainId)]));
+  return chainId === void 0 ? keccak2569(encodePacked(["address", "uint256"], [getAddress15(address), BigInt(timestamp)])) : keccak2569(encodePacked(["address", "uint256", "uint256"], [getAddress15(address), BigInt(timestamp), BigInt(chainId)]));
 }
 async function signQuota(signer, subject, timestamp, chainId) {
   const hash = quotaMessageHash(subject, timestamp, chainId);
@@ -7604,7 +7637,7 @@ var init_client = __esm({
         const live = this.entry.profile === "lukso-live";
         const nonce = live ? req.transaction.nonce <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(req.transaction.nonce) : req.transaction.nonce.toString() : "0x" + req.transaction.nonce.toString(16);
         const body = {
-          address: getAddress14(req.address),
+          address: getAddress15(req.address),
           ...live ? {} : { chainId: req.chainId },
           transaction: { abi: req.transaction.abi, signature: req.transaction.signature, nonce, validityTimestamps: "0x" + req.transaction.validityTimestamps.toString(16) }
         };
@@ -7632,7 +7665,7 @@ var init_client = __esm({
         }
         const caps = opts.caps;
         const v2 = !!caps?.quotaSignatureVersions?.includes(2) && (caps.quotaScope === "perChain" || caps.quotaScope === "both");
-        const subject = caps?.quotaSubject === "profile" && opts.profile ? getAddress14(opts.profile) : signer.address;
+        const subject = caps?.quotaSubject === "profile" && opts.profile ? getAddress15(opts.profile) : signer.address;
         const timestamp = Math.floor((opts.now ?? Date.now()) / 1e3);
         const { signature } = await signQuota(signer, subject, timestamp, v2 ? opts.chainId : void 0);
         const body = { address: subject, chainId: opts.chainId, timestamp, signature, ...v2 ? { quotaSignatureVersion: 2 } : {} };
@@ -7716,13 +7749,13 @@ var init_registry2 = __esm({
 });
 
 // src/lsp/controllers.ts
-import { encodeFunctionData as encodeFunctionData5, getAddress as getAddress15 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData5, getAddress as getAddress16 } from "./vendor-viem.mjs";
 function setDataPayload(keys, values) {
   if (keys.length !== values.length || keys.length === 0) throw new UpError("BAD_ARGS", "setData needs matching, non-empty keys and values");
   return keys.length === 1 ? encodeFunctionData5({ abi: UP_ABI, functionName: "setData", args: [keys[0], values[0]] }) : encodeFunctionData5({ abi: UP_ABI, functionName: "setDataBatch", args: [keys, values] });
 }
 function find(state, address) {
-  const a = getAddress15(address);
+  const a = getAddress16(address);
   return state.controllers.find((c) => c.address === a);
 }
 function allowedWrites(address, spec, keys, values, warnings, summary) {
@@ -7743,7 +7776,7 @@ function finish(keys, values, summary, warnings) {
   return { keys, values, payload: setDataPayload(keys, values), summary: { ...summary, dataKeys: keys, dataValues: values }, warnings };
 }
 function buildAddController(state, address, spec) {
-  const addr2 = getAddress15(address);
+  const addr2 = getAddress16(address);
   const existing = find(state, addr2);
   if (existing && existing.permissions.value !== 0n) throw new UpError("BAD_ARGS", `${addr2} is already a controller (${existing.permissions.names.join(", ")})`, { hint: "use: up controller edit" });
   if (spec.permissions === 0n) throw new UpError("BAD_ARGS", "refusing to add a controller with no permissions");
@@ -7776,7 +7809,7 @@ function buildAddController(state, address, spec) {
   return finish(keys, values, summary, warnings);
 }
 function buildEditController(state, address, spec) {
-  const addr2 = getAddress15(address);
+  const addr2 = getAddress16(address);
   const existing = find(state, addr2);
   const current = existing?.permissions.value ?? 0n;
   if (current === 0n) throw new UpError("BAD_ARGS", `${addr2} is not a controller on this chain`, { hint: "use: up controller add" });
@@ -7800,7 +7833,7 @@ function buildEditController(state, address, spec) {
   return finish(keys, values, summary, warnings);
 }
 function buildRemoveController(state, address) {
-  const addr2 = getAddress15(address);
+  const addr2 = getAddress16(address);
   const existing = find(state, addr2);
   if (!existing || existing.permissions.value === 0n && existing.index === void 0) throw new UpError("BAD_ARGS", `${addr2} is not a controller on this chain`);
   if (state.truncated) throw new UpError("NOT_SUPPORTED", "the controller list is too long to rewrite safely in one step");
@@ -7831,7 +7864,7 @@ function buildRemoveController(state, address) {
 function adminControllers(state, override) {
   const out = [];
   for (const c of state.controllers) {
-    const p = override && c.address === getAddress15(override.address) ? override.permissions : c.permissions.value;
+    const p = override && c.address === getAddress16(override.address) ? override.permissions : c.permissions.value;
     if (p !== null && (p & ADMIN_PERMISSIONS) !== 0n) out.push(c.address);
   }
   return out;
@@ -7857,11 +7890,11 @@ function recommend(controller, profile, opts = {}) {
   const d = decodePermissions(perms);
   const all = ["CHANGEOWNER", "ADDCONTROLLER", "EDITPERMISSIONS", "ADDEXTENSIONS", "CHANGEEXTENSIONS", "ADDUNIVERSALRECEIVERDELEGATE", "CHANGEUNIVERSALRECEIVERDELEGATE", "SUPER_CALL", "SUPER_TRANSFERVALUE", "SUPER_SETDATA", "DEPLOY", "REENTRANCY", "DELEGATECALL"];
   const notAllowed = all.filter((n) => !d.names.includes(n));
-  const ctl = getAddress15(controller);
+  const ctl = getAddress16(controller);
   const encodedCalls = encodeAllowedCalls(entries);
   const encodedKeys = encodeAllowedDataKeys(keys);
   const lines = [
-    `Please authorise the agent's controller address ${ctl}${profile ? ` on Universal Profile ${getAddress15(profile)}` : ""} on every network you want it to act on.`,
+    `Please authorise the agent's controller address ${ctl}${profile ? ` on Universal Profile ${getAddress16(profile)}` : ""} on every network you want it to act on.`,
     `Recommended permissions (${preset.name}): ${d.names.join(", ")}`,
     `Permission value (bytes32): ${d.hex}`,
     "What the agent CAN do:",
@@ -7912,7 +7945,7 @@ __export(multichain_exports, {
   saveStatusSnapshot: () => saveStatusSnapshot,
   withChainContext: () => withChainContext
 });
-import { formatEther, getAddress as getAddress16, isAddress as isAddress11 } from "./vendor-viem.mjs";
+import { formatEther, getAddress as getAddress17, isAddress as isAddress12 } from "./vendor-viem.mjs";
 function chainLabel(ctx, chainId) {
   try {
     const c = ctx.registry.chain(chainId);
@@ -7957,7 +7990,7 @@ async function readChainStatus(ctx, identity, chainId, opts = {}) {
     chain: l.name,
     chainArg: l.arg,
     nativeSymbol: l.nativeSymbol,
-    profile: getAddress16(identity),
+    profile: getAddress17(identity),
     linked: false,
     lspContracts: l.lspDeployed,
     deployed: false,
@@ -7968,7 +8001,7 @@ async function readChainStatus(ctx, identity, chainId, opts = {}) {
   };
   try {
     s.profile = await profileAddressOn(ctx.home, identity, chainId);
-    s.linked = s.profile !== getAddress16(identity);
+    s.linked = s.profile !== getAddress17(identity);
     let key;
     try {
       const k = controllerFor(cfg, chainId);
@@ -8006,7 +8039,11 @@ async function readChainStatus(ctx, identity, chainId, opts = {}) {
         s.controller.lowGas = gasPrice !== void 0 ? keyBalance < gasPrice * DIRECT_ACTION_GAS : keyBalance === 0n;
       }
       s.relayUsable = !!s.relayer && s.controller.canRelay;
-      if (deployed && s.keyManager && !s.controller.isController) s.otherLocalController = await otherLocalController(ctx, cfg, chainId, s.profile, key.address);
+      if (deployed && s.keyManager && !s.controller.isController) {
+        const missing = [];
+        s.otherLocalController = await otherLocalController(ctx, cfg, chainId, s.profile, key.address, missing);
+        if (missing.length) s.missingLocalControllers = missing;
+      }
     }
   } catch (e) {
     s.error = e.message;
@@ -8016,15 +8053,22 @@ async function readChainStatus(ctx, identity, chainId, opts = {}) {
   s.nextSteps = nextStepsFor(s);
   return s;
 }
-async function otherLocalController(ctx, cfg, chainId, profile, except) {
-  const candidates = /* @__PURE__ */ new Set();
-  if (cfg.controller?.address) candidates.add(getAddress16(cfg.controller.address));
-  for (const c of Object.values(cfg.chainControllers ?? {})) if (c?.address) candidates.add(getAddress16(c.address));
-  for (const c of cfg.previousControllers ?? []) if (c?.address && isAddress11(c.address, { strict: false })) candidates.add(getAddress16(c.address));
-  candidates.delete(getAddress16(except));
-  for (const a of candidates) {
+async function otherLocalController(ctx, cfg, chainId, profile, except, missing = []) {
+  const candidates = /* @__PURE__ */ new Map();
+  const add2 = (c) => {
+    if (c?.address && typeof c.backend === "string" && isAddress12(c.address, { strict: false }) && !candidates.has(getAddress17(c.address))) candidates.set(getAddress17(c.address), c.backend);
+  };
+  add2(cfg.controller);
+  for (const c of Object.values(cfg.chainControllers ?? {})) add2(c);
+  for (const c of cfg.previousControllers ?? []) add2(c);
+  candidates.delete(getAddress17(except));
+  const { internalBackend: internalBackend2 } = await Promise.resolve().then(() => (init_signer(), signer_exports));
+  for (const [a, backend] of candidates) {
     const p = await readControllerPermissions(ctx, chainId, profile, a).catch(() => void 0);
-    if (p && p.permissions.value !== 0n) return { address: a, permissions: p.permissions.names };
+    if (!p || p.permissions.value === 0n) continue;
+    const present = await Promise.resolve().then(() => internalBackend2(backend).has(a)).catch(() => false);
+    if (present) return { address: a, permissions: p.permissions.names };
+    missing.push({ address: a, backend });
   }
   return void 0;
 }
@@ -8052,6 +8096,7 @@ function nextStepsFor(s) {
   if (!c.isController) {
     const steps2 = [`ask the human to authorise this agent's key ${c.address} on ${where} (permissions are per chain; a grant on another chain does not count here): up permissions recommend --chain ${arg} prints the recommended set to hand over`];
     if (s.otherLocalController) steps2.push(`or use the agent's key ${s.otherLocalController.address}, which already is a controller on ${s.chain}: up key activate ${s.otherLocalController.address} --chain ${arg} (needs the human's approval)`);
+    for (const m of s.missingLocalControllers ?? []) steps2.push(`the agent's key ${m.address} is a controller on ${s.chain} but missing from ${m.backend}: restore it from its backup (it stays listed; never replaced)`);
     return steps2;
   }
   const steps = [];
@@ -8437,9 +8482,9 @@ __export(lsp23_exports, {
   verifyManifest: () => verifyManifest,
   writeProfileRecord: () => writeProfileRecord
 });
-import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData12, encodePacked as encodePacked3, formatEther as formatEther4, getAddress as getAddress22, getContractAddress, keccak256 as keccak25613 } from "./vendor-viem.mjs";
+import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData12, encodePacked as encodePacked3, formatEther as formatEther4, getAddress as getAddress23, getContractAddress, keccak256 as keccak25613 } from "./vendor-viem.mjs";
 function erc1167InitCode(implementation) {
-  return concat3(["0x3d602d80600a3d3981f3363d3d373d3d3d363d73", getAddress22(implementation), "0x5af43d82803e903d91602b57fd5bf3"]);
+  return concat3(["0x3d602d80600a3d3981f3363d3d373d3d3d363d73", getAddress23(implementation), "0x5af43d82803e903d91602b57fd5bf3"]);
 }
 function resolveImplementations(inputs) {
   const v = inputs.implementationVersion ?? DEFAULT_IMPL_VERSION;
@@ -8449,19 +8494,19 @@ function resolveImplementations(inputs) {
   if (!upInit || !kmInit || !urd) throw new UpError("BAD_ARGS", `no canonical UP/KM/URD implementation for version ${v}`, { hint: `known versions: ${Object.keys(LSP.UP_INIT).join(", ")}` });
   return {
     version: v,
-    factory: getAddress22(inputs.factory ?? LSP.LSP23_FACTORY),
-    postDeploymentModule: getAddress22(inputs.postDeploymentModule ?? LSP.UP_INIT_POST_DEPLOYMENT_MODULE),
-    upInit: getAddress22(upInit),
-    kmInit: getAddress22(kmInit),
-    urd: getAddress22(urd)
+    factory: getAddress23(inputs.factory ?? LSP.LSP23_FACTORY),
+    postDeploymentModule: getAddress23(inputs.postDeploymentModule ?? LSP.UP_INIT_POST_DEPLOYMENT_MODULE),
+    upInit: getAddress23(upInit),
+    kmInit: getAddress23(kmInit),
+    urd: getAddress23(urd)
   };
 }
 function buildInitialData(controller, permissions, urd, opts = {}) {
-  const controllers = [{ address: getAddress22(controller), permissions }, ...(opts.extraControllers ?? []).map((c) => ({ address: getAddress22(c.address), permissions: c.permissions }))];
+  const controllers = [{ address: getAddress23(controller), permissions }, ...(opts.extraControllers ?? []).map((c) => ({ address: getAddress23(c.address), permissions: c.permissions }))];
   const seen = /* @__PURE__ */ new Set();
   for (const c of controllers) {
     if (seen.has(c.address)) throw new UpError("BAD_ARGS", `controller ${c.address} listed twice`);
-    if (c.address === getAddress22(urd)) throw new UpError("BAD_ARGS", "a controller cannot be the Universal Receiver Delegate");
+    if (c.address === getAddress23(urd)) throw new UpError("BAD_ARGS", "a controller cannot be the Universal Receiver Delegate");
     if (!/^0x[0-9a-fA-F]{64}$/.test(c.permissions) || BigInt(c.permissions) === 0n) throw new UpError("BAD_ARGS", `controller ${c.address} needs a non-zero bytes32 permission value`);
     seen.add(c.address);
   }
@@ -8472,12 +8517,12 @@ function buildInitialData(controller, permissions, urd, opts = {}) {
     dataValues.push(opts.lsp3);
   }
   dataKeys.push(DATA_KEYS.LSP1UniversalReceiverDelegate, permissionsKey(urd));
-  dataValues.push(getAddress22(urd).toLowerCase(), toBytes32(URD_PERMISSIONS));
+  dataValues.push(getAddress23(urd).toLowerCase(), toBytes32(URD_PERMISSIONS));
   for (const c of controllers) {
     dataKeys.push(permissionsKey(c.address));
     dataValues.push(c.permissions.toLowerCase());
   }
-  const listed = [...controllers.map((c) => c.address), getAddress22(urd)];
+  const listed = [...controllers.map((c) => c.address), getAddress23(urd)];
   dataKeys.push(DATA_KEYS["AddressPermissions[]"]);
   dataValues.push(uint128Hex(listed.length));
   listed.forEach((a, i) => {
@@ -8545,7 +8590,7 @@ async function computeOnChain(ctx, chainId, plan) {
   const p = { ...plan.primaryContractDeploymentInit, fundingAmount: 0n };
   const s = { ...plan.secondaryContractDeploymentInit, fundingAmount: 0n };
   const [profile, keyManager] = await read2(ctx, chainId, plan.factory, LSP23_ABI, "computeERC1167Addresses", [p, s, plan.postDeploymentModule, plan.postDeploymentModuleCalldata]);
-  return { profile: getAddress22(profile), keyManager: getAddress22(keyManager) };
+  return { profile: getAddress23(profile), keyManager: getAddress23(keyManager) };
 }
 function manifestFromPlan(inputs, plan, extra = {}) {
   const { deployCalldata, ...rest } = plan;
@@ -8554,7 +8599,7 @@ function manifestFromPlan(inputs, plan, extra = {}) {
     kind: "lsp23-erc1167-up",
     profile: plan.profile,
     keyManager: plan.keyManager,
-    controller: getAddress22(inputs.controller),
+    controller: getAddress23(inputs.controller),
     preset: inputs.preset,
     permissions: inputs.permissions,
     permissionNames: decodePermissions(inputs.permissions).names,
@@ -8590,7 +8635,7 @@ function verifyManifest(m) {
     functionName: "deployERC1167Proxies",
     args: [{ ...p.primaryContractDeploymentInit, fundingAmount: 0n }, { ...p.secondaryContractDeploymentInit, fundingAmount: 0n }, p.postDeploymentModule, p.postDeploymentModuleCalldata]
   });
-  const ok = c.profile === getAddress22(m.profile) && c.keyManager === getAddress22(m.keyManager) && deploy.toLowerCase() === m.deployCalldata.toLowerCase();
+  const ok = c.profile === getAddress23(m.profile) && c.keyManager === getAddress23(m.keyManager) && deploy.toLowerCase() === m.deployCalldata.toLowerCase();
   return { ok, profile: c.profile, keyManager: c.keyManager };
 }
 async function checkPrerequisites(ctx, chainId, plan) {
@@ -8612,8 +8657,8 @@ async function verifyDeployment(ctx, chainId, m) {
   return {
     profileHasCode: await hasCode(ctx, chainId, m.profile),
     keyManagerHasCode: await hasCode(ctx, chainId, m.keyManager),
-    ownerIsKeyManager: km.owner === getAddress22(m.keyManager),
-    keyManagerTargetIsProfile: km.keyManager === getAddress22(m.keyManager),
+    ownerIsKeyManager: km.owner === getAddress23(m.keyManager),
+    keyManagerTargetIsProfile: km.keyManager === getAddress23(m.keyManager),
     supportsLSP0: await supportsInterface(ctx, chainId, m.profile, INTERFACE_IDS2.LSP0ERC725Account),
     keyManagerSupportsLSP6: await supportsInterface(ctx, chainId, m.keyManager, INTERFACE_IDS2.LSP6KeyManager),
     controllerPermissionsMatch: ctl.permissions.hex.toLowerCase() === m.permissions.toLowerCase(),
@@ -8632,7 +8677,7 @@ async function deployFromManifest(ctx, signer, m, chainId, verb = "account deplo
     });
   }
   const onchain = await computeOnChain(ctx, chainId, m.plan);
-  const onChainCompute = { ...onchain, matches: onchain.profile === getAddress22(m.profile) && onchain.keyManager === getAddress22(m.keyManager) };
+  const onChainCompute = { ...onchain, matches: onchain.profile === getAddress23(m.profile) && onchain.keyManager === getAddress23(m.keyManager) };
   if (!onChainCompute.matches) {
     throw new UpError("INTERNAL", `factory on chain ${chainId} computes ${onchain.profile}/${onchain.keyManager}, manifest says ${m.profile}/${m.keyManager}`, { hint: "the factory at the canonical address behaves differently on this chain; do not deploy", details: onChainCompute });
   }
@@ -8931,7 +8976,7 @@ __export(media_exports, {
   writeMediaFile: () => writeMediaFile
 });
 import { randomBytes as randomBytes7 } from "node:crypto";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 function slug(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "image";
 }
@@ -8942,7 +8987,7 @@ async function writeMediaFile(home, nameHint, bytes, ext, mimeType, description)
   const dir = paths.media(home);
   await ensureDir(dir, 448);
   const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "");
-  const file2 = join10(dir, `${slug(nameHint)}-${stamp}-${randomBytes7(4).toString("hex")}.${ext.replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin"}`);
+  const file2 = join11(dir, `${slug(nameHint)}-${stamp}-${randomBytes7(4).toString("hex")}.${ext.replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin"}`);
   await writeFileAtomic(file2, bytes, 384);
   return { path: file2, mimeType, description };
 }
@@ -8963,7 +9008,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "26e620016cbc" : "source";
+var SOURCE = true ? "b9011cc052a4" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -9439,11 +9484,13 @@ init_home();
 init_verbs();
 import { chmod as chmod2, link as link2, lstat as lstat2, open as open2, rm as rm4, stat as stat4, writeFile as writeFile4 } from "node:fs/promises";
 import { randomBytes as randomBytes6 } from "node:crypto";
-import { basename, dirname as dirname3, isAbsolute, join as join8, resolve as resolve3 } from "node:path";
-import { getAddress as getAddress11, isAddress as isAddress8 } from "./vendor-viem.mjs";
+import { basename, dirname as dirname3, isAbsolute, join as join9, resolve as resolve3 } from "node:path";
+import { getAddress as getAddress12, isAddress as isAddress9 } from "./vendor-viem.mjs";
+import { existsSync as existsSync14 } from "node:fs";
 
 // src/core/context.ts
 init_home();
+init_lock();
 init_errors();
 init_policy();
 init_registry();
@@ -9463,10 +9510,50 @@ function upgradeConfig(raw) {
   }
   return prev.length ? { ...rest, previousControllers: prev } : rest;
 }
+async function readConfigFile(home) {
+  const raw = await readJsonStrict(paths.config(home), null);
+  if (raw === null) return { ...DEFAULT_CONFIG };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new UpError("INTERNAL", `${paths.config(home)} does not hold a config object; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${paths.config(home)}.bak)` });
+  }
+  return { ...DEFAULT_CONFIG, ...upgradeConfig(raw) };
+}
+function configKeys(cfg) {
+  const out = [];
+  if (cfg.controller?.address) out.push({ address: cfg.controller.address, backend: cfg.controller.backend });
+  for (const [id, k] of Object.entries(cfg.chainControllers ?? {})) if (k?.address) out.push({ address: k.address, backend: k.backend, chainId: Number(id) });
+  for (const k of cfg.previousControllers ?? []) if (k?.address) out.push({ address: k.address, backend: k.backend, ...k.chainId !== void 0 ? { chainId: k.chainId } : {} });
+  return out;
+}
+function preserveKeyInventory(latest, next, now = (/* @__PURE__ */ new Date()).toISOString()) {
+  const have = new Set(configKeys(next).map((k) => k.address.toLowerCase()));
+  const missing = configKeys(latest).filter((k) => !have.has(k.address.toLowerCase()) && (have.add(k.address.toLowerCase()), true));
+  if (!missing.length) return next;
+  return { ...next, previousControllers: [...next.previousControllers ?? [], ...missing.map((k) => ({ address: k.address, backend: k.backend, switchedAt: now, ...k.chainId !== void 0 ? { chainId: k.chainId } : {} }))] };
+}
+function applyChangedFields(latest, base, next) {
+  const out = { ...latest };
+  const b = base;
+  const n = next;
+  for (const k of /* @__PURE__ */ new Set([...Object.keys(b), ...Object.keys(n)])) {
+    if (JSON.stringify(b[k]) === JSON.stringify(n[k])) continue;
+    if (n[k] === void 0) delete out[k];
+    else out[k] = n[k];
+  }
+  return out;
+}
 function createContext(opts) {
   const home = opts.home ?? upHome();
   let cfgCache;
-  const config = async () => cfgCache ??= { ...DEFAULT_CONFIG, ...upgradeConfig(await readJson(paths.config(home), DEFAULT_CONFIG)) };
+  let loaded;
+  const config = async () => {
+    if (!cfgCache) {
+      const c = await readConfigFile(home);
+      cfgCache ??= c;
+      loaded ??= structuredClone(c);
+    }
+    return cfgCache;
+  };
   const registry2 = createRegistry(home);
   const rpc = createRpcManager(home, registry2, config);
   const ctx = {
@@ -9476,9 +9563,25 @@ function createContext(opts) {
     rpc,
     config,
     async saveConfig(cfg) {
+      const base = loaded ?? { ...DEFAULT_CONFIG };
+      await ctx.updateConfig((latest) => applyChangedFields(latest, base, cfg));
+    },
+    async updateConfig(fn) {
       await ensureDir(home);
-      cfgCache = cfg;
-      await writeJson(paths.config(home), cfg);
+      return withLock(home, "config", async () => {
+        const latest = await readConfigFile(home);
+        const draft = structuredClone(latest);
+        const next = preserveKeyInventory(latest, await fn(draft) ?? draft);
+        await writeJsonWithBackup(paths.config(home), next);
+        cfgCache = next;
+        loaded = structuredClone(next);
+        return next;
+      });
+    },
+    async refreshConfig() {
+      cfgCache = void 0;
+      loaded = void 0;
+      return config();
     },
     async signer(chainId) {
       const { loadSignerFromConfig: loadSignerFromConfig2 } = await Promise.resolve().then(() => (init_signer(), signer_exports));
@@ -9498,7 +9601,9 @@ function createContext(opts) {
       if (v !== void 0 && v !== "") return registry2.chain(v).chainId;
       if (!cfgCache && existsSync13(paths.config(home))) {
         try {
-          cfgCache = { ...DEFAULT_CONFIG, ...upgradeConfig(JSON.parse(readFileSync7(paths.config(home), "utf8"))) };
+          const c = { ...DEFAULT_CONFIG, ...upgradeConfig(JSON.parse(readFileSync7(paths.config(home), "utf8"))) };
+          cfgCache = c;
+          loaded ??= structuredClone(c);
         } catch {
         }
       }
@@ -9545,6 +9650,46 @@ async function preloadConfig(ctx) {
 function checksum(a) {
   if (!isAddress7(a, { strict: false })) throw new UpError("BAD_ARGS", `invalid address: ${a}`);
   return getAddress10(a);
+}
+
+// src/signer/inventory.ts
+init_home();
+import { readFile as readFile6 } from "node:fs/promises";
+import { join as join8 } from "node:path";
+import { getAddress as getAddress11, isAddress as isAddress8 } from "./vendor-viem.mjs";
+function inventoryFile(home) {
+  return join8(paths.keys(home), "inventory.jsonl");
+}
+async function recordKey(home, entry) {
+  const line = { address: getAddress11(entry.address), backend: entry.backend, createdAt: entry.createdAt ?? (/* @__PURE__ */ new Date()).toISOString(), ...entry.note ? { note: entry.note } : {} };
+  await appendLine(inventoryFile(home), JSON.stringify(line));
+}
+async function readInventory(home) {
+  let text = "";
+  try {
+    text = await readFile6(inventoryFile(home), "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT") return [];
+    throw e;
+  }
+  const out = [];
+  for (const raw of text.split("\n")) {
+    if (!raw.trim()) continue;
+    let v;
+    try {
+      v = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!v || typeof v.address !== "string" || !isAddress8(v.address, { strict: false }) || typeof v.backend !== "string") continue;
+    const prev = out.find((x) => x.address.toLowerCase() === v.address.toLowerCase());
+    if (prev) {
+      if (v.note) prev.note = prev.note ? `${prev.note}; ${v.note}` : v.note;
+      continue;
+    }
+    out.push({ address: getAddress11(v.address), backend: v.backend, createdAt: typeof v.createdAt === "string" ? v.createdAt : "", ...v.note ? { note: String(v.note) } : {} });
+  }
+  return out;
 }
 
 // src/signer/verbs.ts
@@ -9647,25 +9792,59 @@ async function decryptKeystoreV3(input, passphrase) {
 
 // src/signer/verbs.ts
 function candidatesFile(home) {
-  return join8(paths.keys(home), "candidates.json");
+  return join9(paths.keys(home), "candidates.json");
+}
+async function readCandidatesRaw(home) {
+  const f = candidatesFile(home);
+  const v = await readJsonStrict(f, []);
+  if (!Array.isArray(v)) throw new UpError("INTERNAL", `${f} does not hold a list; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${f}.bak)` });
+  return v;
+}
+function isCandidate(c) {
+  return Boolean(c && typeof c === "object" && isAddress9(c.address, { strict: false }) && typeof c.backend === "string");
 }
 async function readCandidates(home) {
-  const v = await readJson(candidatesFile(home), []);
-  return Array.isArray(v) ? v.filter((c) => Boolean(c && typeof c === "object" && isAddress8(c.address, { strict: false }) && typeof c.backend === "string")) : [];
+  return (await readCandidatesRaw(home)).filter(isCandidate);
 }
-async function writeCandidates(home, list) {
-  await writeJson(candidatesFile(home), list);
+async function updateCandidates(home, fn) {
+  await writeJsonWithBackup(candidatesFile(home), fn(await readCandidatesRaw(home)));
+}
+async function dropCandidate(home, address) {
+  const raw = await readCandidatesRaw(home);
+  if (raw.some((k) => isCandidate(k) && sameAddress(k.address, address))) await updateCandidates(home, (list) => list.filter((k) => !(isCandidate(k) && sameAddress(k.address, address))));
 }
 function sameAddress(a, b) {
   return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+}
+function sameKey(a, b) {
+  return !a && !b || sameAddress(a, b);
+}
+async function createRecorded(home, backend, note) {
+  let address;
+  try {
+    address = await backend.create();
+  } catch (e) {
+    const d = e?.details;
+    if (e instanceof UpError && d?.kept && d.address) await recordKey(home, { address: d.address, backend: backend.id, note: `kept after ${d.problem ?? "a failed check"}` }).catch(() => {
+    });
+    throw e;
+  }
+  try {
+    await recordKey(home, { address, backend: backend.id, ...note ? { note } : {} });
+  } catch (e) {
+    throw new UpError("INTERNAL", `the new key ${address} was created in ${backend.id} but could not be recorded (${e.message}); it stays in its store`, {
+      hint: `fix the state directory, then record it with: up key activate ${address} --backend ${backend.id}`
+    });
+  }
+  return address;
 }
 function requireController(cfg) {
   if (!cfg.controller) throw new UpError("NO_SIGNER", "no controller key is configured", { hint: "run: up init" });
   return cfg.controller;
 }
 function addressArg(v, name) {
-  if (typeof v !== "string" || !isAddress8(v, { strict: false })) throw new UpError("BAD_ARGS", `--${name} must be a 20-byte 0x address`);
-  return getAddress11(v);
+  if (typeof v !== "string" || !isAddress9(v, { strict: false })) throw new UpError("BAD_ARGS", `--${name} must be a 20-byte 0x address`);
+  return getAddress12(v);
 }
 function protectionText(address, backendId, custody = []) {
   return [`Controller address: ${address}`, `Key protection: ${plainProtection(internalBackend(backendId).protectionInfo())}`, ...custody.map((w) => `Warning: ${w}`)].join("\n");
@@ -9677,7 +9856,7 @@ var LOCK_STALE_MS = 12e4;
 async function withKeyLock(home, fn) {
   const dir = paths.keys(home);
   await ensureDir(dir, 448);
-  const lock = join8(dir, ".lifecycle.lock");
+  const lock = join9(dir, ".lifecycle.lock");
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (; ; ) {
     try {
@@ -9707,12 +9886,9 @@ async function withKeyLock(home, fn) {
 }
 async function freshConfig(ctx) {
   const c = await ctx.config();
-  const disk = await readJson(paths.config(ctx.home), null);
-  if (disk && typeof disk === "object" && (!sameAddress(disk.controller?.address, c.controller?.address) || JSON.stringify(disk.chainControllers ?? {}) !== JSON.stringify(c.chainControllers ?? {}))) {
-    const d = upgradeConfig(disk);
-    return { ...c, controller: d.controller, previousControllers: d.previousControllers, chainControllers: d.chainControllers };
-  }
-  return c;
+  if (!existsSync14(paths.config(ctx.home))) return c;
+  const d = await readConfigFile(ctx.home);
+  return { ...c, controller: d.controller, previousControllers: d.previousControllers, chainControllers: d.chainControllers };
 }
 function explicitChain(args) {
   return args.chain !== void 0 && args.chain !== "";
@@ -9732,13 +9908,15 @@ async function keptKeys(home, cfg) {
   const inUse = [cfg.controller?.address, ...chainControllerList(cfg).map((k) => k.address)];
   const out = [];
   const add2 = (k, kind) => {
-    if (!isAddress8(k.address, { strict: false }) || inUse.some((a) => sameAddress(a, k.address)) || out.some((o) => sameAddress(o.address, k.address))) return;
-    out.push({ address: getAddress11(k.address), backend: k.backend, kind, ...k.chainId !== void 0 ? { chainId: k.chainId } : {} });
+    if (!isAddress9(k.address, { strict: false }) || inUse.some((a) => sameAddress(a, k.address)) || out.some((o) => sameAddress(o.address, k.address))) return;
+    out.push({ address: getAddress12(k.address), backend: k.backend, kind, ...k.chainId !== void 0 ? { chainId: k.chainId } : {}, ...kind === "recovered" && k.note ? { note: k.note } : {} });
   };
   for (const k of cfg.previousControllers ?? []) add2(k, "previous");
   for (const k of await readCandidates(home)) add2(k, "additional");
+  for (const k of await readInventory(home)) add2(k, "recovered");
   return out;
 }
+var KIND_TEXT = { additional: "not used yet", previous: "used before", recovered: "created, not recorded in the config" };
 function existingResult(home, c, warnings) {
   const custody = custodyWarnings(c.backend, home);
   return {
@@ -9783,14 +9961,18 @@ var initVerb = defineVerb({
     return withKeyLock(ctx.home, async () => {
       const latest = await freshConfig(ctx);
       if (latest.controller) return existingResult(ctx.home, latest.controller, ["another process created the controller key at the same time; kept that one"]);
-      const address = await backend.create();
+      const address = await createRecorded(ctx.home, backend);
       const createdAt = (/* @__PURE__ */ new Date()).toISOString();
-      const next = { ...latest, version: 1, controller: { address, backend: backend.id, createdAt } };
       try {
-        await ctx.saveConfig(next);
+        await ctx.updateConfig((cur) => {
+          if (cur.controller && !sameAddress(cur.controller.address, address)) {
+            throw new UpError("BAD_ARGS", `another process set the agent's key ${cur.controller.address} meanwhile; it was kept`);
+          }
+          return { ...cur, version: 1, controller: { address, backend: backend.id, createdAt } };
+        });
       } catch (e) {
         throw new UpError("INTERNAL", `the new key ${address} was created in ${backend.id} but the config could not be saved (${e.message})`, {
-          hint: `the key stays in its store; once the config is writable, record it with: up key activate ${address} --backend ${backend.id}`
+          hint: `the key stays in its store and is listed by: up key address; record it with: up key activate ${address} --backend ${backend.id}`
         });
       }
       ctx.log(`controller key created in ${backend.id}: ${address}`);
@@ -9814,6 +9996,12 @@ var keyAddressVerb = defineVerb({
     const chainId = explicitChain(args) ? ctx.chainId(args.chain) : void 0;
     const c = chainId !== void 0 ? controllerFor(cfg, chainId) : void 0;
     const def = cfg.controller;
+    if (!c && !def && otherKeys.length) {
+      throw new UpError("NO_SIGNER", `no default key is configured, but the agent keeps these keys: ${otherKeys.map((k) => `${k.address} (${k.backend}, ${KIND_TEXT[k.kind]})`).join("; ")}`, {
+        hint: `use one of them with: up key activate <address>`,
+        details: { otherKeys }
+      });
+    }
     const used = c ?? requireController(cfg);
     const protection = internalBackend(used.backend).protectionInfo();
     const chainControllers = chainControllerList(cfg).map((k) => ({ chainId: k.chainId, address: k.address, backend: k.backend }));
@@ -9831,7 +10019,7 @@ var keyAddressVerb = defineVerb({
       text: [
         chainId !== void 0 ? `${used.address} (${used.backend}) — the agent's ${c?.scope === "chain" ? "own key" : "default key"} on ${chainText(ctx, chainId)}` : `${used.address} (${used.backend})`,
         ...perChainLines(ctx, cfg),
-        ...otherKeys.length ? [`Other keys of the agent (kept in their store, never deleted): ${otherKeys.map((k) => `${k.address} (${k.backend}, ${k.kind === "additional" ? "not used yet" : `used before${k.chainId !== void 0 ? ` on ${chainText(ctx, k.chainId)}` : ""}`})`).join("; ")}`] : []
+        ...otherKeys.length ? [`Other keys of the agent (kept in their store, never deleted): ${otherKeys.map((k) => `${k.address} (${k.backend}, ${KIND_TEXT[k.kind]}${k.kind === "previous" && k.chainId !== void 0 ? ` on ${chainText(ctx, k.chainId)}` : ""}${k.note ? `; ${k.note}` : ""})`).join("; ")}`] : []
       ].join("\n")
     };
   }
@@ -9880,7 +10068,7 @@ var MIN_PASSPHRASE_LENGTH = 12;
 var PASSPHRASE_HINT = 'a human must run this in their own terminal (never via chat): read -rs UP_BACKUP_PASSPHRASE && export UP_BACKUP_PASSPHRASE && up key backup --encrypted --explicit-consent --path <file> --approval "<your words>"; unset UP_BACKUP_PASSPHRASE';
 async function writeNewFileExclusive(file2, content) {
   const dir = dirname3(file2);
-  const tmp = join8(dir, `.${basename(file2)}.${randomBytes6(6).toString("hex")}.tmp`);
+  const tmp = join9(dir, `.${basename(file2)}.${randomBytes6(6).toString("hex")}.tmp`);
   await writeFile4(tmp, content, { mode: 384, flag: "wx" });
   try {
     if (process.platform !== "win32") await chmod2(tmp, 384);
@@ -9982,14 +10170,13 @@ var keyNewCandidateVerb = defineVerb({
       return { data: { dryRun: true, backend: c.backend }, text: `Dry run: a new inactive key would be created in ${c.backend}.` };
     }
     const address = await withKeyLock(ctx.home, async () => {
-      const a = await backend.create();
+      await readCandidatesRaw(ctx.home);
+      const a = await createRecorded(ctx.home, backend);
       try {
-        const list = await readCandidates(ctx.home);
-        list.push({ address: a, backend: c.backend, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
-        await writeCandidates(ctx.home, list);
+        await updateCandidates(ctx.home, (list) => [...list, { address: a, backend: c.backend, createdAt: (/* @__PURE__ */ new Date()).toISOString() }]);
       } catch (e) {
-        throw new UpError("INTERNAL", `the additional key ${a} was created in ${c.backend} but could not be recorded (${e.message})`, {
-          hint: `the key stays in its store; it can still be used with: up key activate ${a} --backend ${c.backend} (add --chain <id> for one network)`
+        throw new UpError("INTERNAL", `the additional key ${a} was created in ${c.backend} but could not be added to the candidates list (${e.message})`, {
+          hint: `the key stays in its store and is listed by: up key address; use it with: up key activate ${a} --backend ${c.backend} (add --chain <id> for one network)`
         });
       }
       return a;
@@ -10025,7 +10212,8 @@ var keyActivateVerb = defineVerb({
     const previous = cfg.previousControllers?.find((r) => sameAddress(r.address, address));
     const own = chainControllerList(cfg);
     const chainKey = own.find((k) => sameAddress(k.address, address));
-    const backendId = args.backend ?? cand?.backend ?? previous?.backend ?? chainKey?.backend ?? current?.backend;
+    const recorded = (await readInventory(ctx.home)).find((k) => sameAddress(k.address, address));
+    const backendId = args.backend ?? cand?.backend ?? previous?.backend ?? chainKey?.backend ?? recorded?.backend ?? current?.backend;
     if (!backendId) throw new UpError("BAD_ARGS", "cannot tell which key store holds this key; pass --backend", { hint: "run: up key backend" });
     const backend = internalBackend(backendId);
     if (!await backend.has(address)) {
@@ -10046,24 +10234,25 @@ var keyActivateVerb = defineVerb({
     if (ctx.flags.dryRun) {
       return { data: { dryRun: true, address, backend: backendId, previous: current?.address ?? null }, text: `Dry run: ${address} (${backendId}) would become the active controller.` };
     }
+    const changed = () => new UpError("BAD_ARGS", "the active controller changed while waiting for approval; nothing was switched", { hint: "run: up key address, then decide again" });
     await withKeyLock(ctx.home, async () => {
       const latest = await freshConfig(ctx);
-      if (!sameAddress(latest.controller?.address, current?.address)) {
-        throw new UpError("BAD_ARGS", "the active controller changed while waiting for approval; nothing was switched", { hint: "run: up key address, then decide again" });
-      }
+      if (!sameKey(latest.controller?.address, current?.address)) throw changed();
       await backend.load(address);
       const now = (/* @__PURE__ */ new Date()).toISOString();
-      const previousList = (latest.previousControllers ?? []).filter((r) => !sameAddress(r.address, address));
-      if (current) previousList.push({ address: current.address, backend: current.backend, switchedAt: now });
-      const next = { ...latest, version: 1, controller: { address, backend: backendId, createdAt: cand?.createdAt ?? now }, previousControllers: previousList };
-      if (next.chainControllers) {
-        const kept = Object.fromEntries(Object.entries(next.chainControllers).filter(([, k]) => !sameAddress(k.address, address)));
-        if (Object.keys(kept).length) next.chainControllers = kept;
-        else delete next.chainControllers;
-      }
-      await ctx.saveConfig(next);
-      const fresh = await readCandidates(ctx.home);
-      if (fresh.some((k) => sameAddress(k.address, address))) await writeCandidates(ctx.home, fresh.filter((k) => !sameAddress(k.address, address)));
+      await ctx.updateConfig((cur) => {
+        if (!sameKey(cur.controller?.address, current?.address)) throw changed();
+        const previousList = (cur.previousControllers ?? []).filter((r) => !sameAddress(r.address, address) && !sameAddress(r.address, cur.controller?.address));
+        if (cur.controller) previousList.push({ address: cur.controller.address, backend: cur.controller.backend, switchedAt: now });
+        const next = { ...cur, version: 1, controller: { address, backend: backendId, createdAt: cand?.createdAt ?? recorded?.createdAt ?? now }, previousControllers: previousList };
+        if (next.chainControllers) {
+          const kept = Object.fromEntries(Object.entries(next.chainControllers).filter(([, k]) => !sameAddress(k.address, address)));
+          if (Object.keys(kept).length) next.chainControllers = kept;
+          else delete next.chainControllers;
+        }
+        return next;
+      });
+      await dropCandidate(ctx.home, address);
     });
     ctx.log(`active controller switched to ${address} (${backendId})`);
     const ownAfter = own.filter((k) => !sameAddress(k.address, address));
@@ -10090,7 +10279,8 @@ async function activateForChain(ctx, args, address, chainId) {
   const cand = candidates.find((k) => sameAddress(k.address, address));
   const previous = cfg.previousControllers?.find((r) => sameAddress(r.address, address));
   const usedElsewhere = chainControllerList(cfg).find((k) => sameAddress(k.address, address));
-  const backendId = args.backend ?? (toDefault ? def.backend : void 0) ?? usedElsewhere?.backend ?? cand?.backend ?? previous?.backend ?? def?.backend;
+  const recorded = (await readInventory(ctx.home)).find((k) => sameAddress(k.address, address));
+  const backendId = args.backend ?? (toDefault ? def.backend : void 0) ?? usedElsewhere?.backend ?? cand?.backend ?? previous?.backend ?? recorded?.backend ?? def?.backend;
   if (!backendId) throw new UpError("BAD_ARGS", "cannot tell which key store holds this key; pass --backend", { hint: "run: up key backend" });
   const backend = internalBackend(backendId);
   if (!await backend.has(address)) {
@@ -10112,28 +10302,29 @@ async function activateForChain(ctx, args, address, chainId) {
   if (ctx.flags.dryRun) {
     return { data: { dryRun: true, address, backend: backendId, chainId, previous: current?.address ?? null }, text: `Dry run: ${address} (${backendId}) would become the agent's key on ${where}.` };
   }
+  const changed = () => new UpError("BAD_ARGS", `the agent's key on ${where} changed while waiting for approval; nothing was switched`, { hint: `run: up key address --chain ${chainId}, then decide again` });
   await withKeyLock(ctx.home, async () => {
     const latest = await freshConfig(ctx);
-    if (!sameAddress(controllerFor(latest, chainId)?.address, current?.address)) {
-      throw new UpError("BAD_ARGS", `the agent's key on ${where} changed while waiting for approval; nothing was switched`, { hint: `run: up key address --chain ${chainId}, then decide again` });
-    }
+    if (!sameKey(controllerFor(latest, chainId)?.address, current?.address)) throw changed();
     await backend.load(address);
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const own = { ...latest.chainControllers ?? {} };
-    const previousOwn = own[String(chainId)];
-    if (toDefault) delete own[String(chainId)];
-    else own[String(chainId)] = { address, backend: backendId, createdAt: cand?.createdAt ?? usedElsewhere?.createdAt ?? now };
-    let previousList = (latest.previousControllers ?? []).filter((r) => !sameAddress(r.address, address));
-    if (previousOwn && !sameAddress(previousOwn.address, latest.controller?.address) && !Object.values(own).some((k) => sameAddress(k.address, previousOwn.address))) {
-      previousList = [...previousList.filter((r) => !sameAddress(r.address, previousOwn.address)), { address: previousOwn.address, backend: previousOwn.backend, switchedAt: now, chainId }];
-    }
-    const next = { ...latest, version: 1, previousControllers: previousList.length ? previousList : void 0 };
-    if (Object.keys(own).length) next.chainControllers = own;
-    else delete next.chainControllers;
-    if (!next.previousControllers) delete next.previousControllers;
-    await ctx.saveConfig(next);
-    const fresh = await readCandidates(ctx.home);
-    if (fresh.some((k) => sameAddress(k.address, address))) await writeCandidates(ctx.home, fresh.filter((k) => !sameAddress(k.address, address)));
+    await ctx.updateConfig((cur) => {
+      if (!sameKey(controllerFor(cur, chainId)?.address, current?.address)) throw changed();
+      const own = { ...cur.chainControllers ?? {} };
+      const previousOwn = own[String(chainId)];
+      if (toDefault) delete own[String(chainId)];
+      else own[String(chainId)] = { address, backend: backendId, createdAt: cand?.createdAt ?? usedElsewhere?.createdAt ?? recorded?.createdAt ?? now };
+      let previousList = (cur.previousControllers ?? []).filter((r) => !sameAddress(r.address, address));
+      if (previousOwn && !sameAddress(previousOwn.address, cur.controller?.address) && !Object.values(own).some((k) => sameAddress(k.address, previousOwn.address))) {
+        previousList = [...previousList.filter((r) => !sameAddress(r.address, previousOwn.address)), { address: previousOwn.address, backend: previousOwn.backend, switchedAt: now, chainId }];
+      }
+      const next = { ...cur, version: 1, previousControllers: previousList.length ? previousList : void 0 };
+      if (Object.keys(own).length) next.chainControllers = own;
+      else delete next.chainControllers;
+      if (!next.previousControllers) delete next.previousControllers;
+      return next;
+    });
+    await dropCandidate(ctx.home, address);
   });
   ctx.log(`agent key on chain ${chainId} switched to ${address} (${backendId})`);
   return {
@@ -10147,7 +10338,7 @@ async function activateForChain(ctx, args, address, chainId) {
 }
 
 // src/exec/verbs.ts
-import { decodeFunctionResult as decodeFunctionResult4, encodeFunctionData as encodeFunctionData11, getAddress as getAddress21, isAddress as isAddress13 } from "./vendor-viem.mjs";
+import { decodeFunctionResult as decodeFunctionResult4, encodeFunctionData as encodeFunctionData11, getAddress as getAddress22, isAddress as isAddress14 } from "./vendor-viem.mjs";
 
 // src/exec/index.ts
 init_transport();
@@ -10164,7 +10355,7 @@ import {
   decodeFunctionData as decodeFunctionData2,
   encodeFunctionData as encodeFunctionData6,
   formatEther as formatEther2,
-  getAddress as getAddress17,
+  getAddress as getAddress18,
   parseAbiItem,
   zeroAddress as zeroAddress2
 } from "./vendor-viem.mjs";
@@ -10811,13 +11002,13 @@ function decodeProfilePayload(payload) {
   const a = d.args ?? [];
   switch (d.functionName) {
     case "execute": {
-      const call3 = { operation: Number(a[0]), to: getAddress17(a[1]), value: BigInt(a[2]), data: a[3] };
+      const call3 = { operation: Number(a[0]), to: getAddress18(a[1]), value: BigInt(a[2]), data: a[3] };
       return { kind: "execute", totalValue: call3.value, targets: [call3.to], innerSelectors: [innerSel(call3.data)], calls: [call3], risk: "write", selector };
     }
     case "executeBatch": {
       const [ops, tos, values, datas] = a;
       if (ops.length !== tos.length || tos.length !== values.length || values.length !== datas.length) return unknown;
-      const calls = ops.map((op, i) => ({ operation: Number(op), to: getAddress17(tos[i]), value: BigInt(values[i]), data: datas[i] }));
+      const calls = ops.map((op, i) => ({ operation: Number(op), to: getAddress18(tos[i]), value: BigInt(values[i]), data: datas[i] }));
       return { kind: "executeBatch", totalValue: calls.reduce((t, c) => t + c.value, 0n), targets: [...new Set(calls.map((c) => c.to))], innerSelectors: calls.map((c) => innerSel(c.data)), calls, risk: "write", selector };
     }
     case "setData":
@@ -10827,7 +11018,7 @@ function decodeProfilePayload(payload) {
       return { kind: "setDataBatch", totalValue: 0n, targets: [], innerSelectors: [], dataKeys: keys, risk: keys.some((k) => classifyDataKey(k).admin) ? "admin" : "write", selector };
     }
     case "transferOwnership":
-      return { kind: "ownership", ownership: "transferOwnership", totalValue: 0n, targets: [getAddress17(a[0])], innerSelectors: [], risk: "admin", selector };
+      return { kind: "ownership", ownership: "transferOwnership", totalValue: 0n, targets: [getAddress18(a[0])], innerSelectors: [], risk: "admin", selector };
     case "acceptOwnership":
     case "renounceOwnership":
       return { kind: "ownership", ownership: d.functionName, totalValue: 0n, targets: [], innerSelectors: [], risk: "admin", selector };
@@ -10853,10 +11044,10 @@ function validateRequest(req, keyManager) {
       throw new UpError("BAD_ARGS", "CREATE/CREATE2 require the zero address as target (ERC725X_CreateOperationsRequireEmptyRecipientAddress)");
     }
     if (c.operation === OPERATION.STATICCALL && c.value !== 0n) throw new UpError("BAD_ARGS", "STATICCALL cannot carry value (ERC725X_MsgValueDisallowedInStaticCall)");
-    if (keyManager && getAddress17(c.to) === getAddress17(keyManager)) {
+    if (keyManager && getAddress18(c.to) === getAddress18(keyManager)) {
       throw new UpError("NOT_SUPPORTED", "the profile cannot call its own Key Manager through execute (CallingKeyManagerNotAllowed)", { hint: "send the payload to the Key Manager directly (the transports do this for you)" });
     }
-    if (getAddress17(c.to) === getAddress17(req.profile) && c.data !== "0x") warnings.push("the profile calls itself: the inner call is checked against the profile's own (empty) permissions and will normally revert");
+    if (getAddress18(c.to) === getAddress18(req.profile) && c.data !== "0x") warnings.push("the profile calls itself: the inner call is checked against the profile's own (empty) permissions and will normally revert");
   }
   return warnings;
 }
@@ -10963,7 +11154,7 @@ function decodeReceiptEvents(receipt) {
     for (const abi2 of EVENT_ABIS) {
       try {
         const d = decodeEventLog2({ abi: abi2, data: log.data, topics: log.topics, strict: false });
-        out.push({ address: getAddress17(log.address), event: String(d.eventName), args: d.args ?? {} });
+        out.push({ address: getAddress18(log.address), event: String(d.eventName), args: d.args ?? {} });
         break;
       } catch {
       }
@@ -11090,7 +11281,7 @@ init_abis();
 init_profile();
 init_permissions();
 init_read2();
-import { getAddress as getAddress19, keccak256 as keccak25611, toBytes as toBytes3, zeroAddress as zeroAddress3 } from "./vendor-viem.mjs";
+import { getAddress as getAddress20, keccak256 as keccak25611, toBytes as toBytes3, zeroAddress as zeroAddress3 } from "./vendor-viem.mjs";
 import { encodeFunctionData as encodeFunctionData9 } from "./vendor-viem.mjs";
 
 // src/lsp/lsp25.ts
@@ -11098,16 +11289,16 @@ init_errors();
 init_constants();
 init_abis();
 init_read2();
-import { concat as concat2, encodeFunctionData as encodeFunctionData8, encodePacked as encodePacked2, getAddress as getAddress18, keccak256 as keccak25610, recoverAddress, toBytes as toBytes2 } from "./vendor-viem.mjs";
+import { concat as concat2, encodeFunctionData as encodeFunctionData8, encodePacked as encodePacked2, getAddress as getAddress19, keccak256 as keccak25610, recoverAddress, toBytes as toBytes2 } from "./vendor-viem.mjs";
 var U128 = (1n << 128n) - 1n;
 function encodeLsp25Message(m) {
   return encodePacked2(["uint256", "uint256", "uint256", "uint256", "uint256", "bytes"], [LSP25_VERSION, BigInt(m.chainId), m.nonce, m.validityTimestamps, m.value, m.payload]);
 }
 function lsp25Digest(m) {
-  return keccak25610(concat2(["0x19", "0x00", getAddress18(m.keyManager), encodeLsp25Message(m)]));
+  return keccak25610(concat2(["0x19", "0x00", getAddress19(m.keyManager), encodeLsp25Message(m)]));
 }
 async function signLsp25(signer, m) {
-  return signer.signIntendedValidator(getAddress18(m.keyManager), encodeLsp25Message(m));
+  return signer.signIntendedValidator(getAddress19(m.keyManager), encodeLsp25Message(m));
 }
 async function recoverLsp25Signer(m, signature) {
   return recoverAddress({ hash: lsp25Digest(m), signature });
@@ -11237,11 +11428,11 @@ var relayTransport = {
     const msg = { keyManager, chainId, nonce, validityTimestamps, value: 0n, payload };
     const signature = await signLsp25(signer, msg);
     const recovered = await recoverLsp25Signer(msg, signature);
-    if (getAddress19(recovered) !== getAddress19(signer.address)) throw new UpError("INTERNAL", "LSP25 signature does not recover to the controller", { hint: "signer backend problem; run up doctor" });
+    if (getAddress20(recovered) !== getAddress20(signer.address)) throw new UpError("INTERNAL", "LSP25 signature does not recover to the controller", { hint: "signer backend problem; run up doctor" });
     const entryCalldata = encodeExecuteRelayCall(signature, nonce, validityTimestamps, payload);
     await simulate(ctx, { chainId, from: zeroAddress3, to: keyManager, data: entryCalldata });
     const kmNow = await requireKeyManager(ctx, chainId, req.profile);
-    if (getAddress19(kmNow) !== getAddress19(keyManager) || msg.chainId !== req.chainId) {
+    if (getAddress20(kmNow) !== getAddress20(keyManager) || msg.chainId !== req.chainId) {
       throw new UpError("RELAYER_ERROR", "chain binding check failed: the signed chainId/Key Manager no longer match the selected chain", { details: { signedKeyManager: keyManager, currentKeyManager: kmNow, signedChainId: msg.chainId } });
     }
     const pending = { ctx, chainId, keyManager, signer: signer.address, nonce, channel, validityTimestamps, relayer: relayer.name, fromBlock: (await latestBlock(ctx, chainId)).number };
@@ -11267,7 +11458,7 @@ var relayTransport = {
       return settleAmbiguous(pending, base, confirmation, `relayer ${relayer.name} returned transaction ${hash}, but no receipt appeared on chain ${chainId}`, e, res.taskId);
     }
     const events = decodeReceiptEvents(receipt);
-    const ours = events.some((e) => e.event === "PermissionsVerified" && getAddress19(e.address) === getAddress19(keyManager) && String(e.args.signer).toLowerCase() === signer.address.toLowerCase());
+    const ours = events.some((e) => e.event === "PermissionsVerified" && getAddress20(e.address) === getAddress20(keyManager) && String(e.args.signer).toLowerCase() === signer.address.toLowerCase());
     const nonceAfter = await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
     if (receipt.status !== "success" || !ours || nonceAfter <= nonce) {
       const why = receipt.status !== "success" ? `relayed transaction ${hash} reverted on chain ${chainId}` : `relayer ${relayer.name} returned transaction ${hash}, but it did not execute this signed call (no PermissionsVerified for the controller from the Key Manager or nonce not consumed)`;
@@ -11367,9 +11558,9 @@ init_auto();
 init_errors();
 init_assets();
 init_transport();
-import { readFileSync as readFileSync8, existsSync as existsSync14 } from "node:fs";
-import { join as join9 } from "node:path";
-import { encodeFunctionData as encodeFunctionData10, getAddress as getAddress20, isAddress as isAddress12, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
+import { readFileSync as readFileSync8, existsSync as existsSync15 } from "node:fs";
+import { join as join10 } from "node:path";
+import { encodeFunctionData as encodeFunctionData10, getAddress as getAddress21, isAddress as isAddress13, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
 function parseValue(v) {
   if (v === void 0 || v === null || v === "") return 0n;
   if (typeof v === "bigint") return v;
@@ -11402,14 +11593,14 @@ function loadAbi(spec) {
     const j = JSON.parse(s);
     return { abi: Array.isArray(j) ? j : j.abi, source: "inline" };
   }
-  if (existsSync14(s)) {
+  if (existsSync15(s)) {
     const j = JSON.parse(readFileSync8(s, "utf8"));
     return { abi: Array.isArray(j) ? j : j.abi, source: `file:${s}` };
   }
   const base = s.replace(/\.json$/i, "");
   for (const dir of ["lsp", "reference", "deployed"]) {
-    const f = join9(assetsDir(), "abis", dir, `${base}.json`);
-    if (existsSync14(f)) {
+    const f = join10(assetsDir(), "abis", dir, `${base}.json`);
+    if (existsSync15(f)) {
       const j = JSON.parse(readFileSync8(f, "utf8"));
       return { abi: Array.isArray(j) ? j : j.abi, source: `bundled:${dir}/${base}` };
     }
@@ -11455,8 +11646,8 @@ function coerceArg(param, v) {
   }
   if (t === "bool") return v === true || v === "true" || v === 1 || v === "1";
   if (t === "address") {
-    if (typeof v !== "string" || !isAddress12(v, { strict: false })) throw new UpError("BAD_ARGS", `argument ${param.name ?? ""} must be an address, got ${JSON.stringify(v)}`);
-    return getAddress20(v);
+    if (typeof v !== "string" || !isAddress13(v, { strict: false })) throw new UpError("BAD_ARGS", `argument ${param.name ?? ""} must be an address, got ${JSON.stringify(v)}`);
+    return getAddress21(v);
   }
   return v;
 }
@@ -11471,8 +11662,8 @@ function buildCall(input) {
   let to;
   if (isCreate) to = zeroAddress4;
   else {
-    if (!input.to || !isAddress12(input.to, { strict: false })) throw new UpError("BAD_ARGS", "--to must be an address");
-    to = getAddress20(input.to);
+    if (!input.to || !isAddress13(input.to, { strict: false })) throw new UpError("BAD_ARGS", "--to must be an address");
+    to = getAddress21(input.to);
   }
   const value = parseValue(input.value);
   let data = "0x";
@@ -11686,8 +11877,8 @@ defineVerb({
       chainId,
       hash: a.hash,
       status,
-      from: tx?.from ? getAddress21(tx.from) : void 0,
-      to: r.to ? getAddress21(r.to) : void 0,
+      from: tx?.from ? getAddress22(tx.from) : void 0,
+      to: r.to ? getAddress22(r.to) : void 0,
       blockNumber: blockNumber.toString(),
       confirmations: (latest - blockNumber + 1n).toString(),
       gasUsed: BigInt(r.gasUsed).toString(),
@@ -11715,7 +11906,7 @@ async function controllerAddress(ctx, chainId) {
 }
 async function defaultControllerAddress(ctx) {
   const cfg = await ctx.config();
-  if (cfg.controller?.address) return getAddress21(cfg.controller.address);
+  if (cfg.controller?.address) return getAddress22(cfg.controller.address);
   return (await ctx.signer()).address;
 }
 defineVerb({
@@ -11729,8 +11920,8 @@ defineVerb({
   ],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    if (a.controller && !isAddress13(a.controller, { strict: false })) throw new UpError("BAD_ARGS", "--controller must be an address");
-    const controller = a.controller ? getAddress21(a.controller) : await controllerAddress(ctx, chainId);
+    if (a.controller && !isAddress14(a.controller, { strict: false })) throw new UpError("BAD_ARGS", "--controller must be an address");
+    const controller = a.controller ? getAddress22(a.controller) : await controllerAddress(ctx, chainId);
     const km = await resolveKeyManager(ctx, chainId, profile);
     if (!km.keyManager) throw new UpError("NOT_SUPPORTED", `profile owner ${km.owner} is not a Key Manager`);
     const channels = [{ channel: 0n, label: "channel 0 (ordered)" }];
@@ -11753,7 +11944,7 @@ defineVerb({
 // src/lsp/verbs-account.ts
 import { randomBytes as randomBytes8 } from "node:crypto";
 import { isAbsolute as isAbsolute3, resolve as resolve5 } from "node:path";
-import { getAddress as getAddress25, isAddress as isAddress14 } from "./vendor-viem.mjs";
+import { getAddress as getAddress26, isAddress as isAddress15 } from "./vendor-viem.mjs";
 init_verbs();
 init_errors();
 init_home();
@@ -11773,9 +11964,9 @@ init_multichain();
 init_errors();
 init_json();
 init_safe_fetch();
-import { readFile as readFile6, stat as stat5 } from "node:fs/promises";
+import { readFile as readFile7, stat as stat5 } from "node:fs/promises";
 import { basename as basename2, isAbsolute as isAbsolute2, resolve as resolve4 } from "node:path";
-import { getAddress as getAddress24 } from "./vendor-viem.mjs";
+import { getAddress as getAddress25 } from "./vendor-viem.mjs";
 
 // src/display/image-info.ts
 var ImageFormatError = class extends Error {
@@ -12151,7 +12342,7 @@ init_read2();
 
 // src/lsp/profile-url.ts
 init_http();
-import { getAddress as getAddress23 } from "./vendor-viem.mjs";
+import { getAddress as getAddress24 } from "./vendor-viem.mjs";
 var LUKSO_MAINNET = 42;
 var LUKSO_TESTNET = 4201;
 function luksoNetwork(chainId, aliases = {}) {
@@ -12159,7 +12350,7 @@ function luksoNetwork(chainId, aliases = {}) {
   return chainId === LUKSO_MAINNET ? "mainnet" : chainId === LUKSO_TESTNET ? "testnet" : void 0;
 }
 function universalEverythingUrl(address, network = "mainnet") {
-  return `https://universaleverything.io/${getAddress23(address)}?network=${network}`;
+  return `https://universaleverything.io/${getAddress24(address)}?network=${network}`;
 }
 function profileLinkHost(network) {
   return network === "mainnet" ? "profile.link" : "t.profile.link";
@@ -12180,7 +12371,7 @@ function acceptProfileLink(link3, network) {
 function explorerAddressUrl(registry2, chainId, address) {
   try {
     const e = registry2?.chain(chainId).explorers[0];
-    return e ? `${e.url.replace(/\/+$/, "")}/address/${getAddress23(address)}` : void 0;
+    return e ? `${e.url.replace(/\/+$/, "")}/address/${getAddress24(address)}` : void 0;
   } catch {
     return void 0;
   }
@@ -12193,7 +12384,7 @@ function chainName2(registry2, chainId) {
   }
 }
 async function resolveProfileUrl(chainId, address, opts = {}) {
-  const checksummed2 = getAddress23(address);
+  const checksummed2 = getAddress24(address);
   const network = luksoNetwork(chainId, opts.luksoAliases);
   if (!network) {
     const explorer = explorerAddressUrl(opts.registry, chainId, checksummed2);
@@ -12301,7 +12492,7 @@ async function readSource(input, what, opts) {
   if (!st.isFile()) throw new UpError("BAD_ARGS", `${s} is not a file`);
   if (st.size > MAX_FILE_BYTES) throw tooBig(st.size);
   if (st.size === 0) throw new UpError("BAD_ARGS", `${s} is empty`);
-  return { bytes: new Uint8Array(await readFile6(file2)), source: "file", display: basename2(file2) };
+  return { bytes: new Uint8Array(await readFile7(file2)), source: "file", display: basename2(file2) };
 }
 async function loadFile(input, field, opts) {
   const r = await readSource(input, FIELD_LABEL[field], opts);
@@ -12355,7 +12546,7 @@ function lsp3PermissionError(ctx, chainId, profile, controller, check, currentKe
   });
 }
 async function readCurrentMetadata(ctx, chainId, profile, opts) {
-  const out = { chainId, profile: getAddress24(profile), deployed: false, raw: "0x", set: false };
+  const out = { chainId, profile: getAddress25(profile), deployed: false, raw: "0x", set: false };
   if (!await hasCode(ctx, chainId, profile)) return out;
   out.deployed = true;
   out.raw = await getData(ctx, chainId, profile, DATA_KEYS.LSP3Profile);
@@ -12407,8 +12598,8 @@ async function metadataPresence(ctx, identity) {
 // src/lsp/verbs-account.ts
 init_select();
 function addressArg2(v, name) {
-  if (typeof v !== "string" || !isAddress14(v, { strict: false })) throw new UpError("BAD_ARGS", `--${name} must be an address`);
-  return getAddress25(v);
+  if (typeof v !== "string" || !isAddress15(v, { strict: false })) throw new UpError("BAD_ARGS", `--${name} must be an address`);
+  return getAddress26(v);
 }
 function permissionValueFrom(a, required = true) {
   if (a.bits !== void 0) {
@@ -12575,8 +12766,8 @@ defineVerb({
     const signer = await ctx.signer(chainId);
     const out = await deployFromManifest(ctx, signer, m, chainId);
     const warnings = [];
-    if (getAddress25(m.controller) !== signer.address && !(m.extraControllers ?? []).some((c) => getAddress25(c.address) === signer.address)) {
-      warnings.push(`on chain ${chainId} the agent signs with ${signer.address}, but the profile's initial controller there is ${getAddress25(m.controller)} (it is part of the address): the agent's key for this chain is not a controller until it is added (up controller add ${signer.address} --chain ${chainId}, signed by an admin controller), or switch this chain back to the initial key: up key activate ${getAddress25(m.controller)} --chain ${chainId}`);
+    if (getAddress26(m.controller) !== signer.address && !(m.extraControllers ?? []).some((c) => getAddress26(c.address) === signer.address)) {
+      warnings.push(`on chain ${chainId} the agent signs with ${signer.address}, but the profile's initial controller there is ${getAddress26(m.controller)} (it is part of the address): the agent's key for this chain is not a controller until it is added (up controller add ${signer.address} --chain ${chainId}, signed by an admin controller), or switch this chain back to the initial key: up key activate ${getAddress26(m.controller)} --chain ${chainId}`);
     }
     if (out.status !== "dry-run") {
       const cfg = { ...await ctx.config() };
@@ -12584,7 +12775,7 @@ defineVerb({
         cfg.defaultProfile = m.profile;
         await ctx.saveConfig(cfg);
       }
-      if (getAddress25(m.controller) === signer.address && !(m.extraControllers ?? []).length) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
+      if (getAddress26(m.controller) === signer.address && !(m.extraControllers ?? []).length) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
     }
     const next = out.status === "deployed" && chainId === metadataHooks().defaultChainId && !m.lsp3 ? ["ask the human whether they want a profile name, description, profile picture and background image (all optional, can be done later): up profile metadata set --dry-run, then with their approval"] : void 0;
     return {
@@ -12799,7 +12990,7 @@ defineVerb({
       }
     }
     const old = await getData(ctx, chainId, profile, DATA_KEYS.LSP1UniversalReceiverDelegate);
-    if (old && old.length === 42 && getAddress25(old) !== urd) warnings.push(`the previous URD ${getAddress25(old)} keeps its controller permissions; remove them with: up controller remove ${getAddress25(old)}`);
+    if (old && old.length === 42 && getAddress26(old) !== urd) warnings.push(`the previous URD ${getAddress26(old)} keeps its controller permissions; remove them with: up controller remove ${getAddress26(old)}`);
     const r = await sendPayload(ctx, a, "account urd set", keys, values, { universalReceiverDelegate: urd, grantedPermissions: a.grant ? "SUPER_SETDATA, REENTRANCY" : "none" });
     return { ...r, warnings: [...r.warnings ?? [], ...warnings] };
   }
@@ -12876,7 +13067,7 @@ defineVerb({
     const statuses = await Promise.all(chainIds.map((c) => joinStatus(ctx, c, profile, BigInt(rec.permissions.hex))));
     if (a["set-default"]) cfg.defaultProfile = profile;
     if (a.alias) {
-      if (isAddress14(a.alias, { strict: false })) throw new UpError("BAD_ARGS", "alias must not look like an address");
+      if (isAddress15(a.alias, { strict: false })) throw new UpError("BAD_ARGS", "alias must not look like an address");
       cfg.aliases = { ...cfg.aliases ?? {}, [a.alias]: profile };
     }
     await ctx.saveConfig(cfg);
@@ -12914,7 +13105,7 @@ defineVerb({
     const rec = recommend(me, profile, recommendationOptions(a));
     const cfg = await ctx.config();
     const others = a.controller ? [] : chainControllerList(cfg).filter((k) => k.address !== me).map((k) => `on ${onChain(chainLabel(ctx, k.chainId))} it uses ${k.address}`);
-    if (!a.controller && cfg.controller?.address && getAddress25(cfg.controller.address) !== me) others.push(`on chains without their own key it uses its default key ${getAddress25(cfg.controller.address)}`);
+    if (!a.controller && cfg.controller?.address && getAddress26(cfg.controller.address) !== me) others.push(`on chains without their own key it uses its default key ${getAddress26(cfg.controller.address)}`);
     const warnings = others.length ? [`this recommendation is for the agent's key ${me}; ${others.join("; ")} — run up permissions recommend --chain <id> for those chains`] : void 0;
     return { data: rec, text: rec.text, warnings };
   }
@@ -12930,7 +13121,7 @@ init_lsp23();
 init_multichain();
 init_profile();
 init_read2();
-import { getAddress as getAddress26 } from "./vendor-viem.mjs";
+import { getAddress as getAddress27 } from "./vendor-viem.mjs";
 async function chainsToCheck(ctx, a, identity) {
   if (a.chains?.length) return [...new Set(a.chains.map((c) => ctx.registry.chain(c).chainId))];
   if (a.chain !== void 0 && a.chain !== "") return [ctx.chainId(a.chain)];
@@ -13018,7 +13209,7 @@ defineVerb({
     }
     if (a.address === void 0) throw new UpError("BAD_ARGS", "pass the profile's address on that chain (or --unlink)");
     const address = addressArg2(a.address, "address");
-    if (address === getAddress26(identity)) throw new UpError("BAD_ARGS", `${address} is the profile's usual address; nothing to link`, { hint: previous ? `to use it on ${where} again: up profile link --unlink --chain ${l.arg}` : "a profile with the same address on every chain needs no link" });
+    if (address === getAddress27(identity)) throw new UpError("BAD_ARGS", `${address} is the profile's usual address; nothing to link`, { hint: previous ? `to use it on ${where} again: up profile link --unlink --chain ${l.arg}` : "a profile with the same address on every chain needs no link" });
     if (previous === address) return { data: { profile: identity, chainId, linked: address, changed: false }, text: `On ${where} your profile is already linked to ${address}.` };
     if (!await hasCode(ctx, chainId, address)) throw new UpError("NOT_DEPLOYED", `${address} has no code on ${where}`, { hint: `check the address and the chain; nothing was linked` });
     if (!await supportsInterface(ctx, chainId, address, INTERFACE_IDS2.LSP0ERC725Account)) throw new UpError("BAD_ARGS", `${address} on ${where} is not a Universal Profile (no LSP0 interface)`, { hint: "nothing was linked" });
@@ -13061,7 +13252,7 @@ init_auto();
 init_registry2();
 init_client();
 init_transport();
-import { getAddress as getAddress27 } from "./vendor-viem.mjs";
+import { getAddress as getAddress28 } from "./vendor-viem.mjs";
 init_gateway();
 init_providers();
 init_constants();
@@ -13502,7 +13693,7 @@ defineVerb({
     return {
       data: { ...out, pathPlan: plan, changed: final.changed, metadataUrl: jsonUrl, metadataHash: ser.hash, value, uploaded, stored, metadata: plainJson(final.json), profileUrl },
       text: [
-        `${done ? "Profile metadata updated" : `Profile metadata write ${out.status}`} on ${where} for your profile ${getAddress27(profile)}:`,
+        `${done ? "Profile metadata updated" : `Profile metadata write ${out.status}`} on ${where} for your profile ${getAddress28(profile)}:`,
         ...changeLines(changes),
         `metadata JSON: ${jsonUrl} (keccak256 ${ser.hash}, verified via the gateway)`,
         out.txHash ? `tx ${out.txHash}${out.explorerUrl ? ` (${out.explorerUrl})` : ""}` : out.relayTaskId ? `relay task ${out.relayTaskId}` : "",
@@ -13515,7 +13706,7 @@ defineVerb({
 });
 
 // src/lsp/verbs-permissions.ts
-import { encodeFunctionData as encodeFunctionData13, getAddress as getAddress28, keccak256 as keccak25615, toBytes as toBytes5, zeroAddress as zeroAddress5 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData13, getAddress as getAddress29, keccak256 as keccak25615, toBytes as toBytes5, zeroAddress as zeroAddress5 } from "./vendor-viem.mjs";
 init_verbs();
 init_errors();
 init_tx();
@@ -13812,7 +14003,7 @@ defineVerb({
     let kind = "eoa";
     if (await hasCode(ctx, chainId, newOwner)) {
       const t = await tryRead2(ctx, chainId, newOwner, KM_ABI, "target");
-      if (t && getAddress28(t) === profile) kind = "key-manager";
+      if (t && getAddress29(t) === profile) kind = "key-manager";
       else {
         kind = "contract";
         warnings.push(`${newOwner} is a contract but not a Key Manager linked to this profile (target() ${t ?? "missing"}): after acceptance the controllers' permissions would no longer apply`);
@@ -13831,7 +14022,7 @@ defineVerb({
   params: [],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const pending = getAddress28(await tryRead2(ctx, chainId, profile, UP_ABI, "pendingOwner") ?? zeroAddress5);
+    const pending = getAddress29(await tryRead2(ctx, chainId, profile, UP_ABI, "pendingOwner") ?? zeroAddress5);
     if (pending === zeroAddress5) throw new UpError("BAD_ARGS", `no pending ownership transfer on ${profile} (chain ${chainId})`);
     const signer = await ctx.signer(chainId);
     const accept = encodeFunctionData13({ abi: UP_ABI, functionName: "acceptOwnership" });
@@ -13844,7 +14035,7 @@ defineVerb({
       route = "controller EOA is the pending owner → UP.acceptOwnership()";
     } else {
       const t = await hasCode(ctx, chainId, pending) ? await tryRead2(ctx, chainId, pending, KM_ABI, "target") : void 0;
-      if (!t || getAddress28(t) !== profile) throw new UpError("NOT_SUPPORTED", `the pending owner ${pending} must accept itself (it is neither this agent's controller nor a Key Manager of this profile)`);
+      if (!t || getAddress29(t) !== profile) throw new UpError("NOT_SUPPORTED", `the pending owner ${pending} must accept itself (it is neither this agent's controller nor a Key Manager of this profile)`);
       to = pending;
       data = encodeFunctionData13({ abi: KM_ABI, functionName: "execute", args: [accept] });
       route = `new Key Manager ${pending}.execute(acceptOwnership()) — needs CHANGEOWNER for ${signer.address}`;
@@ -13853,7 +14044,7 @@ defineVerb({
     await simulate(ctx, { chainId, from: signer.address, to, data });
     await ctx.consent({ verb: "ownership accept", risk: "admin", chainId, summary: confirmation, value: 0n, target: to, selector: data.slice(0, 10) });
     const tx = await sendTx(ctx, signer, { chainId, to, data });
-    const owner = tx.status === "success" ? getAddress28(await tryRead2(ctx, chainId, profile, UP_ABI, "owner") ?? zeroAddress5) : void 0;
+    const owner = tx.status === "success" ? getAddress29(await tryRead2(ctx, chainId, profile, UP_ABI, "owner") ?? zeroAddress5) : void 0;
     return { data: { status: tx.status, txHash: tx.hash, chainId, profile, newOwner: owner, confirmation }, text: tx.status === "dry-run" ? `DRY RUN: ${route}` : `ownership accepted: owner is now ${owner} (tx ${tx.hash})` };
   }
 });
@@ -13903,7 +14094,7 @@ init_permissions();
 init_profile();
 init_multichain();
 init_read2();
-import { getAddress as getAddress29, hashMessage, hashTypedData, isHex as isHex4 } from "./vendor-viem.mjs";
+import { getAddress as getAddress30, hashMessage, hashTypedData, isHex as isHex4 } from "./vendor-viem.mjs";
 async function isValidSignature1271(ctx, chainId, address, hash, signature) {
   try {
     const r = await read2(ctx, chainId, address, ERC1271_ABI, "isValidSignature", [hash, signature]);
@@ -14020,7 +14211,7 @@ async function signFlow(ctx, a, kind) {
     validation: as === "profile" ? `verifiers call isValidSignature(${hash}, signature) on ${profile} → Key Manager → controller needs SIGN` : "plain EOA signature of the controller key",
     warnings: warnings.length ? warnings : void 0
   };
-  const verifyingContract = td && td.domain?.verifyingContract ? getAddress29(td.domain.verifyingContract) : void 0;
+  const verifyingContract = td && td.domain?.verifyingContract ? getAddress30(td.domain.verifyingContract) : void 0;
   await ctx.consent({ verb: `sign ${kind}`, risk: blind || valueMoving ? "admin" : "write", chainId, summary: { ...summary, blindHash: blind || void 0, valueMoving: valueMoving || void 0 }, value: 0n, target: verifyingContract ?? profile ?? signer.address });
   if (ctx.flags.dryRun) return { data: { ...summary, dryRun: true }, text: `DRY RUN: would sign ${hash} as ${as}`, warnings };
   const signature = kind === "message" ? await signer.signMessage(message) : await signer.signTypedData(td);
@@ -14088,7 +14279,7 @@ defineVerb({
 });
 
 // src/relayer/verbs.ts
-import { getAddress as getAddress30 } from "./vendor-viem.mjs";
+import { getAddress as getAddress31 } from "./vendor-viem.mjs";
 init_verbs();
 init_errors();
 init_transport();
@@ -14211,7 +14402,7 @@ defineVerb({
     let req;
     if (a.payload) {
       if (a.to || a.data || a.fn) throw new UpError("BAD_ARGS", "pass either --payload or --to/--data/--fn");
-      req = { chainId, profile: getAddress30(profile), payload: a.payload, verb: "relayer execute" };
+      req = { chainId, profile: getAddress31(profile), payload: a.payload, verb: "relayer execute" };
     } else {
       const b = buildCall({ to: a.to, value: a.value, data: a.data, fn: a.fn, args: a.args, abi: a.abi, operation: a.operation });
       req = { chainId, profile, calls: [b.call], abi: b.abi, verb: "relayer execute" };
@@ -14225,7 +14416,7 @@ defineVerb({
 init_verbs();
 init_errors();
 init_transport();
-import { encodeFunctionData as encodeFunctionData19, getAddress as getAddress37, isAddress as isAddress16, isHex as isHex6, parseAbiItem as parseAbiItem3, parseUnits as parseUnits2 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData19, getAddress as getAddress38, isAddress as isAddress17, isHex as isHex6, parseAbiItem as parseAbiItem3, parseUnits as parseUnits2 } from "./vendor-viem.mjs";
 
 // src/erc4337/constants.ts
 init_assets();
@@ -14300,13 +14491,13 @@ var CALL_TYPES = { VALUE: 1, CALL: 2, STATICCALL: 4, DELEGATECALL: 8 };
 // src/erc4337/entrypoint.ts
 init_errors();
 init_tx();
-import { concat as concat6, encodeFunctionData as encodeFunctionData15, getAddress as getAddress32, keccak256 as keccak25617, size, slice as slice2 } from "./vendor-viem.mjs";
+import { concat as concat6, encodeFunctionData as encodeFunctionData15, getAddress as getAddress33, keccak256 as keccak25617, size, slice as slice2 } from "./vendor-viem.mjs";
 
 // src/erc4337/bytecode.ts
 init_assets();
 init_errors();
 import { createHash } from "node:crypto";
-import { concat as concat5, encodeAbiParameters as encodeAbiParameters3, getAddress as getAddress31, getContractAddress as getContractAddress2, keccak256 as keccak25616 } from "./vendor-viem.mjs";
+import { concat as concat5, encodeAbiParameters as encodeAbiParameters3, getAddress as getAddress32, getContractAddress as getContractAddress2, keccak256 as keccak25616 } from "./vendor-viem.mjs";
 function sha256Hex(code) {
   return createHash("sha256").update(Buffer.from(code.slice(2), "hex")).digest("hex");
 }
@@ -14326,7 +14517,7 @@ function entryPointAsset() {
   const a = assetJson("bytecode", "EntryPointV06.json");
   integrity("EntryPoint v0.6", a.creationCode, a.creationCodeSha256, a.creationCodeKeccak256);
   const addr2 = create2Address(a.deployment.factory, a.deployment.salt, a.creationCode);
-  if (addr2 !== getAddress31(a.deployment.address)) throw new UpError("INTERNAL", `bundled EntryPoint v0.6 bytecode does not produce ${a.deployment.address} (got ${addr2})`);
+  if (addr2 !== getAddress32(a.deployment.address)) throw new UpError("INTERNAL", `bundled EntryPoint v0.6 bytecode does not produce ${a.deployment.address} (got ${addr2})`);
   return epCache = a;
 }
 var extCache;
@@ -14336,7 +14527,7 @@ function extensionAsset() {
   integrity("Extension4337", a.creationCode, a.creationCodeSha256, a.creationCodeKeccak256);
   const c = a.deployment.canonical;
   const addr2 = create2Address(a.deployment.factory, a.deployment.salt, extensionInitCode(c.entryPoint, a));
-  if (addr2 !== getAddress31(c.address)) throw new UpError("INTERNAL", `bundled Extension4337 bytecode does not produce ${c.address} (got ${addr2})`);
+  if (addr2 !== getAddress32(c.address)) throw new UpError("INTERNAL", `bundled Extension4337 bytecode does not produce ${c.address} (got ${addr2})`);
   return extCache = a;
 }
 function extensionInitCode(entryPoint, a = extensionAsset()) {
@@ -14409,7 +14600,7 @@ async function entryPointStatus(ctx, chainId, address = ENTRYPOINT_V06) {
   const code = await getCode3(ctx, chainId, address);
   const deployed = code !== "0x";
   const codeHash2 = deployed ? keccak25617(code) : void 0;
-  return { address: getAddress32(address), deployed, codeHash: codeHash2, expectedCodeHash: asset.runtimeCodeHash, canonical: deployed && codeHash2 === asset.runtimeCodeHash };
+  return { address: getAddress33(address), deployed, codeHash: codeHash2, expectedCodeHash: asset.runtimeCodeHash, canonical: deployed && codeHash2 === asset.runtimeCodeHash };
 }
 async function deployViaNick(ctx, signer, p) {
   const expected = create2Address(NICK_FACTORY, p.salt, p.initCode);
@@ -14432,7 +14623,7 @@ async function deployViaNick(ctx, signer, p) {
       details: sim.revert
     });
   }
-  if (size(sim.data) >= 20 && getAddress32(slice2(sim.data, size(sim.data) - 20)) !== expected) {
+  if (size(sim.data) >= 20 && getAddress33(slice2(sim.data, size(sim.data) - 20)) !== expected) {
     throw new UpError("INTERNAL", `${p.name}: factory simulation returned ${sim.data}, expected ${expected}`);
   }
   const tx = await sendTx(ctx, signer, { chainId: p.chainId, to: NICK_FACTORY, data });
@@ -14448,7 +14639,7 @@ async function deployViaNick(ctx, signer, p) {
 async function deployEntryPoint(ctx, signer, chainId) {
   const a = entryPointAsset();
   const r = await deployViaNick(ctx, signer, { chainId, name: "EntryPoint v0.6", salt: a.deployment.salt, initCode: a.creationCode, expectedRuntimeHash: a.runtimeCodeHash });
-  if (r.address !== getAddress32(a.deployment.address)) throw new UpError("INTERNAL", `EntryPoint deployed at ${r.address}, expected ${a.deployment.address}`);
+  if (r.address !== getAddress33(a.deployment.address)) throw new UpError("INTERNAL", `EntryPoint deployed at ${r.address}, expected ${a.deployment.address}`);
   return r;
 }
 var depositToCalldata = (account) => encodeFunctionData15({ abi: entryPoint06Abi, functionName: "depositTo", args: [account] });
@@ -14468,11 +14659,11 @@ init_errors();
 init_policy();
 init_transport();
 init_tx();
-import { encodeFunctionData as encodeFunctionData17, getAddress as getAddress35, keccak256 as keccak25619, size as size3 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData17, getAddress as getAddress36, keccak256 as keccak25619, size as size3 } from "./vendor-viem.mjs";
 
 // src/erc4337/lsp6.ts
 init_errors();
-import { concat as concat7, getAddress as getAddress33, isAddress as isAddress15, isHex as isHex5, pad as pad3, size as size2, slice as slice3, toHex as toHex3 } from "./vendor-viem.mjs";
+import { concat as concat7, getAddress as getAddress34, isAddress as isAddress16, isHex as isHex5, pad as pad3, size as size2, slice as slice3, toHex as toHex3 } from "./vendor-viem.mjs";
 var permissionsKey2 = (a) => concat7([KEY_PREFIX_PERMISSIONS, a.toLowerCase()]);
 var allowedCallsKey2 = (a) => concat7([KEY_PREFIX_ALLOWED_CALLS, a.toLowerCase()]);
 var allowedDataKeysKey2 = (a) => concat7([KEY_PREFIX_ALLOWED_DATA_KEYS, a.toLowerCase()]);
@@ -14549,7 +14740,7 @@ function encodeAllowedCalls2(entries) {
     entries.map((e) => {
       const ct = parseCallTypes2(e.callTypes);
       if (ct === 0) throw new UpError("BAD_ARGS", "AllowedCalls entry needs at least one call type");
-      const addr2 = e.address === "*" ? WILD20 : isAddress15(e.address, { strict: false }) ? e.address.toLowerCase() : void 0;
+      const addr2 = e.address === "*" ? WILD20 : isAddress16(e.address, { strict: false }) ? e.address.toLowerCase() : void 0;
       if (!addr2) throw new UpError("BAD_ARGS", `AllowedCalls address must be an address or "*", got ${e.address}`);
       const std = four(e.standard, "standard");
       const fn = four(e.function, "function");
@@ -14569,7 +14760,7 @@ function decodeAllowedCalls2(v) {
     return {
       callTypes: ct,
       callTypeNames: Object.entries(CALL_TYPES).filter(([, b]) => bits & b).map(([n]) => n),
-      address: addr2 === WILD20 ? "*" : getAddress33(addr2),
+      address: addr2 === WILD20 ? "*" : getAddress34(addr2),
       standard: std === WILD4 ? "*" : std,
       function: fn === WILD4 ? "*" : fn
     };
@@ -14594,7 +14785,7 @@ async function getDataBatch2(ctx, chainId, up, keys) {
 }
 async function readController(ctx, chainId, up, a) {
   const [p, c, k] = await getDataBatch2(ctx, chainId, up, [permissionsKey2(a), allowedCallsKey2(a), allowedDataKeysKey2(a)]);
-  return { address: getAddress33(a), permissions: decodePermissions2(p), allowedCalls: c ?? "0x", allowedDataKeys: k ?? "0x" };
+  return { address: getAddress34(a), permissions: decodePermissions2(p), allowedCalls: c ?? "0x", allowedDataKeys: k ?? "0x" };
 }
 async function readControllerArray(ctx, chainId, up) {
   const [lenRaw] = await getDataBatch2(ctx, chainId, up, [arrayLengthKey]);
@@ -14602,7 +14793,7 @@ async function readControllerArray(ctx, chainId, up) {
   if (length > 10000n) throw new UpError("INTERNAL", `AddressPermissions[] length ${length} is implausible; refusing to scan`);
   const keys = Array.from({ length: Number(length) }, (_, i) => arrayIndexKey(i));
   const vals = await getDataBatch2(ctx, chainId, up, keys);
-  return { length, entries: vals.map((v) => v && size2(v) === 20 ? getAddress33(v) : void 0) };
+  return { length, entries: vals.map((v) => v && size2(v) === 20 ? getAddress34(v) : void 0) };
 }
 function indexOfController(arr, a) {
   return arr.entries.findIndex((e) => e?.toLowerCase() === a.toLowerCase());
@@ -14616,7 +14807,7 @@ import {
   decodeEventLog as decodeEventLog3,
   encodeAbiParameters as encodeAbiParameters4,
   encodeFunctionData as encodeFunctionData16,
-  getAddress as getAddress34,
+  getAddress as getAddress35,
   hexToBytes as hexToBytes3,
   keccak256 as keccak25618
 } from "./vendor-viem.mjs";
@@ -14915,7 +15106,7 @@ async function estimateKeyManagerGas(ctx, chainId, p, warnings) {
   }
 }
 async function prepareUserOperation(ctx, p) {
-  const entryPoint = getAddress34(p.entryPoint ?? ENTRYPOINT_V06);
+  const entryPoint = getAddress35(p.entryPoint ?? ENTRYPOINT_V06);
   const warnings = [];
   const g = p.gas ?? {};
   const nonce = p.nonce ?? await getNonce(ctx, p.chainId, p.profile, p.nonceKey ?? nonceKeyFor(p.signer), entryPoint);
@@ -14927,7 +15118,7 @@ async function prepareUserOperation(ctx, p) {
   if (fees2.maxPriorityFeePerGas > fees2.maxFeePerGas) throw new UpError("BAD_ARGS", `maxPriorityFeePerGas (${fees2.maxPriorityFeePerGas}) exceeds maxFeePerGas (${fees2.maxFeePerGas})`);
   const gasSource = { call: "override", verification: "override", preVerification: "override", fees: g.maxFeePerGas !== void 0 ? "override" : "chain" };
   const op = {
-    sender: getAddress34(p.profile),
+    sender: getAddress35(p.profile),
     nonce,
     initCode: "0x",
     callData: p.callData,
@@ -14976,11 +15167,11 @@ async function prepareUserOperation(ctx, p) {
   if (op.paymasterAndData === "0x" && deposit < prefund) {
     warnings.push(`EntryPoint deposit of the profile (${deposit} wei) is below the required prefund (${prefund} wei); Extension4337 never pays prefund, so the op would fail with AA21 — top up with: up account 4337 deposit --chain ${p.chainId} --amount <wei>`);
   }
-  return { chainId: p.chainId, entryPoint, op, userOpHash: getUserOpHashV06(op, entryPoint, p.chainId), signer: getAddress34(p.signer), requiredPrefund: prefund, deposit, gasSource, validation, warnings, signed: false };
+  return { chainId: p.chainId, entryPoint, op, userOpHash: getUserOpHashV06(op, entryPoint, p.chainId), signer: getAddress35(p.signer), requiredPrefund: prefund, deposit, gasSource, validation, warnings, signed: false };
 }
 async function signPreparedUserOp(ctx, signer, prep) {
   if (ctx.flags.dryRun) throw new UpError("INTERNAL", "refusing to sign a UserOperation in --dry-run");
-  if (getAddress34(signer.address) !== prep.signer) throw new UpError("INTERNAL", `UserOperation was prepared for ${prep.signer}, not ${signer.address}`);
+  if (getAddress35(signer.address) !== prep.signer) throw new UpError("INTERNAL", `UserOperation was prepared for ${prep.signer}, not ${signer.address}`);
   const { op, userOpHash } = await signUserOp(signer, prep.op, prep.entryPoint, prep.chainId);
   if (userOpHash !== prep.userOpHash) throw new UpError("INTERNAL", "userOpHash changed between preparation and signing");
   return { ...prep, op, signed: true };
@@ -15126,17 +15317,17 @@ async function resolveProfile(ctx, chainId, profile) {
   if (code === "0x") throw new UpError("NOT_DEPLOYED", `no Universal Profile at ${profile} on chain ${chainId}`, { hint: "check --profile/--chain; deploy the profile on this chain first" });
   let owner;
   try {
-    owner = getAddress35(await read3(ctx, chainId, profile, UP_ABI2, "owner"));
+    owner = getAddress36(await read3(ctx, chainId, profile, UP_ABI2, "owner"));
   } catch (e) {
     throw new UpError("NOT_SUPPORTED", `${profile} on chain ${chainId} does not look like a Universal Profile (owner() failed)`, { cause: e });
   }
   const target = await tryCall(ctx, chainId, { to: owner, data: encodeFunctionData17({ abi: KM_ABI2, functionName: "target" }) });
-  if (!target.ok || size3(target.data) < 32 || getAddress35(`0x${target.data.slice(-40)}`) !== getAddress35(profile)) {
+  if (!target.ok || size3(target.data) < 32 || getAddress36(`0x${target.data.slice(-40)}`) !== getAddress36(profile)) {
     throw new UpError("NOT_SUPPORTED", `the owner of ${profile} (${owner}) is not an LSP6 Key Manager for this profile; Extension4337 validates through the owner's lsp20VerifyCall`, {
       hint: "ERC-4337 via Extension4337 needs a profile owned by its LSP6 Key Manager"
     });
   }
-  return { profile: getAddress35(profile), owner, keyManager: owner };
+  return { profile: getAddress36(profile), owner, keyManager: owner };
 }
 async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = ENTRYPOINT_V06) {
   const prof = await resolveProfile(ctx, chainId, profile);
@@ -15149,7 +15340,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
     readController(ctx, chainId, prof.profile, entryPoint),
     readControllerArray(ctx, chainId, prof.profile)
   ]);
-  const linked = linkedRaw && size3(linkedRaw) >= 20 ? getAddress35(linkedRaw.slice(0, 42)) : null;
+  const linked = linkedRaw && size3(linkedRaw) >= 20 ? getAddress36(linkedRaw.slice(0, 42)) : null;
   let linkedHasCode = false;
   let linkedEntryPoint = null;
   let linkedIsBundled = false;
@@ -15158,7 +15349,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
     linkedHasCode = code !== "0x";
     if (linkedHasCode) {
       const r = await tryCall(ctx, chainId, { to: linked, data: encodeFunctionData17({ abi: extension4337Abi(), functionName: "entryPoint" }) });
-      if (r.ok && size3(r.data) >= 32) linkedEntryPoint = getAddress35(`0x${r.data.slice(-40)}`);
+      if (r.ok && size3(r.data) >= 32) linkedEntryPoint = getAddress36(`0x${r.data.slice(-40)}`);
       const want = extensionRuntimeHashFor(entryPoint);
       linkedIsBundled = want !== void 0 && keccak25619(code) === want;
     }
@@ -15186,7 +15377,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
     nickFactory: nick,
     extension: { expected, deployed: expectedCode !== "0x", linked, linkedHasCode, linkedEntryPoint, linkedMatches, linkedIsBundled },
     entryPointController: {
-      address: getAddress35(entryPoint),
+      address: getAddress36(entryPoint),
       permissions: encodePermissions2(epData.permissions),
       permissionNames: epNames,
       isController: epData.permissions !== 0n,
@@ -15196,7 +15387,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
       allowedDataKeys: safe(() => decodeCompactBytesArray(epData.allowedDataKeys), []),
       forbidden
     },
-    signer: { address: getAddress35(signerAddress2), permissions: encodePermissions2(signerData.permissions), permissionNames: permissionNames(signerData.permissions), has4337 },
+    signer: { address: getAddress36(signerAddress2), permissions: encodePermissions2(signerData.permissions), permissionNames: permissionNames(signerData.permissions), has4337 },
     deposit,
     enabled,
     missing,
@@ -15677,7 +15868,7 @@ import { encodeFunctionData as encodeFunctionData18 } from "./vendor-viem.mjs";
 // src/erc4337/payload.ts
 init_errors();
 init_transport();
-import { decodeFunctionData as decodeFunctionData3, getAddress as getAddress36, slice as slice4 } from "./vendor-viem.mjs";
+import { decodeFunctionData as decodeFunctionData3, getAddress as getAddress37, slice as slice4 } from "./vendor-viem.mjs";
 var SELECTORS2 = {
   execute: "0x44c028fe",
   executeBatch: "0x31858452",
@@ -15700,12 +15891,12 @@ var innerSelector = (data) => data.length >= 10 ? data.slice(0, 10).toLowerCase(
 function toCall(op, to, value, data) {
   if (op === BigInt(OPERATION.DELEGATECALL)) throw new UpError("NOT_SUPPORTED", "DELEGATECALL is always rejected by the Key Manager (DelegateCallDisallowedViaKeyManager)");
   if (op > 3n) throw new UpError("BAD_ARGS", `unknown ERC725X operation ${op}`);
-  return { operation: Number(op), to: getAddress36(to), value, data };
+  return { operation: Number(op), to: getAddress37(to), value, data };
 }
 function decodeProfilePayload2(payload, profile) {
   if (!/^0x([0-9a-fA-F]{2}){4,}$/.test(payload)) throw new UpError("BAD_ARGS", "payload must be hex calldata of at least 4 bytes");
   const selector = slice4(payload, 0, 4).toLowerCase();
-  const self = getAddress36(profile);
+  const self = getAddress37(profile);
   const base = { selector, calls: [], totalValue: 0n, targets: [self], innerSelectors: [] };
   let decoded;
   try {
@@ -15764,7 +15955,7 @@ function describeCalls(calls) {
     selector: calls.length === 1 ? SELECTORS2.execute : SELECTORS2.executeBatch,
     calls,
     totalValue: calls.reduce((s, c) => s + c.value, 0n),
-    targets: [...new Set(calls.map((c) => getAddress36(c.to)))],
+    targets: [...new Set(calls.map((c) => getAddress37(c.to)))],
     innerSelectors: calls.map((c) => innerSelector(c.data)),
     risk: "write",
     reasons: []
@@ -15910,8 +16101,8 @@ function optBig(v, what) {
   return parseAmount2(v, what);
 }
 function addr(v, what) {
-  if (typeof v !== "string" || !isAddress16(v, { strict: false })) throw new UpError("BAD_ARGS", `${what} must be an address, got ${String(v)}`);
-  return getAddress37(v);
+  if (typeof v !== "string" || !isAddress17(v, { strict: false })) throw new UpError("BAD_ARGS", `${what} must be an address, got ${String(v)}`);
+  return getAddress38(v);
 }
 function hexArg(v, what) {
   if (v === void 0 || v === null || v === "") return "0x";
@@ -16267,7 +16458,7 @@ init_assets();
 init_home();
 init_bundled();
 init_read();
-import { getAddress as getAddress39 } from "./vendor-viem.mjs";
+import { getAddress as getAddress40 } from "./vendor-viem.mjs";
 
 // src/abi/codehashes.ts
 var KNOWN_RUNTIME_CODEHASHES = {
@@ -16295,7 +16486,7 @@ init_detect();
 // src/abi/proxy.ts
 init_read();
 init_detect();
-import { getAddress as getAddress38 } from "./vendor-viem.mjs";
+import { getAddress as getAddress39 } from "./vendor-viem.mjs";
 var EIP1967_SLOTS = {
   implementation: "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
   beacon: "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50",
@@ -16308,7 +16499,7 @@ function slotAddress(word) {
   if (h.length !== 64 || !/^0{24}/.test(h)) return void 0;
   const a = h.slice(24);
   if (/^0{40}$/.test(a)) return void 0;
-  return getAddress38(`0x${a}`);
+  return getAddress39(`0x${a}`);
 }
 var ERC1167_PREFIX = "363d3d373d3d3d363d";
 var ERC1167_SUFFIX = "5af43d82803e903d91";
@@ -16323,7 +16514,7 @@ function parseErc1167(code) {
   const rest = c.slice(20 + 2 * n);
   if (!rest.startsWith(ERC1167_SUFFIX)) return void 0;
   if (!/^60[0-9a-f]{2}/.test(rest.slice(ERC1167_SUFFIX.length)) || !rest.slice(ERC1167_SUFFIX.length + 4).startsWith(ERC1167_TAIL)) return void 0;
-  return getAddress38(`0x${addrHex.padStart(40, "0")}`);
+  return getAddress39(`0x${addrHex.padStart(40, "0")}`);
 }
 var BEACON_ABI = [{ type: "function", name: "implementation", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] }];
 async function resolveProxy(ctx, chainId, address, code) {
@@ -16354,7 +16545,7 @@ async function resolveProxy(ctx, chainId, address, code) {
     info.beacon = beaconAddr;
     info.evidence.push("EIP-1967 beacon slot is set");
     const r = await tryRead(ctx, chainId, { address: beaconAddr, abi: BEACON_ABI, functionName: "implementation" });
-    if (r.ok) info.implementation = getAddress38(r.value);
+    if (r.ok) info.implementation = getAddress39(r.value);
     else info.evidence.push(`beacon.implementation() failed: ${r.error}`);
   } else if (slotAddress(uups)) {
     info.isProxy = true;
@@ -16389,7 +16580,7 @@ async function lsp17Extensions(ctx, chainId, account, selectors) {
     if (v.length !== 40 && v.length !== 42) return;
     const addr2 = `0x${v.slice(0, 40)}`;
     if (/^0x0{40}$/.test(addr2)) return;
-    out.push({ selector, extension: getAddress38(addr2), forwardsValue: v.length === 42 && v.slice(40) === "01" });
+    out.push({ selector, extension: getAddress39(addr2), forwardsValue: v.length === 42 && v.slice(40) === "01" });
   });
   return out;
 }
@@ -16611,7 +16802,7 @@ function explorerPlan(chain, cfg, chainIdArg) {
 }
 function addrs(list, field) {
   if (!Array.isArray(list)) return [];
-  return list.map((x) => typeof x === "string" ? x : x?.[field]).filter((x) => typeof x === "string" && /^0x[0-9a-fA-F]{40}$/.test(x)).map((x) => getAddress39(x));
+  return list.map((x) => typeof x === "string" ? x : x?.[field]).filter((x) => typeof x === "string" && /^0x[0-9a-fA-F]{40}$/.test(x)).map((x) => getAddress40(x));
 }
 function parseAbiValue(v) {
   try {
@@ -16723,7 +16914,7 @@ function canonicalAbi(c) {
   return c.abiName ? bundledAbi(c.abiName) : void 0;
 }
 async function discoverAbi(ctx, chainId, address, opts = {}) {
-  return discover(ctx, chainId, getAddress39(address), opts, 0);
+  return discover(ctx, chainId, getAddress40(address), opts, 0);
 }
 async function discover(ctx, chainId, address, opts, depth) {
   const code = await getCode(ctx, chainId, address);
@@ -17135,13 +17326,13 @@ function enforceTrustPolicy(ctx, call3, value, raw) {
 init_assets();
 init_errors();
 init_read();
-import { getAddress as getAddress40 } from "./vendor-viem.mjs";
+import { getAddress as getAddress41 } from "./vendor-viem.mjs";
 function file() {
   return assetJson("registry", "protocols.json");
 }
 function collect(obj, path, addresses, urls) {
   if (typeof obj === "string") {
-    if (/^0x[0-9a-fA-F]{40}$/.test(obj)) addresses.push({ role: path, address: getAddress40(obj) });
+    if (/^0x[0-9a-fA-F]{40}$/.test(obj)) addresses.push({ role: path, address: getAddress41(obj) });
     else if (/^https:\/\//.test(obj)) urls[path] = obj;
     return;
   }
@@ -17762,7 +17953,7 @@ defineVerb({
 // src/tokens/verbs.ts
 init_verbs();
 init_errors();
-import { getAddress as getAddress43 } from "./vendor-viem.mjs";
+import { getAddress as getAddress44 } from "./vendor-viem.mjs";
 init_read();
 init_codec();
 init_assets2();
@@ -17770,7 +17961,7 @@ init_assets2();
 // src/tokens/plan.ts
 init_errors();
 init_detect();
-import { encodeFunctionData as encodeFunctionData20, getAddress as getAddress41, maxUint256, zeroAddress as zeroAddress6 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData20, getAddress as getAddress42, maxUint256, zeroAddress as zeroAddress6 } from "./vendor-viem.mjs";
 init_read();
 init_codec();
 init_assets2();
@@ -17806,7 +17997,7 @@ async function hasExtension(ctx, chainId, account, selector) {
   }
 }
 async function planTransfer(ctx, chainId, profile, asset, o) {
-  const to = getAddress41(o.to);
+  const to = getAddress42(o.to);
   if (to.toLowerCase() === profile.toLowerCase()) throw new UpError("BAD_ARGS", "recipient is the profile itself");
   if (to === zeroAddress6) throw new UpError("BAD_ARGS", "refusing to transfer to the zero address (that is a burn)");
   const data = o.data ?? "0x";
@@ -17891,7 +18082,7 @@ async function planTransfer(ctx, chainId, profile, asset, o) {
   }
 }
 async function planNativeTransfer(ctx, chainId, profile, nativeSymbol3, o) {
-  const to = getAddress41(o.to);
+  const to = getAddress42(o.to);
   if (to.toLowerCase() === profile.toLowerCase()) throw new UpError("BAD_ARGS", "recipient is the profile itself");
   const value = parseAmount(o.amount, 18, o.raw);
   if (value === 0n) throw new UpError("BAD_ARGS", "--amount must be greater than zero");
@@ -17915,7 +18106,7 @@ function unsupported(asset, mode) {
   });
 }
 async function planApprove(ctx, chainId, profile, asset, o) {
-  const op = getAddress41(o.operator);
+  const op = getAddress42(o.operator);
   if (op === zeroAddress6) throw new UpError("BAD_ARGS", "operator must not be the zero address");
   if (op.toLowerCase() === profile.toLowerCase()) throw new UpError("BAD_ARGS", "the profile cannot be its own operator");
   const data = o.data ?? "0x";
@@ -18009,7 +18200,7 @@ init_read();
 init_detect();
 init_signature();
 init_assets2();
-import { getAddress as getAddress42, pad as pad4 } from "./vendor-viem.mjs";
+import { getAddress as getAddress43, pad as pad4 } from "./vendor-viem.mjs";
 import { encodeArrayKey as encodeArrayKey3 } from "./vendor-erc725.mjs";
 var LSP5_ARRAY_KEY = "0x6460ee3c0aac563ccbf76d6e1d07bada78e3a9514e6382b736ed3f478ab7b90b";
 var LSP5_MAP_PREFIX = "0x812c4334633eb816c80d0000";
@@ -18032,7 +18223,7 @@ async function readLsp5(ctx, chainId, holder, max = 200) {
     chainId,
     Array.from({ length: n }, (_, i) => ({ address: holder, abi: ERC725Y_GETDATA_ABI, functionName: "getData", args: [encodeArrayKey3(LSP5_ARRAY_KEY, i)] }))
   );
-  const assets = items.map((r) => r.ok && typeof r.value === "string" && /^0x[0-9a-fA-F]{40}$/.test(r.value) ? getAddress42(r.value) : void 0).filter((x) => !!x);
+  const assets = items.map((r) => r.ok && typeof r.value === "string" && /^0x[0-9a-fA-F]{40}$/.test(r.value) ? getAddress43(r.value) : void 0).filter((x) => !!x);
   const maps = await readMany(
     ctx,
     chainId,
@@ -18084,7 +18275,7 @@ async function envioHoldings(endpoint, holder, opts = {}) {
       if (!assetId || !/^0x[0-9a-fA-F]{40}$/.test(assetId)) continue;
       const meta = h.baseAsset ?? h.asset ?? {};
       const key = assetId.toLowerCase();
-      const e = byAsset.get(key) ?? { asset: getAddress42(assetId), standard: envioStandard(meta.standard), name: meta.lsp4TokenName ?? void 0, symbol: meta.lsp4TokenSymbol ?? void 0, decimals: typeof meta.decimals === "number" ? meta.decimals : void 0 };
+      const e = byAsset.get(key) ?? { asset: getAddress43(assetId), standard: envioStandard(meta.standard), name: meta.lsp4TokenName ?? void 0, symbol: meta.lsp4TokenSymbol ?? void 0, decimals: typeof meta.decimals === "number" ? meta.decimals : void 0 };
       const tokenId = typeof h.token_id === "string" && h.token_id.includes("-") ? h.token_id.split("-")[1] : void 0;
       if (tokenId) (e.tokenIds ??= []).push(tokenId);
       else e.balance = String(h.balance);
@@ -18126,7 +18317,7 @@ async function blockscoutHoldings(base, holder, opts = {}) {
       if (typeof addr2 !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(addr2)) continue;
       const key = addr2.toLowerCase();
       const dec = it.token.decimals !== null && it.token.decimals !== void 0 && /^\d+$/.test(String(it.token.decimals)) ? Number(it.token.decimals) : void 0;
-      const e = byAsset.get(key) ?? { asset: getAddress42(addr2), standard: blockscoutStandard(it.token.type), name: it.token.name ?? void 0, symbol: it.token.symbol ?? void 0, decimals: dec };
+      const e = byAsset.get(key) ?? { asset: getAddress43(addr2), standard: blockscoutStandard(it.token.type), name: it.token.name ?? void 0, symbol: it.token.symbol ?? void 0, decimals: dec };
       if (it.token_id !== null && it.token_id !== void 0) (e.tokenIds ??= []).push(String(it.token_id));
       else if (it.value !== void 0 && it.value !== null) e.balance = String(it.value);
       byAsset.set(key, e);
@@ -18184,7 +18375,7 @@ async function logScanHoldings(ctx, chainId, holder, blocks) {
         const match = evs.find((e) => e.topic0 === l.topics[0]?.toLowerCase() && e.toTopic === q3.toTopic && e.topicCount === l.topics.length);
         if (!match || !/^0x[0-9a-fA-F]{40}$/.test(l.address)) continue;
         const key = l.address.toLowerCase();
-        if (!byAsset.has(key)) byAsset.set(key, { asset: getAddress42(l.address), standard: match.std });
+        if (!byAsset.has(key)) byAsset.set(key, { asset: getAddress43(l.address), standard: match.std });
       }
     }
   }
@@ -18471,7 +18662,7 @@ defineVerb({
         const amounts = await readMany(ctx, chainId, ops.map((op) => ({ address: asset.address, abi: LSP7_ABI(), functionName: "authorizedAmountFor", args: [op, holder] })));
         const list = ops.map((op, i) => {
           const v = amounts[i].ok ? BigInt(amounts[i].value) : void 0;
-          return { operator: getAddress43(op), allowance: v?.toString(), allowanceFormatted: v === void 0 ? void 0 : v >= 2n ** 255n ? "UNLIMITED" : formatAmount(v, asset.decimals) };
+          return { operator: getAddress44(op), allowance: v?.toString(), allowanceFormatted: v === void 0 ? void 0 : v >= 2n ** 255n ? "UNLIMITED" : formatAmount(v, asset.decimals) };
         });
         return { data: { ...base, operators: list }, text: list.length ? list.map((o) => `${o.operator}: ${o.allowanceFormatted ?? "?"} ${assetLabel(asset)}`).join("\n") : `no operators for ${holder} on ${assetLabel(asset)}` };
       }
@@ -18483,7 +18674,7 @@ defineVerb({
           return { data: { ...base, tokenId: id, operator, isOperator: ok }, text: `${operator} is ${ok ? "" : "NOT "}an operator of token ${formatLsp8TokenId(id, asset.tokenIdFormat)}` };
         }
         const ops = await readOk(ctx, chainId, asset.address, LSP8_ABI(), "getOperatorsOf", [id]);
-        return { data: { ...base, tokenId: id, operators: ops.map((x) => getAddress43(x)) }, text: ops.length ? `operators of token ${formatLsp8TokenId(id, asset.tokenIdFormat)}: ${ops.join(", ")}` : "no operators" };
+        return { data: { ...base, tokenId: id, operators: ops.map((x) => getAddress44(x)) }, text: ops.length ? `operators of token ${formatLsp8TokenId(id, asset.tokenIdFormat)}: ${ops.join(", ")}` : "no operators" };
       }
       case "ERC20": {
         if (!operator) throw new UpError("BAD_ARGS", "ERC-20 allowances cannot be enumerated on-chain: pass --operator <spender>");
@@ -18497,7 +18688,7 @@ defineVerb({
         if (a["token-id"] !== void 0) {
           const id = parseUintTokenId(a["token-id"]);
           const ap = await readOk(ctx, chainId, asset.address, ERC721_ABI, "getApproved", [id]);
-          Object.assign(out, { tokenId: id.toString(), approved: getAddress43(ap) });
+          Object.assign(out, { tokenId: id.toString(), approved: getAddress44(ap) });
           lines.push(`token #${id} approved: ${ap}`);
         }
         if (operator) {
@@ -18631,14 +18822,14 @@ init_assets();
 init_errors();
 init_bundled();
 init_read();
-import { encodeFunctionData as encodeFunctionData21, getAddress as getAddress44 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData21, getAddress as getAddress45 } from "./vendor-viem.mjs";
 init_read();
 var abi;
 var LSP26_ABI = () => abi ??= bundledAbi("LSP26FollowerSystem");
 function lsp26Registry() {
   const p = assetJson("registry", "protocols.json").protocols?.lsp26FollowerSystem;
   if (!p?.address) throw new UpError("INTERNAL", "protocols.json has no lsp26FollowerSystem entry");
-  return { address: getAddress44(p.address), chains: p.chains, absentOn: p.absentOn };
+  return { address: getAddress45(p.address), chains: p.chains, absentOn: p.absentOn };
 }
 function chainName3(ctx, id) {
   try {
@@ -18690,7 +18881,7 @@ async function page(ctx, chainId, lsp26, addr2, kind, total, start, limit) {
   if (s >= total) return [];
   const end = s + BigInt(limit) > total ? total : s + BigInt(limit);
   const list = await read(ctx, chainId, { address: lsp26, abi: LSP26_ABI(), functionName: kind === "followers" ? "getFollowersByIndex" : "getFollowsByIndex", args: [addr2, s, end] });
-  return list.map((x) => getAddress44(x));
+  return list.map((x) => getAddress45(x));
 }
 function encodeFollow(fn, arg) {
   return encodeFunctionData21({ abi: LSP26_ABI(), functionName: fn, args: [arg] });
@@ -18853,7 +19044,7 @@ init_blockies();
 // src/display/qr.ts
 init_png();
 import QRCode from "./vendor-qrcode.mjs";
-import { getAddress as getAddress45, isAddress as isAddress17 } from "./vendor-viem.mjs";
+import { getAddress as getAddress46, isAddress as isAddress18 } from "./vendor-viem.mjs";
 function qrMatrix(text, errorCorrectionLevel = "M") {
   if (!text) throw new Error("QR text is empty");
   const q3 = QRCode.create(text, { errorCorrectionLevel });
@@ -18892,8 +19083,8 @@ function qrText(m, opts = {}) {
   return lines.join("\n");
 }
 function checksummed(a, what) {
-  if (!isAddress17(a, { strict: false })) throw new Error(`invalid ${what} address: ${a}`);
-  return getAddress45(a);
+  if (!isAddress18(a, { strict: false })) throw new Error(`invalid ${what} address: ${a}`);
+  return getAddress46(a);
 }
 function nonNegative(v, what) {
   if (v < 0n) throw new Error(`${what} must not be negative`);
@@ -19108,8 +19299,8 @@ EIP-681: ${eip681.content}` : ""}`,
 init_verbs();
 init_errors();
 init_assets();
-import { existsSync as existsSync15, readdirSync as readdirSync2, readFileSync as readFileSync9 } from "node:fs";
-import { join as join11 } from "node:path";
+import { existsSync as existsSync16, readdirSync as readdirSync2, readFileSync as readFileSync9 } from "node:fs";
+import { join as join12 } from "node:path";
 
 // src/knowledge/standards.ts
 var LIPS = "https://github.com/lukso-network/LIPs/blob/main/LSPs";
@@ -19158,7 +19349,7 @@ function findStandards(filter) {
 
 // src/knowledge/verbs.ts
 function referencesDir() {
-  return join11(skillDir(), "references");
+  return join12(skillDir(), "references");
 }
 function describe(text) {
   const lines = text.split(/\r?\n/);
@@ -19176,9 +19367,9 @@ function describe(text) {
 }
 function listDocTopics() {
   const dir = referencesDir();
-  if (!existsSync15(dir)) return [];
+  if (!existsSync16(dir)) return [];
   return readdirSync2(dir, { withFileTypes: true }).filter((d) => d.isFile() && d.name.endsWith(".md")).map((d) => {
-    const text = readFileSync9(join11(dir, d.name), "utf8");
+    const text = readFileSync9(join12(dir, d.name), "utf8");
     return { topic: d.name.slice(0, -3), file: `references/${d.name}`, ...describe(text), lines: text.split(/\r?\n/).length };
   }).sort((a, b) => a.topic.localeCompare(b.topic));
 }
@@ -19199,7 +19390,7 @@ function readDoc(rawTopic) {
       details: { topics: topics.map((d) => d.topic) }
     });
   }
-  return { doc, content: readFileSync9(join11(skillDir(), doc.file), "utf8") };
+  return { doc, content: readFileSync9(join12(skillDir(), doc.file), "utf8") };
 }
 defineVerb({
   name: "docs",
@@ -19588,7 +19779,10 @@ async function runCli(argv) {
 `)
     });
     await preloadConfig(ctx);
-    const result = verb.risk === "local" || verb.risk === "read" ? await verb.run(ctx, args) : await withLock(ctx.home, "write", () => verb.run(ctx, args));
+    const result = verb.risk === "local" || verb.risk === "read" ? await verb.run(ctx, args) : await withLock(ctx.home, "write", async () => {
+      await ctx.refreshConfig?.();
+      return verb.run(ctx, args);
+    });
     process.stdout.write(renderResult(verb.name, result, json2) + "\n");
     return 0;
   } catch (e) {
@@ -19601,8 +19795,8 @@ async function runCli(argv) {
 // src/mcp/server.ts
 init_verbs();
 import { createInterface } from "node:readline";
-import { readdirSync as readdirSync3, readFileSync as readFileSync10, existsSync as existsSync16 } from "node:fs";
-import { join as join12 } from "node:path";
+import { readdirSync as readdirSync3, readFileSync as readFileSync10, existsSync as existsSync17 } from "node:fs";
+import { join as join13 } from "node:path";
 init_lock();
 init_errors();
 init_json();
@@ -19619,18 +19813,18 @@ function send(msg) {
   process.stdout.write(JSON.stringify(msg, replacer) + "\n");
 }
 function referenceFiles() {
-  const dir = join12(skillDir(), "references");
-  if (!existsSync16(dir)) return [];
+  const dir = join13(skillDir(), "references");
+  if (!existsSync17(dir)) return [];
   const out = [];
   const walk = (d, prefix) => {
     for (const n of readdirSync3(d, { withFileTypes: true })) {
-      if (n.isDirectory()) walk(join12(d, n.name), `${prefix}${n.name}/`);
-      else if (n.name.endsWith(".md")) out.push({ uri: `up://references/${prefix}${n.name}`, name: `${prefix}${n.name}`, path: join12(d, n.name) });
+      if (n.isDirectory()) walk(join13(d, n.name), `${prefix}${n.name}/`);
+      else if (n.name.endsWith(".md")) out.push({ uri: `up://references/${prefix}${n.name}`, name: `${prefix}${n.name}`, path: join13(d, n.name) });
     }
   };
   walk(dir, "");
-  const skill = join12(skillDir(), "SKILL.md");
-  if (existsSync16(skill)) out.unshift({ uri: "up://SKILL.md", name: "SKILL.md", path: skill });
+  const skill = join13(skillDir(), "SKILL.md");
+  if (existsSync17(skill)) out.unshift({ uri: "up://SKILL.md", name: "SKILL.md", path: skill });
   return out;
 }
 async function handleMcpMessage(msg) {
@@ -19678,13 +19872,16 @@ risk: ${v.risk}`,
             if (cancelled.delete(id)) throw new UpError("BAD_ARGS", "request cancelled by the client before it started; nothing was signed or sent");
             const ctx = createContext({ flags: { json: true, dryRun: args["dry-run"] === true, yes: args.yes === true, approval: args.approval, chain: args.chain, profile: args.profile } });
             await preloadConfig(ctx);
-            return v.risk === "local" || v.risk === "read" ? v.run(ctx, args) : withLock(ctx.home, "write", () => v.run(ctx, args));
+            return v.risk === "local" || v.risk === "read" ? v.run(ctx, args) : withLock(ctx.home, "write", async () => {
+              await ctx.refreshConfig?.();
+              return v.run(ctx, args);
+            });
           };
           const r = v.risk === "local" || v.risk === "read" ? await execute() : await serialised(execute);
           const payload = redact({ ok: true, verb: v.name, data: r.data, media: r.media, warnings: r.warnings });
           const content = [{ type: "text", text: (r.text ? r.text + "\n\n" : "") + JSON.stringify(payload, replacer, 2) }];
           for (const m of r.media ?? []) {
-            if (m.mimeType.startsWith("image/") && existsSync16(m.path)) content.push({ type: "image", data: readFileSync10(m.path).toString("base64"), mimeType: m.mimeType });
+            if (m.mimeType.startsWith("image/") && existsSync17(m.path)) content.push({ type: "image", data: readFileSync10(m.path).toString("base64"), mimeType: m.mimeType });
           }
           return ok({ content, structuredContent: JSON.parse(JSON.stringify(payload, replacer)), isError: false });
         } catch (e) {
