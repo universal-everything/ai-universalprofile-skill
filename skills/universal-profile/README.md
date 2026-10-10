@@ -11,6 +11,44 @@ Most "crypto skills" for AI agents hand the agent a raw private key. Whoever hol
 
 ---
 
+## What you can ask your agent
+
+Give it goals, not just single clicks. It plans the steps, shows you a preview of anything that spends, and then does the work as your profile:
+
+- 💵 **"Put my 1,000 USDC to work.** Find the best stablecoin yield on Ethereum, Base and Arbitrum at established lending markets like Aave or Morpho, move it there, check daily, and switch when another market pays clearly more after gas. Send me a short weekly report of what we earned."
+- 🪂 **"Farm the most promising airdrops for me.** Research the top upcoming airdrops on EVM networks, use each protocol the way it rewards (bridge, swap, lend, provide liquidity), stay within $200 in total, keep a log, and claim everything we qualify for."
+- 📈 **"Be my crypto autopilot.** Buy $50 of ETH every week, keep my portfolio at 60% ETH and 40% stablecoins, take some profit when ETH is up 20%, and earn yield on whatever sits idle."
+- 🛡️ **"Guard my positions.** Watch everything my profile holds on all networks, claim and compound rewards, and move funds to safety right away if a stablecoin loses its peg or a protocol I use gets exploited. Then tell me what you did."
+
+<details>
+<summary>More ideas</summary>
+
+**Get set up**
+- "Set yourself up with your own Universal Profile on LUKSO, give it a name, a picture and a short bio, and show me how to fund it."
+- "Add Base and Arbitrum too, with the same profile address, and tell me what it costs."
+- "Add my wallet as a co-owner, then only allow yourself to use the contracts we agree on."
+
+**Money**
+- "Every Friday, send 5 USDC from your profile to my savings profile and tell me the balance."
+- "Swap 20 USDC to ETH on Base, but only if the price impact is under 1%; otherwise wait and try again tomorrow."
+- "Move 50 USDC from Ethereum to LUKSO and confirm when it arrives."
+- "Lock in a fixed yield on my stablecoins until next March if it's above 6%, and remind me before it matures."
+- "Show me what your profile holds on every network, in dollars, and what changed this week."
+
+**Social and identity**
+- "Follow these five creators on LUKSO, and every week follow back new followers who have a profile picture."
+- "Sign in to this app as your profile, and pay for this API per request (x402) with a $5 monthly limit."
+
+**Research and safety**
+- "Before we touch this contract or token, find out what it does, who deployed it and whether it's verified, and explain it in plain words."
+- "Go through the tokens you've received, flag spam and scams, and never interact with them."
+- "Show me who controls your profile, what each of them may do, and how much gas you have left on each network."
+- "Never spend more than $20 a day without asking me."
+
+</details>
+
+Anything that spends or changes permissions follows the limits you set; outside them, the agent asks you first. Recurring tasks need an agent host that can schedule work. Yields and airdrops are never guaranteed.
+
 ## Why this skill is different
 
 **🏦 An account, not just a key.** Think of a Universal Profile as a bank account and the agent's key as a debit card. The card can be limited or blocked, and the account and everything in it stays the same. With a plain wallet, the card *is* the account.
