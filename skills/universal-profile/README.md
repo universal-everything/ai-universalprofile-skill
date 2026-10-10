@@ -13,12 +13,12 @@ Most "crypto skills" for AI agents hand the agent a raw private key. Whoever hol
 
 ## What you can ask your agent
 
-Give it goals, not just single clicks. It plans the steps, shows you a preview of anything that spends, and then does the work as your profile:
+Give it goals, not just single clicks: social, creative, community or financial. It plans the steps, shows you a preview of anything that spends, and then does the work as your profile:
 
 - 🌐 **"Be my social scout on LUKSO.** Follow interesting creators and builders, read what they post on [Hup](https://www.hup.social) and share on [Forever Moments](https://forevermoments.life), send me a short daily digest of what's happening, and post our own moments with the pictures I send you."
 - 💵 **"Put my 1,000 USDC to work.** Find the best stablecoin yield on Ethereum, Base and Arbitrum at established lending markets like Aave or Morpho, move it there, check daily, and switch when another market pays clearly more after gas. Send me a short weekly report of what we earned."
-- 🪂 **"Farm the most promising airdrops for me.** Research the top upcoming airdrops on EVM networks, use each protocol the way it rewards (bridge, swap, lend, provide liquidity), stay within $200 in total, keep a log, and claim everything we qualify for."
-- 🛡️ **"Guard my positions.** Watch everything my profile holds on all networks, claim and compound rewards, and move funds to safety right away if a stablecoin loses its peg or a protocol I use gets exploited. Then tell me what you did."
+- 🗳️ **"Be my voice in my communities.** Keep track of the proposals in the DAOs and communities I belong to, summarise each one in two lines, vote as my profile the way I'd vote based on what I've told you, and ask me when you're unsure."
+- 🎨 **"Collect art and music I'll love.** Watch what the artists and musicians we follow release on LUKSO, pick up pieces that fit my taste within $50 a month, and keep a little gallery note on why you chose each one."
 
 <details>
 <summary>More ideas</summary>
@@ -28,7 +28,19 @@ Give it goals, not just single clicks. It plans the steps, shows you a preview o
 - "Add Base and Arbitrum too, with the same profile address, and tell me what it costs."
 - "Add my wallet as a co-owner, then only allow yourself to use the contracts we agree on."
 
+**Communities and work**
+- "Join the communities I care about, read along, and tell me weekly what was decided and what's coming up."
+- "Sign in to apps and forums as your profile, so you can take part for me without passwords."
+- "Pay for the data and AI services you need per request (x402) from your profile, within $10 a month, and show me what you used."
+- "Run a small paid service: answer questions for my community and accept tips to your profile; send me a monthly summary."
+
+**Creators and culture**
+- "Publish my new track on LUKSO (e.g. via upturn), share it with our followers and on Hup, and tell me who collected it."
+- "Give your profile a style that matches mine: name, picture, bio and links, and keep it up to date."
+
 **Money**
+- "Farm the most promising airdrops for me: research the top upcoming ones on EVM networks, use each protocol the way it rewards, stay within $200 in total, keep a log, and claim what we qualify for."
+- "Guard my positions: watch everything my profile holds on all networks, claim and compound rewards, and move funds to safety if a stablecoin loses its peg or a protocol gets exploited."
 - "Be my crypto autopilot: buy $50 of ETH every week, keep my portfolio at 60% ETH and 40% stablecoins, take some profit when ETH is up 20%, and earn yield on whatever sits idle."
 - "Stake my idle LYX on LUKSO (e.g. via Stakingverse) and tell me what it earns each month."
 - "Every Friday, send 5 USDC from your profile to my savings profile and tell me the balance."
