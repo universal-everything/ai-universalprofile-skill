@@ -53,7 +53,7 @@ describe("funding suggest", () => {
       expect(r.data.more.usd).toBeGreaterThanOrEqual(10);
       expect(r.text).toMatch(/\(about \$/);
     }
-    expect(r.text).toMatch(/Please send about .+ to my address 0x[0-9a-fA-F]{40} \(QR attached\)/);
+    expect(r.text).toMatch(/Please send about .+ to my gas address 0x[0-9a-fA-F]{40} \(QR attached\)/);
     expect(r.text).toMatch(/you never have to sign anything/);
     await h.fund(agent.address, parseEther("1"));
     const after: any = await run(ctx, "funding suggest", {});
@@ -85,7 +85,7 @@ describe("funding suggest", () => {
     await h.fund(agent.address, parseEther("0.0001"));
     const r: any = await run(ctx, "funding suggest", { purpose: "refill" });
     expect(r.text).toMatch(/^I'm running low on gas on .+: I have .+ ETH \(about \$0\.25\) left\./);
-    expect(r.text).toMatch(/Could you top me up with about .+ ETH \(about \$[0-9.]+\) to my address 0x[0-9a-fA-F]{40} \(QR attached\)/);
+    expect(r.text).toMatch(/Could you top me up with about .+ ETH \(about \$[0-9.]+\) to my gas address 0x[0-9a-fA-F]{40} \(QR attached\)/);
     expect(r.data.balanceUsd).toBe(0.25);
     expect(r.data.low).toBe(true);
     await h.fund(agent.address, parseEther("1")); // now plenty

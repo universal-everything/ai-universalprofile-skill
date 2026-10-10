@@ -194,11 +194,11 @@ defineVerb({
         : purpose === "refill"
         ? [
             `I'm running low on gas on ${chain.name}: I have ${friendlyAmount(balanceWei)} ${symbol}${usd(s.balanceUsd)} left.`,
-            `Could you top me up with ${ask}${test} to my address ${address} (QR attached)? Then I can keep acting for you there.`,
+            `Could you top me up with ${ask}${test} to my gas address ${address} (QR attached)? Then I can keep acting for you there.`,
             `For a bigger buffer, about ${s.more.amount} ${symbol}${usd(s.more.usd)}.`,
           ].join(" ")
         : [
-            `Please send ${ask}${test} on ${chain.name} to my address ${address} (QR attached).`,
+            `Please send ${ask}${test} on ${chain.name} to my gas address ${address} (QR attached).`,
             `That covers creating the profile, and ${actionUsd !== undefined && actionUsd > 0 ? howLong(((price ? tier.min : 0) - (deployUsd ?? 0)) / actionUsd) : "leaves gas so I can keep acting for you afterwards without running out right away"}.`,
             `If you'd like me to do more right away, send about ${s.more.amount} ${symbol}${usd(s.more.usd)} instead.`,
             "This is my own gas money: with it I do everything myself, so you never have to sign anything.",
