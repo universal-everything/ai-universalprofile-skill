@@ -128,6 +128,21 @@ export function explorerTxUrl(ctx: VerbContext, chainId: number, hash: Hex): str
 }
 
 /** Signs and sends a transaction from the controller EOA and waits for the receipt (or returns a dry-run outcome). */
+/** Gas check without sending: what the transaction may cost, what `from` holds, and how much is missing.
+ *  `suggestedFunding` adds a 50% margin to the shortfall so the human funds once. Read-only. */
+export async function gasCheck(ctx: VerbContext, from: Address, req: TxRequest): Promise<{ gas: bigint; maxCostWei: bigint; balanceWei: bigint; shortfallWei: bigint; suggestedFundingWei: bigint; enough: boolean }> {
+  const est = BigInt(
+    await ctx.rpc.request<Hex>(req.chainId, "eth_estimateGas", [{ from, to: req.to, data: req.data ?? "0x", value: req.value ? `0x${req.value.toString(16)}` : undefined }]),
+  );
+  const gas = req.gas ?? (est * 125n) / 100n + 10_000n;
+  const fee = await fees(ctx, req.chainId);
+  const maxCostWei = gas * (fee.maxFeePerGas ?? fee.gasPrice ?? 0n) + (req.value ?? 0n);
+  const balanceWei = BigInt(await ctx.rpc.request<Hex>(req.chainId, "eth_getBalance", [from, "latest"]));
+  const shortfallWei = balanceWei >= maxCostWei ? 0n : maxCostWei - balanceWei;
+  const suggestedFundingWei = shortfallWei === 0n ? 0n : shortfallWei + maxCostWei / 2n;
+  return { gas, maxCostWei, balanceWei, shortfallWei, suggestedFundingWei, enough: shortfallWei === 0n };
+}
+
 export async function sendTx(ctx: VerbContext, signer: Signer, req: TxRequest): Promise<TxOutcome> {
   const from = signer.address;
   // 1) simulate (contract creation: simulate too)

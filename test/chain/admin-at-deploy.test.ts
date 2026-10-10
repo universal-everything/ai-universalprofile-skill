@@ -46,4 +46,16 @@ describe("deploy with the human's wallet as co-controller (--admin)", () => {
   it("rejects --admin equal to the initial controller", async () => {
     await expect(run(ctx, "account precompute", { count: 1, admin: agent.address })).rejects.toMatchObject({ code: "BAD_ARGS" });
   });
+
+  it("dry-run tells how much gas the agent's key needs; the real run stops before signing when it is missing", async () => {
+    const poor = testSigner(generatePrivateKey()); // never funded
+    const pctx = testContext(h.newHome(), poor, { approval: "human: approved for this test" });
+    const dry: any = await run(testContext(pctx.home, poor, { dryRun: true }), "account deploy", { seed: "0x" + "cd".repeat(32), candidate: 0 });
+    expect(dry.data.status).toBe("dry-run");
+    expect(dry.data.gas).toMatchObject({ payer: poor.address, enough: false, balance: "0" });
+    expect(Number(dry.data.gas.suggestedFunding)).toBeGreaterThan(Number(dry.data.gas.missing));
+    const e = await run(pctx, "account deploy", { seed: "0x" + "cd".repeat(32), candidate: 0 }).catch((x) => x);
+    expect(e).toMatchObject({ code: "TX_FAILED", details: { reason: "needs-gas" } });
+    expect(e.hint).toMatch(/up display address/);
+  });
 });

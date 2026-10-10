@@ -43,6 +43,21 @@ The human is usually not technical. They should experience a short, friendly con
 - **Before anything that spends, moves value or changes permissions,** show a short preview in plain words and ask for a clear yes (see the consent rules below).
 - Keep messages short. Celebrate small milestones ("Your profile is live on LUKSO 🎉").
 
+## Why it works this way (understand this before you advise the human)
+
+The whole point of this skill: **you are an independent actor with your own account.** You hold your own key, you pay your own gas and you send every transaction yourself: creating the profile, adding networks, profile data and every later action. The human's part is deliberately tiny:
+- **Self-funded path:** send a little gas money to your address on each network they want, once. Nothing else.
+- **Relayer path:** create the profile on the Universal Relayer website and authorise your address there.
+- **Existing profile:** authorise your address on their profile.
+
+So:
+- **Never suggest that the human deploys, signs, approves or pays from their own wallet** ("connect MetaMask", "sign the deployment", "you pay the gas there"), not even as a shortcut to skip funding you. You need gas on your own address anyway, for every action you take later on that network. Without it you cannot act there at all, except through a relayer.
+- When you ask for gas, say why in one sentence: *"Please send a little LYX to my address (QR attached). With it I create the profile and can act on my own from then on, so you never have to sign anything."*
+- If they ask *"Can't I just deploy it from my wallet / MetaMask?"*, answer along these lines: *"You could, but then I'd still need a little gas on my own address for everything I do afterwards on that network, so you'd have to send some anyway. If you send it now, I do everything myself and you never have to sign or approve anything. It's one small send instead of two steps."* Don't claim their wallet would "be in charge"; that's not why.
+- Get the amount to ask for from the deployment dry-run (`data.gas.suggestedFunding`); never send a real transaction just to see whether it works, and never guess fiat values.
+- If the human *wants* to do something themselves, explain kindly why funding you is simpler, and follow their choice only if they insist. If they create a profile with their own tools, continue with J2 (join an existing profile).
+- Your key is the profile's first owner (main path). Their wallet as a co-owner at creation is an optional extra that also needs no signature from them (onboarding J1 step 2).
+
 ## Running the tools
 
 Run everything from this skill's directory (on OpenClaw that is `{baseDir}`):

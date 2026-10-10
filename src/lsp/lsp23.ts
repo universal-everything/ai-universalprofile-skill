@@ -17,12 +17,12 @@
 //   UP = CREATE2(factory, generatedSalt, ERC1167(upImpl)); KM = CREATE2(factory, keccak256(UP), ERC1167(kmImpl))
 // No chainId enters the derivation: identical inputs give identical addresses on every chain
 // where the factory/implementations live at their canonical (Nick-factory) addresses.
-import { concat, encodeAbiParameters, encodeFunctionData, encodePacked, getAddress, getContractAddress, keccak256, type Address, type Hex } from "viem";
+import { concat, encodeAbiParameters, encodeFunctionData, encodePacked, formatEther, getAddress, getContractAddress, keccak256, type Address, type Hex } from "viem";
 import type { Signer, VerbContext } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
 import { readProfileRecord, updateProfileRecord, writeProfileRecord } from "../core/profile-record.ts";
 import { LSP } from "../chain/registry.ts";
-import { sendTx, simulate } from "../chain/tx.ts";
+import { gasCheck, sendTx, simulate } from "../chain/tx.ts";
 import { KM_INIT_ABI, LSP23_ABI, UP_INIT_ABI } from "./abis.ts";
 import { DATA_KEYS, INTERFACE_IDS, URD_PERMISSIONS, permissionsArrayIndexKey, permissionsKey, uint128Hex } from "./constants.ts";
 import { decodePermissions, toBytes32 } from "./permissions.ts";
@@ -323,6 +323,8 @@ export interface DeployOutcome {
   chainId: number;
   profile: Address;
   keyManager: Address;
+  /** Gas the agent's key needs for the deployment, its balance and what is missing (dry-run and errors). */
+  gas?: { payer: Address; symbol: string; maxCost: string; balance: string; enough: boolean; missing?: string; suggestedFunding?: string };
   status: "dry-run" | "deployed" | "already-deployed";
   txHash?: Hex;
   blockNumber?: string;
@@ -378,8 +380,20 @@ export async function deployFromManifest(ctx: VerbContext, signer: Signer, m: De
     return { chainId, profile: m.profile, keyManager: m.keyManager, status: "already-deployed", verified, onChainCompute, prerequisites, confirmation };
   }
   await simulate(ctx, { chainId, from: signer.address, to: m.plan.factory, data: m.deployCalldata });
+  // Gas the agent's key needs, and what it holds: the dry-run answers "how much must the human send?"
+  // so nobody tries a real deployment just to find out.
+  const g = await gasCheck(ctx, signer.address, { chainId, to: m.plan.factory, data: m.deployCalldata });
+  const symbol = (() => { try { return ctx.registry.chain(chainId).nativeSymbol; } catch { return "native"; } })();
+  const gasInfo = { payer: signer.address, symbol, maxCost: formatEther(g.maxCostWei), balance: formatEther(g.balanceWei), enough: g.enough, ...(g.enough ? {} : { missing: formatEther(g.shortfallWei), suggestedFunding: formatEther(g.suggestedFundingWei) }) };
+  (confirmation as Record<string, unknown>).gas = gasInfo;
+  if (!g.enough && !ctx.flags.dryRun) {
+    throw new UpError("TX_FAILED", `the agent's key ${signer.address} needs gas on chain ${chainId}: it has ${gasInfo.balance} ${symbol}, the deployment may cost up to ${gasInfo.maxCost} ${symbol}`, {
+      hint: `ask the human to send about ${gasInfo.suggestedFunding} ${symbol} to ${signer.address} (show it as a QR: up display address ${signer.address} --chain ${chainId}); then deploy`,
+      details: { reason: "needs-gas", gas: gasInfo },
+    });
+  }
   await ctx.consent({ verb, risk: "write", chainId, summary: confirmation, value: 0n, target: m.plan.factory, selector: m.deployCalldata.slice(0, 10) as Hex });
-  if (ctx.flags.dryRun) return { chainId, profile: m.profile, keyManager: m.keyManager, status: "dry-run", onChainCompute, prerequisites, confirmation };
+  if (ctx.flags.dryRun) return { chainId, profile: m.profile, keyManager: m.keyManager, status: "dry-run", onChainCompute, prerequisites, confirmation, gas: gasInfo };
   const tx = await sendTx(ctx, signer, { chainId, to: m.plan.factory, data: m.deployCalldata });
   const verified = await verifyDeployment(ctx, chainId, m);
   const allOk = Object.values(verified).every(Boolean);
