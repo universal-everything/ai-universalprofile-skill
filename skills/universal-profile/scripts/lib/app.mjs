@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 44527baa7c82 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 2b58a9a82bf5 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -698,7 +698,7 @@ async function postFile(provider, label, url, headers, file2, opts, extra) {
     const text = new TextDecoder().decode(await readCapped(res, 256 * 1024, ctrl).catch(() => new Uint8Array(0)));
     if (res.status === 401 || res.status === 403) {
       throw new UpError("IPFS_ERROR", `${label} refused the upload credentials (HTTP ${res.status})`, {
-        hint: provider === "universalprofile" ? "the upload key (UP_IPFS_UPLOAD_KEY / ipfs-upload-key) is wrong or not accepted; ask the human to check it, or use another provider (up config set ipfs-provider pinata|kubo)" : provider === "pinata" ? "the Pinata JWT (UP_PINATA_JWT / pinata-jwt) is wrong or lacks the pinFileToIPFS scope" : "the Kubo API needs other credentials (UP_KUBO_AUTH / kubo-auth)",
+        hint: provider === "universalprofile" ? "the upload key (built-in, UP_IPFS_UPLOAD_KEY or ipfs-upload-key) was not accepted; ask the human to check it, or use another provider (up config set ipfs-provider pinata|kubo)" : provider === "pinata" ? "the Pinata JWT (UP_PINATA_JWT / pinata-jwt) is wrong or lacks the pinFileToIPFS scope" : "the Kubo API needs other credentials (UP_KUBO_AUTH / kubo-auth)",
         details: { reason: "unauthorized", provider, status: res.status }
       });
     }
@@ -783,7 +783,7 @@ function selectProvider(cfg, env = process.env, opts = {}) {
   if (name === "universalprofile") {
     const fromEnv = nonEmpty(env.UP_IPFS_UPLOAD_KEY);
     const fromCfg = nonEmpty(cfg.ipfsKeys?.universalprofile);
-    const key = fromEnv ?? fromCfg ?? DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY;
+    const key = fromEnv ?? fromCfg ?? ("defaultKey" in opts ? opts.defaultKey : DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY);
     if (!key) return { name, credentialSource: "none", missing: "no upload key for the Universal Profile IPFS API" };
     return { name, provider: universalProfileProvider({ key, fetch: opts.fetch }), credentialSource: fromEnv ? "env" : fromCfg ? "config" : "default" };
   }
@@ -805,7 +805,7 @@ function selectProvider(cfg, env = process.env, opts = {}) {
 function requireProvider(sel) {
   if (sel.provider) return sel.provider;
   const options = [
-    "universalprofile (default): set the upload key in the environment variable UP_IPFS_UPLOAD_KEY, or once with: up config set ipfs-upload-key <key>",
+    "universalprofile (default; uses the built-in shared key of the Universal Profile website unless overridden): your own key via the environment variable UP_IPFS_UPLOAD_KEY, or once with: up config set ipfs-upload-key <key>",
     "pinata: up config set ipfs-provider pinata, plus UP_PINATA_JWT or up config set pinata-jwt <jwt>",
     "kubo (your own IPFS node): up config set ipfs-provider kubo, up config set kubo-url http://127.0.0.1:5001 (optional UP_KUBO_AUTH / kubo-auth)"
   ];
@@ -824,7 +824,7 @@ var init_providers = __esm({
     IPFS_PROVIDERS = ["universalprofile", "pinata", "kubo"];
     UNIVERSALPROFILE_UPLOAD_URL = "https://api.universalprofile.cloud/api/v0/add";
     PINATA_UPLOAD_URL = "https://api.pinata.cloud/pinning/pinFileToIPFS";
-    DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY = void 0;
+    DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY = "chie6phe1oogh8ieZuok3eshiexahSh1zai6shahshahphueGazotae2jour5eba";
     nonEmpty = (v) => v && v.trim() ? v.trim() : void 0;
   }
 });
@@ -8403,7 +8403,7 @@ init_policy();
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "44527baa7c82" : "source";
+var SOURCE = true ? "2b58a9a82bf5" : "source";
 
 // src/chain/discovery.ts
 init_assets();

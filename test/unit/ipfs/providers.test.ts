@@ -112,9 +112,13 @@ describe("pinata and kubo providers", () => {
 });
 
 describe("provider selection from env + config", () => {
-  it("default universalprofile; env key wins over config; no key → IPFS_ERROR naming every option, no default key shipped", () => {
-    expect(DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY).toBeUndefined();
-    const none = selectProvider({ version: 1 }, {});
+  it("default universalprofile with the shipped shared key; env key wins over config over the default; no key → IPFS_ERROR naming every option", () => {
+    expect(DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY).toMatch(/^[A-Za-z0-9]{64}$/);
+    const shipped = selectProvider({ version: 1 }, {});
+    expect(shipped).toMatchObject({ name: "universalprofile", credentialSource: "default" });
+    expect(shipped.provider).toBeDefined();
+    expect(JSON.stringify(shipped)).not.toContain(DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY!);
+    const none = selectProvider({ version: 1 }, {}, { defaultKey: undefined });
     expect(none).toMatchObject({ name: "universalprofile", credentialSource: "none" });
     let err: UpError | undefined;
     try {

@@ -22,13 +22,14 @@ export const UNIVERSALPROFILE_UPLOAD_URL = "https://api.universalprofile.cloud/a
 export const PINATA_UPLOAD_URL = "https://api.pinata.cloud/pinning/pinFileToIPFS";
 
 /**
- * >>> PRODUCT-OWNER HOOK: default signing key for the Universal Profile IPFS API. <<<
- * Intentionally undefined. The skill ships NO shared secret: the HS256 key must come from
- * UP_IPFS_UPLOAD_KEY or `up config set ipfs-upload-key <key>`. If the product owner later
- * approves a key that may be distributed with the skill, it is set here (and only here);
- * env and config keep precedence over it.
+ * Default signing key for the Universal Profile IPFS API (https://api.universalprofile.cloud).
+ * This is the shared key that the universaleverything.io website ships in its public frontend
+ * config (`API_SHARED_SECRET`) to sign the same short-lived upload JWTs; the product owner
+ * approved shipping it with the skill on 2026-10-10 so uploads work out of the box. It is not
+ * a personal secret. UP_IPFS_UPLOAD_KEY and `up config set ipfs-upload-key` keep precedence,
+ * and the pinata/kubo providers remain available.
  */
-export const DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY: string | undefined = undefined;
+export const DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY: string | undefined = "chie6phe1oogh8ieZuok3eshiexahSh1zai6shahshahphueGazotae2jour5eba";
 
 export interface UploadFile {
   bytes: Uint8Array;
@@ -94,7 +95,7 @@ async function postFile(provider: IpfsProviderName, label: string, url: string, 
     const text = new TextDecoder().decode(await readCapped(res, 256 * 1024, ctrl).catch(() => new Uint8Array(0)));
     if (res.status === 401 || res.status === 403) {
       throw new UpError("IPFS_ERROR", `${label} refused the upload credentials (HTTP ${res.status})`, {
-        hint: provider === "universalprofile" ? "the upload key (UP_IPFS_UPLOAD_KEY / ipfs-upload-key) is wrong or not accepted; ask the human to check it, or use another provider (up config set ipfs-provider pinata|kubo)" : provider === "pinata" ? "the Pinata JWT (UP_PINATA_JWT / pinata-jwt) is wrong or lacks the pinFileToIPFS scope" : "the Kubo API needs other credentials (UP_KUBO_AUTH / kubo-auth)",
+        hint: provider === "universalprofile" ? "the upload key (built-in, UP_IPFS_UPLOAD_KEY or ipfs-upload-key) was not accepted; ask the human to check it, or use another provider (up config set ipfs-provider pinata|kubo)" : provider === "pinata" ? "the Pinata JWT (UP_PINATA_JWT / pinata-jwt) is wrong or lacks the pinFileToIPFS scope" : "the Kubo API needs other credentials (UP_KUBO_AUTH / kubo-auth)",
         details: { reason: "unauthorized", provider, status: res.status },
       });
     }
@@ -197,12 +198,12 @@ export interface ProviderSelection {
 const nonEmpty = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined);
 
 /** Builds the configured provider (default universalprofile) from env + config. Never throws for missing credentials: see `missing`. */
-export function selectProvider(cfg: UpConfig, env: NodeJS.ProcessEnv = process.env, opts: { fetch?: FetchLike } = {}): ProviderSelection {
+export function selectProvider(cfg: UpConfig, env: NodeJS.ProcessEnv = process.env, opts: { fetch?: FetchLike; defaultKey?: string } = {}): ProviderSelection {
   const name = (cfg.ipfs?.provider ?? "universalprofile") as IpfsProviderName;
   if (name === "universalprofile") {
     const fromEnv = nonEmpty(env.UP_IPFS_UPLOAD_KEY);
     const fromCfg = nonEmpty(cfg.ipfsKeys?.universalprofile);
-    const key = fromEnv ?? fromCfg ?? DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY;
+    const key = fromEnv ?? fromCfg ?? ("defaultKey" in opts ? opts.defaultKey : DEFAULT_UNIVERSALPROFILE_UPLOAD_KEY);
     if (!key) return { name, credentialSource: "none", missing: "no upload key for the Universal Profile IPFS API" };
     return { name, provider: universalProfileProvider({ key, fetch: opts.fetch }), credentialSource: fromEnv ? "env" : fromCfg ? "config" : "default" };
   }
@@ -226,7 +227,7 @@ export function selectProvider(cfg: UpConfig, env: NodeJS.ProcessEnv = process.e
 export function requireProvider(sel: ProviderSelection): IpfsProvider {
   if (sel.provider) return sel.provider;
   const options = [
-    "universalprofile (default): set the upload key in the environment variable UP_IPFS_UPLOAD_KEY, or once with: up config set ipfs-upload-key <key>",
+    "universalprofile (default; uses the built-in shared key of the Universal Profile website unless overridden): your own key via the environment variable UP_IPFS_UPLOAD_KEY, or once with: up config set ipfs-upload-key <key>",
     "pinata: up config set ipfs-provider pinata, plus UP_PINATA_JWT or up config set pinata-jwt <jwt>",
     "kubo (your own IPFS node): up config set ipfs-provider kubo, up config set kubo-url http://127.0.0.1:5001 (optional UP_KUBO_AUTH / kubo-auth)",
   ];

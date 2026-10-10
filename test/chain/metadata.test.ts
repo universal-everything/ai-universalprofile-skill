@@ -295,7 +295,8 @@ describe("fail closed", () => {
 
   it("no upload provider configured: dry-run says so; the real run fails with the configuration options, before any upload", async () => {
     const bare = testContext(h.newHome(), signer, { approval: "human: approved" });
-    await run(bare, "config set", { key: "ipfs-gateway", value: ipfs.gateway }); // reads stay on the mock; no upload credentials
+    await run(bare, "config set", { key: "ipfs-gateway", value: ipfs.gateway }); // reads stay on the mock
+    await run(bare, "config set", { key: "ipfs-provider", value: "pinata" }); // a provider without credentials (universalprofile has a shipped default key)
     const dry: any = await run(testContext(bare.home, signer, { dryRun: true }), "profile metadata set", { profile, name: "Ada 2" });
     expect(dry.data.providerReady).toBe(false);
     expect(dry.warnings.join()).toMatch(/no IPFS upload provider/);

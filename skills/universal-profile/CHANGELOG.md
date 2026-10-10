@@ -28,4 +28,4 @@ First version of the skill.
 - No host has a recorded end-to-end pass on a fresh installation yet; OpenAI dots, Meta Muse and generic Agent Skills hosts are candidates (`references/platforms.md`).
 - The optional home-signer bridge (HTTP MCP with OAuth) and the remote-signer backend are not included.
 - The `chainId` relay extension is a proposal; relayers that do not implement it are used in legacy mode.
-- Profile pictures are uploaded as a single original-size entry (no resized variants: no image codec is bundled). The skill ships no upload key for the Universal Profile IPFS API; the human configures one (or Pinata / a Kubo node).
+- Profile pictures are uploaded as a single original-size entry (no resized variants: no image codec is bundled). Uploads work out of the box through the Universal Profile IPFS API with the built-in shared key of the universaleverything.io website; the human can override it with their own key, Pinata or a Kubo node.
