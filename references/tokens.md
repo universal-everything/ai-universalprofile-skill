@@ -1,5 +1,7 @@
 # Tokens: LSP7, LSP8, ERC-20, ERC-721, ERC-1155
 
+> **Reminder:** the profile holds the assets and acts; the agent's key only signs and pays gas. Never use the key address as a wallet.
+
 The profile holds tokens like any account. `up token balance`, `up token list`, `up token metadata`, `up token transfer`, `up token approve` and `up token operators` detect the standard (ERC-165 `supportsInterface`, then function probing for ERC-20s without ERC-165) and build the right call. All writes execute **as the profile** through the chosen path (`references/execution-paths.md`).
 
 ## The standards side by side

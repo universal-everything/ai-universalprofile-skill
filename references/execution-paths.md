@@ -1,5 +1,7 @@
 # Execution paths: how an action becomes a transaction of the profile
 
+> **Reminder:** the profile holds the assets and acts; the agent's key only signs and pays gas. Never use the key address as a wallet.
+
 Every write verb (`exec send`, `contract call`, `token transfer`, `controller add`, `follow`, …) builds one **payload** for the profile and hands it to one of four transports. On every path the final target sees `msg.sender == profile`. The Key Manager (LSP6) checks permissions on every path. Pick the path with `--via km|lsp0|relay|userop` (a verb's default is shown in `up <verb> --help`; the path used is reported in `data.path`). `userop` is never used unless you pass it.
 
 ## The payload

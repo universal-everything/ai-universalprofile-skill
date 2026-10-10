@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 7fa4c40f2ee1 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint dbbb0b73c5e6 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -8523,10 +8523,10 @@ var init_funding = __esm({
         const test = chain.testnet ? " (test coins, e.g. from a faucet)" : "";
         const text = purpose === "refill" && !s.low ? `I still have ${friendlyAmount(balanceWei)} ${symbol}${usd(s.balanceUsd)} for gas on ${chain.name}; that's enough for now, no top-up needed.` : purpose === "refill" ? [
           `I'm running low on gas on ${chain.name}: I have ${friendlyAmount(balanceWei)} ${symbol}${usd(s.balanceUsd)} left.`,
-          `Could you top me up with ${ask}${test} to my address ${address} (QR attached)? Then I can keep acting for you there.`,
+          `Could you top me up with ${ask}${test} to my gas address ${address} (QR attached)? Then I can keep acting for you there.`,
           `For a bigger buffer, about ${s.more.amount} ${symbol}${usd(s.more.usd)}.`
         ].join(" ") : [
-          `Please send ${ask}${test} on ${chain.name} to my address ${address} (QR attached).`,
+          `Please send ${ask}${test} on ${chain.name} to my gas address ${address} (QR attached).`,
           `That covers creating the profile, and ${actionUsd !== void 0 && actionUsd > 0 ? howLong(((price ? tier.min : 0) - (deployUsd ?? 0)) / actionUsd) : "leaves gas so I can keep acting for you afterwards without running out right away"}.`,
           `If you'd like me to do more right away, send about ${s.more.amount} ${symbol}${usd(s.more.usd)} instead.`,
           "This is my own gas money: with it I do everything myself, so you never have to sign anything."
@@ -9084,7 +9084,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "7fa4c40f2ee1" : "source";
+var SOURCE = true ? "dbbb0b73c5e6" : "source";
 
 // src/chain/discovery.ts
 init_assets();

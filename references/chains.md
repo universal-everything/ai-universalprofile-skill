@@ -1,5 +1,7 @@
 # Chains: registry, RPCs and multi-chain rules
 
+> **Reminder:** the profile holds the assets and acts; the agent's key only signs and pays gas. Never use the key address as a wallet.
+
 The skill works on every EVM network where the LSP contracts are deployed. Its chain list is a mirror of the official [lsp-smart-contracts `deployments/` folder](https://github.com/lukso-network/lsp-smart-contracts/tree/main/deployments), bundled with the skill and refreshable from GitHub.
 
 ## One profile on many chains
