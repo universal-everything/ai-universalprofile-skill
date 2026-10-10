@@ -44,6 +44,10 @@ defineVerb({
       } catch {}
     }
     else checks.push({ name: "controller", ok: false, detail: "no controller key yet", remedy: "run: up init" });
+    // chains where the agent signs with its own key instead of the default one
+    for (const [id, k] of Object.entries(cfg.chainControllers ?? {})) {
+      if (k?.address) checks.push({ name: `controller:${id}`, ok: true, detail: `${k.address} (${k.backend}), the agent's own key on chain ${id}` });
+    }
     const chainReports: unknown[] = [];
     if (!a.offline) {
       for (const id of cfg.chains ?? (cfg.defaultChain ? [cfg.defaultChain] : [])) {

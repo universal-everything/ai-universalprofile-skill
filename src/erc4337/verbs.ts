@@ -16,6 +16,7 @@ import { BundlerClient, redactUrl, validateBundlerUrl } from "./bundler.ts";
 import type { UserOpExecOptions } from "./transport.ts";
 import type { AllowedCallInput } from "./lsp6.ts";
 import "./transport.ts"; // registers the "userop" ExecTransport
+import { controllerFor } from "../signer/select.ts";
 
 // ---------------------------------------------------------------------------
 // Argument helpers
@@ -122,14 +123,16 @@ export function callsFromArgs(a: Record<string, any>): { calls?: ExecCall[]; pay
 
 async function chainAndProfile(ctx: VerbContext, a: Record<string, any>): Promise<{ chainId: number; profile: Address }> {
   await ctx.config();
-  return { chainId: ctx.chainId(a.chain), profile: await ctx.profile(a.profile) };
+  const chainId = ctx.chainId(a.chain);
+  return { chainId, profile: await ctx.profile(a.profile, chainId) };
 }
 
-async function signerAddress(ctx: VerbContext, a: Record<string, any>): Promise<Address> {
+/** --signer, else the agent's key for this chain (its chain-specific key, else the default key). */
+async function signerAddress(ctx: VerbContext, a: Record<string, any>, chainId: number): Promise<Address> {
   if (a.signer) return addr(a.signer, "--signer");
-  const cfg = await ctx.config();
-  if (cfg.controller?.address) return getAddress(cfg.controller.address);
-  return (await ctx.signer()).address;
+  const c = controllerFor(await ctx.config(), chainId);
+  if (c) return c.address;
+  return (await ctx.signer(chainId)).address;
 }
 
 const VIA: ParamDef = { name: "via", type: "string", enum: ["km", "lsp0", "relay"], default: "km", description: "Execution path for the profile-side writes (default: km = controller → Key Manager)." };
@@ -155,7 +158,7 @@ defineVerb({
   examples: ["up account 4337 status --chain 4201 --profile 0x…"],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const s = await status4337(ctx, chainId, profile, await signerAddress(ctx, a));
+    const s = await status4337(ctx, chainId, profile, await signerAddress(ctx, a, chainId));
     const cfg = await ctx.config();
     const bundlerUrl = cfg.bundlers?.[String(chainId)];
     const data = json({
@@ -198,7 +201,7 @@ defineVerb({
     }
     const f = await nickFactoryStatus(ctx, chainId);
     if (!f.matches) throw nickFactoryGap(chainId, f);
-    const signer = await ctx.signer();
+    const signer = await ctx.signer(chainId);
     await ctx.consent({ verb: "account 4337 deploy-entrypoint", risk: "admin", chainId, target: f.address, summary: { deploy: "EntryPoint v0.6", address: st.address, factory: f.address, salt: "0x00…00", gasPayer: `controller EOA ${signer.address}` } });
     const r = await deployEntryPoint(ctx, signer, chainId);
     return { data: json(r), text: r.status === "dry-run" ? `dry-run: EntryPoint v0.6 would be deployed at ${r.address}` : `EntryPoint v0.6 deployed at ${r.address} (tx ${r.txHash})` };
@@ -217,7 +220,7 @@ defineVerb({
     const ep = await entryPointStatus(ctx, chainId);
     const warnings = ep.deployed ? [] : [`EntryPoint v0.6 is not deployed on chain ${chainId} yet (up account 4337 deploy-entrypoint); the extension is not usable before that`];
     const expected = extensionAddressFor(ENTRYPOINT_V06);
-    const signer = await ctx.signer();
+    const signer = await ctx.signer(chainId);
     const existing = await ctx.rpc.request<Hex>(chainId, "eth_getCode", [expected, "latest"]);
     if (!existing || existing === "0x") {
       const f = await nickFactoryStatus(ctx, chainId);
@@ -252,7 +255,7 @@ defineVerb({
   examples: ["up account 4337 enable --chain 4201 --ep-scope super --deposit '0.05 ether' --approval \"<human words>\""],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const signer = await ctx.signer();
+    const signer = await ctx.signer(chainId);
     const rawCalls = a["ep-allowed-calls"] === undefined ? undefined : parseJsonArg(a["ep-allowed-calls"], "--ep-allowed-calls");
     const allowedCalls = rawCalls === undefined ? undefined : ((Array.isArray(rawCalls) ? rawCalls : [rawCalls]) as AllowedCallInput[]);
     const r = await enable4337(ctx, signer, {
@@ -290,7 +293,7 @@ defineVerb({
   ],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const signer = await ctx.signer();
+    const signer = await ctx.signer(chainId);
     const r = await disable4337(ctx, signer, {
       chainId,
       profile,
@@ -320,7 +323,7 @@ defineVerb({
   ],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const signer = await ctx.signer();
+    const signer = await ctx.signer(chainId);
     const ep = await entryPointStatus(ctx, chainId);
     if (!ep.canonical) throw new UpError("NOT_DEPLOYED", `EntryPoint v0.6 is not deployed on chain ${chainId}`, { hint: `only if the user wants 4337: up account 4337 enable --chain ${chainId}` });
     const r = await deposit4337(ctx, signer, { chainId, profile, amount: parseAmount(a.amount, "--amount"), from: a.from, via: a.via as ExecPath });
@@ -340,7 +343,7 @@ defineVerb({
   ],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const signer = await ctx.signer();
+    const signer = await ctx.signer(chainId);
     const all = a.amount === undefined || String(a.amount).toLowerCase() === "all";
     const r = await withdraw4337(ctx, signer, { chainId, profile, amount: all ? undefined : parseAmount(a.amount, "--amount"), to: a.to ? addr(a.to, "--to") : undefined, via: a.via as ExecPath });
     return { data: json(r), text: `${ctx.flags.dryRun ? "dry-run: would withdraw" : "withdrew"} ${r.amount} wei from the EntryPoint deposit to ${r.to}` };

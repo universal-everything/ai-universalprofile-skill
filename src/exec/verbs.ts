@@ -10,6 +10,7 @@ import { resolveKeyManager } from "../lsp/profile.ts";
 import { ethCall } from "../lsp/read.ts";
 import { defaultChannel, getRelayNonce, splitNonce } from "../lsp/lsp25.ts";
 import { listRelayers } from "../relayer/registry.ts";
+import { controllerFor } from "../signer/select.ts";
 import type { ExecPath } from "./transport.ts";
 import { executeAuto } from "./auto.ts";
 import { buildCall, buildCalls, type CallInput } from "./inputs.ts";
@@ -35,9 +36,11 @@ export const PATH_PARAMS: ParamDef[] = [
   { name: "fund-from-controller", type: "boolean", description: "Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance." },
 ];
 
+/** The verb's chain and the profile's address on that chain (a linked chain-specific address when one exists). */
 export async function chainAndProfile(ctx: VerbContext, a: Record<string, any>): Promise<{ chainId: number; profile: Address }> {
   await ctx.config();
-  return { chainId: ctx.chainId(a.chain), profile: await ctx.profile(a.profile) };
+  const chainId = ctx.chainId(a.chain);
+  return { chainId, profile: await ctx.profile(a.profile, chainId) };
 }
 
 function parseU(v: unknown, name: string): bigint | undefined {
@@ -221,8 +224,25 @@ defineVerb({
   },
 });
 
-/** The agent's controller address without unlocking the key when the config already knows it. */
-export async function controllerAddress(ctx: VerbContext): Promise<Address> {
+/**
+ * The agent's controller address used on `chainId` (its chain-specific key, else the default
+ * key; without `chainId` the verb's chain) without unlocking the key when the config knows it.
+ */
+export async function controllerAddress(ctx: VerbContext, chainId?: number): Promise<Address> {
+  const cfg = await ctx.config();
+  let chain = chainId;
+  if (chain === undefined) {
+    try {
+      chain = ctx.chainId();
+    } catch {}
+  }
+  const c = controllerFor(cfg, chain);
+  if (c) return c.address;
+  return (await ctx.signer(chain)).address;
+}
+
+/** The chain-independent default controller (address derivation of new profiles uses this key). */
+export async function defaultControllerAddress(ctx: VerbContext): Promise<Address> {
   const cfg = await ctx.config();
   if (cfg.controller?.address) return getAddress(cfg.controller.address);
   return (await ctx.signer()).address;
@@ -240,7 +260,7 @@ defineVerb({
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
     if (a.controller && !isAddress(a.controller, { strict: false })) throw new UpError("BAD_ARGS", "--controller must be an address");
-    const controller = a.controller ? getAddress(a.controller) : await controllerAddress(ctx);
+    const controller = a.controller ? getAddress(a.controller) : await controllerAddress(ctx, chainId);
     const km = await resolveKeyManager(ctx, chainId, profile);
     if (!km.keyManager) throw new UpError("NOT_SUPPORTED", `profile owner ${km.owner} is not a Key Manager`);
     const channels: { channel: bigint; label: string }[] = [{ channel: 0n, label: "channel 0 (ordered)" }];

@@ -20,7 +20,7 @@
 import { concat, encodeAbiParameters, encodeFunctionData, encodePacked, getAddress, getContractAddress, keccak256, type Address, type Hex } from "viem";
 import type { Signer, VerbContext } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
-import { paths, readJson, writeJson } from "../core/home.ts";
+import { readProfileRecord, writeProfileRecord } from "../core/profile-record.ts";
 import { LSP } from "../chain/registry.ts";
 import { sendTx, simulate } from "../chain/tx.ts";
 import { KM_INIT_ABI, LSP23_ABI, UP_INIT_ABI } from "./abis.ts";
@@ -255,15 +255,8 @@ export function manifestFromPlan(inputs: Lsp23Inputs, plan: Lsp23Plan, extra: { 
   };
 }
 
-/** Profile records live at paths.profile(home, address); other modules may store other keys there, so merge. */
-export async function readProfileRecord(home: string, profile: Address): Promise<Record<string, any>> {
-  return readJson<Record<string, any>>(paths.profile(home, profile), {});
-}
-
-export async function writeProfileRecord(home: string, profile: Address, patch: Record<string, unknown>): Promise<void> {
-  const cur = await readProfileRecord(home, profile);
-  await writeJson(paths.profile(home, profile), { ...cur, address: getAddress(profile), ...patch });
-}
+/** Profile records live at paths.profile(home, address); other modules may store other keys there, so writes merge. */
+export { readProfileRecord, writeProfileRecord };
 
 export async function loadManifest(home: string, profile: Address): Promise<DeploymentManifest | undefined> {
   const r = await readProfileRecord(home, profile);

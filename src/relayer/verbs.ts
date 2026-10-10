@@ -106,11 +106,12 @@ defineVerb({
     if (ctx.flags.dryRun) return { data: { relayer: r.name, chainId, dryRun: true, note: "quota not requested: no signatures in dry-run" } };
     let profile;
     try {
-      profile = await ctx.profile(a.profile);
+      profile = await ctx.profile(a.profile, chainId);
     } catch {
       profile = undefined;
     }
-    const q = await client.quota(await ctx.signer(), { chainId, profile, caps });
+    // the quota login is signed by the agent's key for THIS chain (quota is per chain and per key)
+    const q = await client.quota(await ctx.signer(chainId), { chainId, profile, caps });
     return {
       data: { relayer: r.name, chainId, ...q, hasQuota: quotaPositive(q) },
       text: q.available ? `relayer ${r.name}, chain ${chainId}: ${q.quota} ${q.unit ?? ""} left of ${q.totalQuota ?? "?"} (scope ${q.scope}; resets ${q.resetDate ?? "n/a"})` : `relayer ${r.name}: ${q.reason}`,

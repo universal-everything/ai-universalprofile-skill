@@ -99,7 +99,7 @@ defineVerb({
   params: [{ name: "controller", type: "string", description: "Controller address (default: this agent's).", positional: 0 }],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const controller = a.controller ? addressArg(a.controller, "controller") : await controllerAddress(ctx);
+    const controller = a.controller ? addressArg(a.controller, "controller") : await controllerAddress(ctx, chainId);
     const km = await resolveKeyManager(ctx, chainId, profile);
     const c = await readControllerPermissions(ctx, chainId, profile, controller);
     const authorised = c.permissions.value !== 0n && !!km.keyManager;
@@ -252,7 +252,7 @@ defineVerb({
   params: [{ name: "controller", type: "string", description: "Controller (default: this agent's).", positional: 0 }],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const controller = a.controller ? addressArg(a.controller, "controller") : await controllerAddress(ctx);
+    const controller = a.controller ? addressArg(a.controller, "controller") : await controllerAddress(ctx, chainId);
     const c = await readControllerPermissions(ctx, chainId, profile, controller);
     return { data: { chainId, profile, controller, raw: c.raw.allowedCalls, entries: c.allowedCalls, described: c.allowedCallsDescribed, problems: c.problems }, text: c.allowedCallsDescribed.join("\n") || "no AllowedCalls (only SUPER_* permissions can call anything)" };
   },
@@ -287,7 +287,7 @@ defineVerb({
   params: [{ name: "controller", type: "string", description: "Controller (default: this agent's).", positional: 0 }],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const controller = a.controller ? addressArg(a.controller, "controller") : await controllerAddress(ctx);
+    const controller = a.controller ? addressArg(a.controller, "controller") : await controllerAddress(ctx, chainId);
     const c = await readControllerPermissions(ctx, chainId, profile, controller);
     return { data: { chainId, profile, controller, raw: c.raw.allowedDataKeys, keys: c.allowedDataKeys, problems: c.problems }, text: c.allowedDataKeys.join("\n") || "no AllowedERC725YDataKeys" };
   },
@@ -354,7 +354,7 @@ defineVerb({
     const { chainId, profile } = await chainAndProfile(ctx, a);
     const pending = getAddress(await tryRead<Address>(ctx, chainId, profile, UP_ABI, "pendingOwner") ?? zeroAddress);
     if (pending === zeroAddress) throw new UpError("BAD_ARGS", `no pending ownership transfer on ${profile} (chain ${chainId})`);
-    const signer = await ctx.signer();
+    const signer = await ctx.signer(chainId);
     const accept = encodeFunctionData({ abi: UP_ABI, functionName: "acceptOwnership" });
     let to: Address;
     let data: Hex;

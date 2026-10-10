@@ -35,9 +35,10 @@ export function createContext(opts: ContextOptions): VerbContext {
       cfgCache = cfg;
       await writeJson(paths.config(home), cfg);
     },
-    async signer() {
+    async signer(chainId) {
       const { loadSignerFromConfig } = await import("../signer/index.ts");
-      return loadSignerFromConfig(await config());
+      const cfg = await config();
+      return loadSignerFromConfig(cfg, chainId ?? verbChain());
     },
     async consent(req) {
       // Autonomous writes (--yes, no human approval) must not touch token contracts outside the
@@ -60,19 +61,35 @@ export function createContext(opts: ContextOptions): VerbContext {
       if (cfgCache?.defaultChain) return cfgCache.defaultChain;
       throw new UpError("BAD_ARGS", "no chain given", { hint: "pass --chain <id|name> or set a default: up config set default-chain 42" });
     },
-    async profile(arg) {
+    async identity(arg) {
       const v = arg ?? opts.flags.profile;
       const cfg = await config();
-      if (v) {
-        if (isAddress(v, { strict: false })) return getAddress(v);
-        const a = cfg.aliases?.[v];
-        if (a) return getAddress(a);
-        throw new UpError("BAD_ARGS", `"${v}" is neither an address nor a known alias`, { hint: "list aliases with: up config get aliases" });
-      }
+      if (v) return ctx.resolveAddress(v);
       if (cfg.defaultProfile) return getAddress(cfg.defaultProfile);
       throw new UpError("BAD_ARGS", "no profile given", { hint: "pass --profile <address> or set one: up config set default-profile <address>" });
     },
+    async profile(arg, chainId) {
+      const id = await ctx.identity(arg);
+      const c = chainId ?? verbChain();
+      if (c === undefined) return id;
+      const { profileAddressOn } = await import("./profile-record.ts");
+      return profileAddressOn(home, id, c);
+    },
+    async resolveAddress(v) {
+      if (isAddress(v, { strict: false })) return getAddress(v);
+      const a = (await config()).aliases?.[v];
+      if (a) return getAddress(a);
+      throw new UpError("BAD_ARGS", `"${v}" is neither an address nor a known alias`, { hint: "list aliases with: up config get aliases" });
+    },
     log: opts.log ?? (() => {}),
+  };
+  /** The chain the verb acts on (--chain or the default chain), if any. Never throws. */
+  const verbChain = (): number | undefined => {
+    try {
+      return ctx.chainId();
+    } catch {
+      return undefined;
+    }
   };
   // Pre-load config so chainId() can see the default synchronously after the first await in verbs.
   void config().catch(() => {});

@@ -5,7 +5,10 @@
 //  - registers an in-test "km" ExecTransport STUB (the real transports are built
 //    separately): it builds the same payload a KM transport would (UP.execute /
 //    executeBatch), asks ctx.consent with a confirmation block, honours --dry-run,
-//    and sends KM.execute(payload) from the controller via the harness.
+//    and sends KM.execute(payload) from the controller via the harness;
+//  - controllerSigner(): the agent's signer for that controller (a Hardhat default
+//    account), because the chain preflight of executeAsProfile requires the agent's
+//    key to be a controller of the profile on that chain before any transport runs.
 // Token/social/generic verbs are unchanged when the real transports replace it.
 import { encodeAbiParameters, encodeFunctionData, getAddress, type Address, type Hex } from "viem";
 import { encodeData, encodePermissions } from "@erc725/erc725.js";
@@ -14,6 +17,10 @@ import LSP1Schema from "@erc725/erc725.js/schemas/LSP1UniversalReceiverDelegate.
 import { fixture, type Harness } from "../../../chain/harness.ts";
 import { bundledAbi } from "../../../../src/abi/bundled.ts";
 import { registerTransport, type ExecOutcome, type ExecRequest } from "../../../../src/exec/transport.ts";
+import { mnemonicToAccount } from "viem/accounts";
+import { toHex } from "viem";
+import type { Signer } from "../../../../src/core/types.ts";
+import { testSigner } from "../../../support/context.ts";
 
 export const UP_ABI = bundledAbi("UniversalProfile");
 export const KM_ABI = bundledAbi("LSP6KeyManager");
@@ -54,6 +61,17 @@ export async function setupProfile(h: Harness, controller: Address = h.accounts[
   const owner = await h.request<Hex>("eth_call", [{ to: up, data: encodeFunctionData({ abi: UP_ABI, functionName: "owner" }) }, "latest"]);
   if (getAddress(`0x${owner.slice(26)}`) !== km) throw new Error("profile setup failed: KM is not the owner");
   return { up, km, controller, deployer, urd };
+}
+
+const HARDHAT_MNEMONIC = "test test test test test test test test test test test junk";
+
+/** The agent's signer for the fixture's controller (one of the Hardhat default accounts). */
+export function controllerSigner(p: ProfileFixture): Signer {
+  for (let i = 0; i < 20; i++) {
+    const acct = mnemonicToAccount(HARDHAT_MNEMONIC, { addressIndex: i });
+    if (acct.address === getAddress(p.controller)) return testSigner(toHex(acct.getHdKey().privateKey!));
+  }
+  throw new Error(`${p.controller} is not a Hardhat default account`);
 }
 
 /** Copies a contract's runtime code to a fixed (canonical) address. */

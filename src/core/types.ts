@@ -229,23 +229,41 @@ export interface VerbContext {
   readonly rpc: RpcManager;
   config(): Promise<UpConfig>;
   saveConfig(cfg: UpConfig): Promise<void>;
-  /** Loads the active controller signer (from config.controller). Throws NO_SIGNER if none. */
-  signer(): Promise<Signer>;
+  /**
+   * Loads the controller signer for `chainId`: the chain's own key (config.chainControllers)
+   * or the default key (config.controller). Without `chainId` the verb's chain (--chain or the
+   * default chain) is used; with no chain at all, the default key. Throws NO_SIGNER if none.
+   */
+  signer(chainId?: number): Promise<Signer>;
   /** Throws CONSENT_REQUIRED (with the confirmation block) unless policy/flags allow the action. */
   consent(req: ConsentRequest): Promise<void>;
   /** Resolve chain from args/flags/config default. */
   chainId(arg?: string | number): number;
-  /** Resolve the profile address from args/flags/config default/alias. */
-  profile(arg?: string): Promise<Address>;
+  /**
+   * The profile this verb acts as/for on `chainId` (default: the verb's chain): its identity
+   * (`identity()`), mapped to the chain-specific address when one is linked for that chain
+   * (`up profile link`). Use for the acting profile only — counterparties use resolveAddress().
+   */
+  profile(arg?: string, chainId?: number): Promise<Address>;
+  /** The profile identity from args/flags/alias/config default, without any per-chain mapping. */
+  identity(arg?: string): Promise<Address>;
+  /** Any address or alias (recipients, operators, targets) — never mapped per chain. */
+  resolveAddress(arg: string): Promise<Address>;
   log(message: string): void;
 }
 
 export interface UpConfig {
   version: 1;
-  /** Active controller key (public address) and its backend id. */
+  /** Active (default) controller key (public address) and its backend id. Used on every chain without its own key. */
   controller?: { address: Address; backend: string; createdAt: string };
-  /** Retired controller keys kept for rotation audit (public data only). */
-  retiredControllers?: { address: Address; backend: string; retiredAt: string }[];
+  /**
+   * Optional chain-specific controller keys: chainId → key. The profile is one account on
+   * many chains; a chain listed here signs with its own key (set with up key activate
+   * <address> --chain <id>). Absent = the default key everywhere.
+   */
+  chainControllers?: Record<string, { address: Address; backend: string; createdAt: string }>;
+  /** Retired controller keys kept for rotation audit (public data only). chainId set for retired chain-specific keys. */
+  retiredControllers?: { address: Address; backend: string; retiredAt: string; chainId?: number }[];
   defaultChain?: number;
   defaultProfile?: Address;
   aliases?: Record<string, Address>;

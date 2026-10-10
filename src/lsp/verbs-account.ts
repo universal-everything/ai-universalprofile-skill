@@ -12,7 +12,7 @@ import { toJson } from "../core/json.ts";
 import type { UpConfig, VerbContext } from "../core/types.ts";
 import { executeAuto } from "../exec/auto.ts";
 import { outcomeText, type ExecRequestExt } from "../exec/common.ts";
-import { PATH_PARAMS, chainAndProfile, controllerAddress, execOptions } from "../exec/verbs.ts";
+import { PATH_PARAMS, chainAndProfile, controllerAddress, defaultControllerAddress, execOptions } from "../exec/verbs.ts";
 import { DATA_KEYS, extensionKey, parseArrayLength } from "./constants.ts";
 import { decodePermissions, encodePermissions, getPreset, toBytes32 } from "./permissions.ts";
 import { candidateSalts, computeOnChain, deployFromManifest, loadManifest, manifestFromPlan, planDeployment, readProfileRecord, verifyManifest, writeProfileRecord, DEFAULT_IMPL_VERSION, type Lsp23Inputs } from "./lsp23.ts";
@@ -21,6 +21,8 @@ import { allowedKeyFor, classifyDataKey, decodeDataValue, encodeDataValue, resol
 import { recommend, setDataPayload, buildAddController, requireLockApproval, type RecommendationOptions } from "./controllers.ts";
 import { ADMIN_PERMISSIONS } from "./constants.ts";
 import { hasCode } from "./read.ts";
+import { chainLabel, onChain } from "./multichain.ts";
+import { chainControllerList } from "../signer/select.ts";
 
 // ---------------------------------------------------------------------------
 // shared helpers
@@ -92,7 +94,8 @@ defineVerb({
   ],
   async run(ctx, a) {
     const cfg = await ctx.config();
-    const controller = a.controller ? addressArg(a.controller, "controller") : await controllerAddress(ctx);
+    // The initial controller is part of the address; the default key keeps it chain-independent.
+    const controller = a.controller ? addressArg(a.controller, "controller") : await defaultControllerAddress(ctx);
     const seed = (a.seed ?? ("0x" + randomBytes(32).toString("hex"))) as Hex;
     const salts = a.salt ? [a.salt as Hex] : candidateSalts(seed, a.count);
     const candidates = salts.map((salt, index) => {
@@ -154,7 +157,7 @@ defineVerb({
   },
 });
 
-async function manifestFor(ctx: VerbContext, a: Record<string, any>) {
+async function manifestFor(ctx: VerbContext, a: Record<string, any>, chainId: number) {
   let salt: Hex | undefined = a.salt;
   let seed: Hex | undefined;
   let candidateIndex: number | undefined;
@@ -165,16 +168,21 @@ async function manifestFor(ctx: VerbContext, a: Record<string, any>) {
     salt = candidateSalts(a.seed, 1, a.candidate)[0];
   }
   if (salt) {
-    const controller = a.controller ? addressArg(a.controller, "controller") : (await ctx.signer()).address;
+    // same derivation as account precompute: the default key, whichever key pays gas on this chain
+    const controller = a.controller ? addressArg(a.controller, "controller") : await defaultControllerAddress(ctx);
     const inputs = lsp23InputsFrom(a, controller, salt);
     const plan = planDeployment(inputs);
     const existing = await loadManifest(ctx.home, plan.profile);
     if (existing && verifyManifest(existing).ok) return existing;
     return manifestFromPlan(inputs, plan, { seed, candidateIndex });
   }
-  const profile = await ctx.profile(a.profile);
+  const profile = await ctx.identity(a.profile);
+  const here = await ctx.profile(a.profile, chainId);
+  if (here !== profile) {
+    throw new UpError("BAD_ARGS", `your profile ${profile} is linked to ${here} on chain ${chainId}: it already exists there at that address, so there is nothing to replay`, { hint: `check it with: up account info --chain ${chainId}; remove the link only if it is wrong: up profile link --unlink --chain ${chainId} --approval "<human's words>"` });
+  }
   const m = await loadManifest(ctx.home, profile);
-  if (!m) throw new UpError("BAD_ARGS", `no deployment manifest for ${profile}`, { hint: "deploy a new profile with --salt or --seed/--candidate (see up account precompute), or copy the manifest file of that profile into profiles/" });
+  if (!m) throw new UpError("BAD_ARGS", `no deployment manifest for ${profile}`, { hint: "deploy a new profile with --salt or --seed/--candidate (see up account precompute), or copy the manifest file of that profile into profiles/; a profile this agent did not create must be deployed on a new chain by the human (same inputs, same address)" });
   return m;
 }
 
@@ -183,7 +191,7 @@ defineVerb({
   group: "account",
   summary: "Deploy the agent's Universal Profile via LSP23 (UP + Key Manager + URD in one transaction), or replay a saved manifest on another chain (same address).",
   description:
-    "J1: the agent's controller becomes the main controller with agent-owner permissions (ALL_PERMISSIONS). Verifies that the deployed addresses equal the precomputed ones and runs smoke reads (owner = KM, KM.target() = UP, permissions, URD). The controller EOA pays gas. Afterwards, recommend adding a human controller: up controller add <human> --preset human-admin.",
+    "J1: the agent's controller becomes the main controller with agent-owner permissions (ALL_PERMISSIONS). Verifies that the deployed addresses equal the precomputed ones and runs smoke reads (owner = KM, KM.target() = UP, permissions, URD). The agent's key for that chain pays gas. Without --salt/--seed it replays the saved manifest of the profile on --chain: the same profile, the same address, one more chain. Afterwards, recommend adding a human controller: up controller add <human> --preset human-admin.",
   risk: "write",
   params: [
     { name: "salt", type: "string", description: "32-byte salt of the chosen candidate." },
@@ -194,14 +202,18 @@ defineVerb({
   async run(ctx, a) {
     await ctx.config();
     const chainId = ctx.chainId(a.chain);
-    const m = await manifestFor(ctx, a);
+    const m = await manifestFor(ctx, a, chainId);
     if ((BigInt(m.permissions) & ADMIN_PERMISSIONS) === 0n && !(m.extraControllers ?? []).some((c) => (BigInt(c.permissions) & ADMIN_PERMISSIONS) !== 0n) && !ctx.flags.dryRun) {
       // nobody could ever add/edit controllers or change ownership of such a profile
       requireLockApproval(ctx.flags.approval);
     }
-    const signer = await ctx.signer();
+    // gas is paid by the agent's key for this chain; the profile's first controller is the manifest's
+    const signer = await ctx.signer(chainId);
     const out = await deployFromManifest(ctx, signer, m, chainId);
     const warnings: string[] = [];
+    if (getAddress(m.controller) !== signer.address && !(m.extraControllers ?? []).some((c) => getAddress(c.address) === signer.address)) {
+      warnings.push(`on chain ${chainId} the agent signs with ${signer.address}, but the profile's initial controller there is ${getAddress(m.controller)} (it is part of the address): the agent's key for this chain is not a controller until it is added (up controller add ${signer.address} --chain ${chainId}, signed by an admin controller), or switch this chain back to the initial key: up key activate ${getAddress(m.controller)} --chain ${chainId}`);
+    }
     if (out.status !== "dry-run") {
       const cfg: UpConfig = { ...(await ctx.config()) };
       if (!cfg.defaultProfile) {
@@ -225,7 +237,7 @@ defineVerb({
   risk: "local",
   params: [],
   async run(ctx, a) {
-    const profile = await ctx.profile(a.profile);
+    const profile = await ctx.identity(a.profile); // manifests belong to the profile's identity, not to one chain
     const m = await loadManifest(ctx.home, profile);
     if (!m) throw new UpError("BAD_ARGS", `no deployment manifest stored for ${profile}`, { hint: "only profiles deployed (or precomputed + deployed) by this skill have one" });
     const v = verifyManifest(m);
@@ -240,7 +252,7 @@ defineVerb({
   risk: "local",
   params: [{ name: "out", type: "string", description: "File path to write (0600). Default: return the JSON." }],
   async run(ctx, a) {
-    const profile = await ctx.profile(a.profile);
+    const profile = await ctx.identity(a.profile); // manifests belong to the profile's identity, not to one chain
     const m = await loadManifest(ctx.home, profile);
     if (!m) throw new UpError("BAD_ARGS", `no deployment manifest stored for ${profile}`);
     if (a.out) {
@@ -271,19 +283,19 @@ defineVerb({
     const info = await readProfileInfo(ctx, chainId, profile, { extensions: a.extensions, fetchMetadata: a["fetch-metadata"], controllerLimit: a["controller-limit"] });
     let me: Address | undefined;
     try {
-      me = await controllerAddress(ctx);
+      me = await controllerAddress(ctx, chainId);
     } catch {}
     const mine = me ? info.controllers?.find((c) => c.address === me) : undefined;
     const thisAgent = me ? { controller: me, isController: !!mine && mine.permissions.value !== 0n, permissions: mine?.permissions.names ?? [] } : undefined;
     const lines = info.deployed
       ? [
-          `profile ${profile} on chain ${chainId} (UP ${info.version ?? "?"})`,
+          `your profile ${profile} on ${onChain(chainLabel(ctx, chainId))} (UP ${info.version ?? "?"})`,
           `owner ${info.km?.owner} (${info.km?.ownerKind}${info.km?.keyManagerVersion ? ` v${info.km.keyManagerVersion}` : ""})`,
           `controllers (${info.controllersLength}): ${(info.controllers ?? []).map((c) => `${c.address} [${c.permissions.names.join(",") || "none"}]`).join("; ")}`,
           `URD ${info.universalReceiverDelegate ?? "none"}; extensions: ${(info.extensions ?? []).map((e) => `${e.selector}→${e.address}`).join(", ") || "none"}`,
           thisAgent ? `this agent (${me}): ${thisAgent.isController ? `controller with ${thisAgent.permissions.join(", ")}` : "NOT a controller"}` : "",
         ]
-      : [`no profile at ${profile} on chain ${chainId}`];
+      : [`your profile ${profile} is not deployed on ${onChain(chainLabel(ctx, chainId))} (see every chain: up profile status)`];
     return { data: { ...info, thisAgent }, text: lines.filter(Boolean).join("\n"), warnings: info.warnings };
   },
 });
@@ -474,6 +486,10 @@ export function recommendationOptions(a: Record<string, any>): RecommendationOpt
 
 interface ChainJoinStatus {
   chainId: number;
+  /** The profile's address on this chain (differs from the joined address only when linked). */
+  profile?: Address;
+  /** The agent's key checked on this chain (its chain-specific key, else the default key). */
+  controller?: Address;
   deployed: boolean;
   keyManager?: Address;
   ownerKind?: string;
@@ -485,16 +501,21 @@ interface ChainJoinStatus {
   error?: string;
 }
 
-async function joinStatus(ctx: VerbContext, chainId: number, profile: Address, me: Address, recommendedBits: bigint): Promise<ChainJoinStatus> {
+async function joinStatus(ctx: VerbContext, chainId: number, identity: Address, recommendedBits: bigint): Promise<ChainJoinStatus> {
+  let me: Address | undefined;
+  let profile = identity;
   try {
-    if (!(await hasCode(ctx, chainId, profile))) return { chainId, deployed: false, authorised: false };
+    me = await controllerAddress(ctx, chainId);
+    profile = await ctx.profile(identity, chainId);
+    const where = { chainId, ...(profile !== identity ? { profile } : {}), controller: me };
+    if (!(await hasCode(ctx, chainId, profile))) return { ...where, deployed: false, authorised: false };
     const km = await resolveKeyManager(ctx, chainId, profile);
     const ctl = await readControllers(ctx, chainId, profile);
     const mine: ControllerInfo | undefined = ctl.controllers.find((c) => c.address === me) ?? (await readControllerPermissions(ctx, chainId, profile, me));
     const value = mine?.permissions.value ?? 0n;
     const missing = decodePermissions(recommendedBits & ~value).names;
     return {
-      chainId,
+      ...where,
       deployed: true,
       keyManager: km.keyManager,
       ownerKind: km.ownerKind,
@@ -505,7 +526,7 @@ async function joinStatus(ctx: VerbContext, chainId: number, profile: Address, m
       otherControllers: ctl.controllers.filter((c) => c.address !== me).map((c) => ({ address: c.address, permissions: c.permissions.names })),
     };
   } catch (e) {
-    return { chainId, deployed: false, authorised: false, error: (e as Error).message };
+    return { chainId, controller: me, deployed: false, authorised: false, error: (e as Error).message };
   }
 }
 
@@ -526,12 +547,13 @@ defineVerb({
   async run(ctx, a) {
     const cfg: UpConfig = { ...(await ctx.config()) };
     const profile = addressArg(a.address, "address");
-    const me = await controllerAddress(ctx);
+    const me = await defaultControllerAddress(ctx);
     const chainIds: number[] = a.chains?.length ? (a.chains as string[]).map((c) => ctx.registry.chain(c).chainId) : a.chain ? [ctx.chainId(a.chain)] : cfg.chains?.length ? cfg.chains : cfg.defaultChain ? [cfg.defaultChain] : [];
     if (!chainIds.length) throw new UpError("BAD_ARGS", "no chain selected", { hint: "pass --chains 42,8453 or set: up config set chains 42" });
-    const rec = recommend(me, profile, recommendationOptions(a));
-    const statuses: ChainJoinStatus[] = [];
-    for (const c of chainIds) statuses.push(await joinStatus(ctx, c, profile, me, BigInt(rec.permissions.hex)));
+    const opts = recommendationOptions(a);
+    const rec = recommend(me, profile, opts);
+    // one account, many chains: each chain is checked on its own (in parallel; one failing RPC does not hide the others)
+    const statuses = await Promise.all(chainIds.map((c) => joinStatus(ctx, c, profile, BigInt(rec.permissions.hex))));
     if (a["set-default"]) cfg.defaultProfile = profile;
     if (a.alias) {
       if (isAddress(a.alias, { strict: false })) throw new UpError("BAD_ARGS", "alias must not look like an address");
@@ -539,12 +561,16 @@ defineVerb({
     }
     await ctx.saveConfig(cfg);
     const prev = await readProfileRecord(ctx.home, profile);
-    await writeProfileRecord(ctx.home, profile, { joined: { at: prev.joined?.at ?? new Date().toISOString(), checkedAt: new Date().toISOString(), controller: me, chains: statuses.map((s) => ({ chainId: s.chainId, authorised: s.authorised, deployed: s.deployed })) } });
+    await writeProfileRecord(ctx.home, profile, { joined: { at: prev.joined?.at ?? new Date().toISOString(), checkedAt: new Date().toISOString(), controller: me, chains: statuses.map((s) => ({ chainId: s.chainId, authorised: s.authorised, deployed: s.deployed, controller: s.controller })) } });
     const pending = statuses.filter((s) => s.deployed && !s.authorised);
+    // chains where the agent signs with its own chain-specific key need that key authorised, not the default one
+    const otherKeys = [...new Set(pending.map((s) => s.controller).filter((c): c is Address => !!c && c !== me))];
+    const label = (id: number) => onChain(chainLabel(ctx, id));
     const lines = [
-      `profile ${profile} — this agent's controller: ${me}`,
-      ...statuses.map((s) => `  chain ${s.chainId}: ${!s.deployed ? `not deployed${s.error ? ` (${s.error})` : ""}` : s.authorised ? `AUTHORISED (${s.permissions!.join(", ")})${s.missing!.length ? `; missing recommended: ${s.missing!.join(", ")}` : ""}` : "NOT AUTHORISED yet"}${s.deployed && s.otherControllers?.length ? `; other controllers: ${s.otherControllers.length}` : ""}`),
-      ...(pending.length ? ["", "Hand this to the human:", rec.text] : []),
+      `Your Universal Profile ${profile} — this agent's key: ${me}`,
+      ...statuses.map((s) => `  ${label(s.chainId)}: ${!s.deployed ? `not deployed${s.error ? ` (${s.error})` : ""}` : s.authorised ? `AUTHORISED (${s.permissions!.join(", ")})${s.missing!.length ? `; missing recommended: ${s.missing!.join(", ")}` : ""}` : "NOT AUTHORISED yet"}${s.controller && s.controller !== me ? ` [key ${s.controller}]` : ""}${s.deployed && s.otherControllers?.length ? `; other controllers: ${s.otherControllers.length}` : ""}`),
+      ...(pending.some((s) => !s.controller || s.controller === me) ? ["", `Hand this to the human (for ${pending.filter((s) => !s.controller || s.controller === me).map((s) => label(s.chainId)).join(", ")}):`, rec.text] : []),
+      ...otherKeys.flatMap((k) => ["", `On ${pending.filter((s) => s.controller === k).map((s) => label(s.chainId)).join(", ")} the agent uses its key ${k}; hand this to the human for those chains:`, recommend(k, profile, opts).text]),
     ];
     return { data: { profile, controller: me, chains: statuses, recommendation: rec, defaultProfile: a["set-default"] ? profile : cfg.defaultProfile }, text: lines.join("\n") };
   },
@@ -557,12 +583,19 @@ defineVerb({
   risk: "local",
   params: [{ name: "controller", type: "string", description: "Controller address (default: this agent's)." }, ...RECOMMEND_PARAMS],
   async run(ctx, a) {
-    const me = a.controller ? addressArg(a.controller, "controller") : await controllerAddress(ctx);
+    await ctx.config();
+    const chainId = a.chain ? ctx.chainId(a.chain) : undefined; // the key to authorise is the agent's key for that chain
+    const me = a.controller ? addressArg(a.controller, "controller") : await controllerAddress(ctx, chainId);
     let profile: Address | undefined;
     try {
-      profile = await ctx.profile(a.profile);
+      profile = await ctx.profile(a.profile, chainId);
     } catch {}
     const rec = recommend(me, profile, recommendationOptions(a));
-    return { data: rec, text: rec.text };
+    // keys are per chain: say which chains need a different address authorised
+    const cfg = await ctx.config();
+    const others = a.controller ? [] : chainControllerList(cfg).filter((k) => k.address !== me).map((k) => `on ${onChain(chainLabel(ctx, k.chainId))} it uses ${k.address}`);
+    if (!a.controller && cfg.controller?.address && getAddress(cfg.controller.address) !== me) others.push(`on chains without their own key it uses its default key ${getAddress(cfg.controller.address)}`);
+    const warnings = others.length ? [`this recommendation is for the agent's key ${me}; ${others.join("; ")} — run up permissions recommend --chain <id> for those chains`] : undefined;
+    return { data: rec, text: rec.text, warnings };
   },
 });

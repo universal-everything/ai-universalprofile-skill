@@ -5,12 +5,12 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { decodeFunctionData, encodeFunctionData, pad, type Address, type Hex } from "viem";
 import { getHarness, type Harness } from "./harness.ts";
-import { testContext, testSigner } from "../support/context.ts";
+import { testContext } from "../support/context.ts";
 import "../../src/tokens/verbs.ts";
 import { coerceArgs, getVerb } from "../../src/core/verbs.ts";
 import { bundledAbi } from "../../src/abi/bundled.ts";
 import { LSP7_ABI, LSP8_ABI } from "../../src/tokens/assets.ts";
-import { deploy, registerKmStub, setupProfile, type KmStub, type ProfileFixture } from "../unit/tokens/support/profile-fixture.ts";
+import { deploy, controllerSigner, registerKmStub, setupProfile, type KmStub, type ProfileFixture } from "../unit/tokens/support/profile-fixture.ts";
 import type { VerbContext } from "../../src/core/types.ts";
 import { DEFAULT_POLICY, savePolicy } from "../../src/core/policy.ts";
 
@@ -50,7 +50,7 @@ beforeAll(async () => {
   home = h.newHome();
   // the human enabled autonomous token moves, but only for the two test tokens
   await savePolicy(home, { ...DEFAULT_POLICY, allowTokenMoves: true, tokenTargets: [lsp7, lsp8] });
-  ctx = testContext(home, testSigner(), { yes: true });
+  ctx = testContext(home, controllerSigner(p), { yes: true });
 }, 180_000);
 
 describe("reads", () => {
@@ -118,7 +118,7 @@ describe("transfers through the profile", () => {
   });
 
   it("dry-run builds and asks nothing to be sent", async () => {
-    const dry = testContext(home, testSigner(), { dryRun: true });
+    const dry = testContext(home, controllerSigner(p), { dryRun: true });
     const eoa = h.accounts[4];
     const r = (await run("token transfer", { asset: lsp7, to: eoa, amount: "3", via: "km" }, dry)).data as any;
     expect(r.outcome.status).toBe("dry-run");
@@ -128,13 +128,13 @@ describe("transfers through the profile", () => {
   it("the consent path sees the inner token selector + token contract (policy.allowTokenMoves / tokenTargets)", async () => {
     // default policy: token moves need a human approval; the denial names the LSP7 transfer selector
     const strictHome = h.newHome();
-    const def = testContext(strictHome, testSigner(), { yes: true });
+    const def = testContext(strictHome, controllerSigner(p), { yes: true });
     await expect(run("token transfer", { asset: lsp7, to: h.accounts[4], amount: "1", via: "km" }, def)).rejects.toMatchObject({ code: "POLICY_DENIED", message: expect.stringMatching(/0x760d9bba/) });
     // allowTokenMoves restricted to another token: the token contract (not the recipient) is checked
     await savePolicy(strictHome, { ...DEFAULT_POLICY, allowTokenMoves: true, tokenTargets: [lsp8] });
-    await expect(run("token transfer", { asset: lsp7, to: h.accounts[4], amount: "1", via: "km" }, testContext(strictHome, testSigner(), { yes: true }))).rejects.toMatchObject({ code: "POLICY_DENIED", message: expect.stringMatching(/tokenTargets/) });
+    await expect(run("token transfer", { asset: lsp7, to: h.accounts[4], amount: "1", via: "km" }, testContext(strictHome, controllerSigner(p), { yes: true }))).rejects.toMatchObject({ code: "POLICY_DENIED", message: expect.stringMatching(/tokenTargets/) });
     // an explicit human approval always works
-    const ok = (await run("token transfer", { asset: lsp7, to: h.accounts[4], amount: "1", via: "km" }, testContext(strictHome, testSigner(), { approval: "yes, send 1 TT to account 4" }))).data as any;
+    const ok = (await run("token transfer", { asset: lsp7, to: h.accounts[4], amount: "1", via: "km" }, testContext(strictHome, controllerSigner(p), { approval: "yes, send 1 TT to account 4" }))).data as any;
     expect(ok.outcome.status).toBe("success");
     const req = stub.requests.at(-1)!;
     expect(req.calls![0].to).toBe(lsp7);
@@ -142,7 +142,7 @@ describe("transfers through the profile", () => {
   });
 
   it("without --yes or --approval the consent model blocks the write", async () => {
-    const strict = testContext(home, testSigner(), { yes: false });
+    const strict = testContext(home, controllerSigner(p), { yes: false });
     await expect(run("token transfer", { asset: lsp7, to: h.accounts[4], amount: "1", via: "km" }, strict)).rejects.toMatchObject({ code: "CONSENT_REQUIRED" });
   });
 
@@ -158,7 +158,7 @@ describe("transfers through the profile", () => {
     const eoa = h.accounts[6];
     const before = BigInt(await h.request<Hex>("eth_getBalance", [eoa, "latest"]));
     await expect(run("token transfer", { native: true, to: eoa, amount: "0.5", via: "km" })).rejects.toMatchObject({ code: "POLICY_DENIED" });
-    const approved = testContext(home, testSigner(), { approval: "yes, send 0.5 to account 6" });
+    const approved = testContext(home, controllerSigner(p), { approval: "yes, send 0.5 to account 6" });
     const r = (await run("token transfer", { native: true, to: eoa, amount: "0.5", via: "km" }, approved)).data as any;
     expect(r.outcome.status).toBe("success");
     expect(BigInt(await h.request<Hex>("eth_getBalance", [eoa, "latest"])) - before).toBe(E18 / 2n);

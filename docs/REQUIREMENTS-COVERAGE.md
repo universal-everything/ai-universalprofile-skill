@@ -11,7 +11,7 @@ Maps every requirement of the task definition (Obsidian note *Universal Profile 
 | A3 | Generic skill any agent can install | standard Agent Skill folder, CLI + MCP from one verb registry | `build/verify-skill.mjs`, `skills-ref validate`, `e2e/bundle.test.ts` |
 | A4 | Compatible with the skills catalogues | resolved: ClawHub, Agensi, SkillsMP, SkillsLLM — packaging rules enforced; listing is phase P9 | `build/verify-skill.mjs` (text-only, ≤ 1 MiB/file, ≤ 256 files, unminified) |
 | A5 | Works specifically with Dot, Muse, OpenClaw | OpenClaw verified install paths; dots/Muse in-VM path | `references/platforms.md`; `.github/workflows/release.yml` publishes `skill` branch (SKILL.md at root, required by OpenClaw Git installs) |
-| A6 | All ways to interact with a UP / ERC725 account | 100 verbs; generic `exec send`/`contract call` reach every function | `unit/coverage/functions.test.ts` (every LSP selector classified, every verb-bound function implemented) |
+| A6 | All ways to interact with a UP / ERC725 account | 102 verbs; generic `exec send`/`contract call` reach every function | `unit/coverage/functions.test.ts` (every LSP selector classified, every verb-bound function implemented) |
 | A7 | Understand LSP6, LSP0, URD, basics | `src/lsp/*`, `account info`, `permissions *`, `account urd set` | `chain/account.test.ts`, `chain/permissions.test.ts`, `references/permissions.md` |
 | A8 | Execute directly via KM and/or LSP0 | transports `km`, `lsp0` | `chain/exec-transports.test.ts`, `e2e/bundle.test.ts` |
 | A9 | executeRelayCall for the relayer subscription | transport `relay`, `exec relay`, LSP25 signing | `chain/relay.test.ts`, `unit/lsp/lsp25.test.ts` |
@@ -92,6 +92,12 @@ Maps every requirement of the task definition (Obsidian note *Universal Profile 
 | 13 | Reuse ClawHub slug `universal-profile` | SKILL.md `name: universal-profile` |
 | 14 | Bundled lightweight QR for funding addresses | `src/display/qr.ts` (plain address + EIP-681) |
 | 15 | Node only, no Python | entire runtime is Node ≥ 22 ES modules |
+
+## E. Product owner requirements after the first version
+
+| # | Requirement | Implementation | Evidence |
+| --- | --- | --- | --- |
+| E1 | One Universal Profile is one account on many EVM chains (deployed per chain, with per-chain controllers, permissions, balances and possibly per-chain keys); the agent talks and acts that way (10 Oct 2026) | wording: SKILL.md golden rule 3 + "Acting on a chain", `references/chains.md` "One profile on many chains", onboarding/permissions/security/errors references; `profile status` (parallel per-chain overview with next steps and error isolation, snapshot merged into the profile record) in `src/lsp/verbs-multichain.ts` + `src/lsp/multichain.ts`; per-chain preflight and per-chain error hints in `executeAsProfile`/`executeAuto` and `sign`; per-chain keys `UpConfig.chainControllers`, `ctx.signer(chainId)`, `key activate/address/rotate-plan/backup --chain` (`src/signer/select.ts`, `src/signer/verbs.ts`); per-chain addresses `profile link` + `ctx.profile(arg, chainId)` (`src/core/profile-record.ts`, `src/core/context.ts`) | `chain/multichain.test.ts` (two in-process chains: deployed on A only, manifest replay on B, authorised on A only, different keys per chain on km/relay/quota/ERC-1271, preflight hints, link, unreachable chain), `unit/lsp/multichain.test.ts`, `unit/core/multichain-context.test.ts`, `unit/signer/chain-keys.test.ts` |
 
 ## Known open items (engineering dependencies, not scope cuts)
 

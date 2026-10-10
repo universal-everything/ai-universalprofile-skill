@@ -7,7 +7,7 @@ Risk classes: **local** (no chain writes), **read** (chain/HTTP reads), **write*
 ## Index
 
 - **abi**: [`abi bundled`](#abi-bundled), [`abi decode`](#abi-decode), [`abi decode-error`](#abi-decode-error), [`abi decode-event`](#abi-decode-event), [`abi encode`](#abi-encode), [`abi fetch`](#abi-fetch), [`abi functions`](#abi-functions), [`abi resolve-proxy`](#abi-resolve-proxy), [`abi selector`](#abi-selector), [`contract call`](#contract-call), [`contract read`](#contract-read)
-- **account**: [`account data get`](#account-data-get), [`account data set`](#account-data-set), [`account deploy`](#account-deploy), [`account extensions add`](#account-extensions-add), [`account extensions remove`](#account-extensions-remove), [`account info`](#account-info), [`account manifest export`](#account-manifest-export), [`account manifest show`](#account-manifest-show), [`account precompute`](#account-precompute), [`account urd set`](#account-urd-set), [`profile join`](#profile-join)
+- **account**: [`account data get`](#account-data-get), [`account data set`](#account-data-set), [`account deploy`](#account-deploy), [`account extensions add`](#account-extensions-add), [`account extensions remove`](#account-extensions-remove), [`account info`](#account-info), [`account manifest export`](#account-manifest-export), [`account manifest show`](#account-manifest-show), [`account precompute`](#account-precompute), [`account urd set`](#account-urd-set), [`profile join`](#profile-join), [`profile link`](#profile-link), [`profile status`](#profile-status)
 - **chains**: [`chains add`](#chains-add), [`chains list`](#chains-list), [`chains refresh`](#chains-refresh), [`chains rpc find`](#chains-rpc-find), [`chains rpc list`](#chains-rpc-list), [`chains rpc set`](#chains-rpc-set), [`chains rpc verify`](#chains-rpc-verify), [`chains verify`](#chains-verify)
 - **display**: [`display address`](#display-address), [`identicon`](#identicon), [`qr`](#qr)
 - **erc4337**: [`account 4337 deploy-entrypoint`](#account-4337-deploy-entrypoint), [`account 4337 deploy-extension`](#account-4337-deploy-extension), [`account 4337 deposit`](#account-4337-deposit), [`account 4337 disable`](#account-4337-disable), [`account 4337 enable`](#account-4337-enable), [`account 4337 status`](#account-4337-status), [`account 4337 withdraw`](#account-4337-withdraw), [`bundler set`](#bundler-set)
@@ -236,7 +236,7 @@ Permission routing (LSP6SetDataModule): AddressPermissions* keys → ADDCONTROLL
 
 Deploy the agent's Universal Profile via LSP23 (UP + Key Manager + URD in one transaction), or replay a saved manifest on another chain (same address).
 
-J1: the agent's controller becomes the main controller with agent-owner permissions (ALL_PERMISSIONS). Verifies that the deployed addresses equal the precomputed ones and runs smoke reads (owner = KM, KM.target() = UP, permissions, URD). The controller EOA pays gas. Afterwards, recommend adding a human controller: up controller add <human> --preset human-admin.
+J1: the agent's controller becomes the main controller with agent-owner permissions (ALL_PERMISSIONS). Verifies that the deployed addresses equal the precomputed ones and runs smoke reads (owner = KM, KM.target() = UP, permissions, URD). The agent's key for that chain pays gas. Without --salt/--seed it replays the saved manifest of the profile on --chain: the same profile, the same address, one more chain. Afterwards, recommend adding a human controller: up controller add <human> --preset human-admin.
 
 - CLI: `up account deploy [options]`
 - MCP tool: `up_account_deploy` · risk: **write**
@@ -382,6 +382,47 @@ Resolves the Key Manager on each chain, lists who controls the profile, checks t
 | `--allow-targets` | json |  | Extra targets appended to the preset default: [{"address":"0x…","callTypes":["CALL","VALUE"],"selector":"0x…"}]. |
 | `--allowed-keys` | string[] |  | Data keys the agent may write (names like LSP3Profile or hex keys/prefixes). |
 | `--with-4337` | boolean |  | Include the ERC-4337 permission bit (only if the user explicitly wants the opt-in 4337 module). |
+
+### profile link
+
+Link the address your profile has on one chain when it differs from its usual address (different factory or salt), or remove that link (--unlink). Human approval required.
+
+Normally a profile has the same address on every chain and needs no link. A link makes every verb act as (and show) the linked address on that chain only; all other chains keep the profile's address. The linked contract must be a deployed Universal Profile (LSP0) owned by an LSP6 Key Manager on that chain. Because a wrong link would send the human's assets to someone else's contract on that chain, linking and unlinking always need the human's --approval.
+
+- CLI: `up profile link [address] [options]`
+- MCP tool: `up_profile_link` · risk: **admin**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--address` | string |  | The profile's address on --chain (omit with --unlink). |
+| `--unlink` | boolean |  | Remove the link for --chain (the chain then uses the profile's usual address again). |
+
+Examples:
+
+```
+up profile link 0xAddressOnBase --chain base --approval "<human's words>"
+up profile link --unlink --chain base --approval "<human's words>"
+```
+
+### profile status
+
+Cross-chain overview of ONE Universal Profile: per chain whether it is deployed, which agent key applies and whether it is a controller with which permissions, balances, relayer, and the next step.
+
+Read-only; the chains are checked in parallel and one unreachable chain never hides the others. Per chain: the profile's address there (linked or the same), deployed (code + LSP0), owner/Key Manager, the agent's key for that chain and its decoded permissions (and whether AllowedCalls/AllowedERC725YDataKeys limit it), native balance of the profile and of the key (gas), relayer coverage, and the concrete next step (deploy there with the manifest, ask the human to authorise the key there, fund gas). Stores a snapshot in the local profile record.
+
+- CLI: `up profile status [options]`
+- MCP tool: `up_profile_status` · risk: **read**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--chains` | string[] |  | Chains to check (default: configured chains plus chains where the profile is known to exist; --chain checks one). |
+
+Examples:
+
+```
+up profile status
+up profile status --chains lukso,base
+```
 
 ## chains
 
@@ -847,19 +888,21 @@ up init --force --approval "<human's words>"
 
 ### key activate
 
-Make another key from the key store the active controller (rotation or rollback); the previous one is retired.
+Make another key from the key store the agent's controller key: the default key (rotation or rollback; the previous one is retired), or with --chain the key used on that chain only.
+
+Without --chain the default key changes (every chain without its own key follows). With --chain <id> only that chain switches to the key; activating the default key's address for a chain removes the chain's own key (it uses the default again). Only the local signing key changes: the key must be a controller of the profile on that chain (check with: up profile status).
 
 - CLI: `up key activate <address> [options]`
 - MCP tool: `up_key_activate` · risk: **secret**
 
 | option | type | required | description |
 | --- | --- | --- | --- |
-| `--address` | string | yes | Address of the key to activate (a candidate or a retired key). |
+| `--address` | string | yes | Address of the key to activate (a candidate, a retired key, or with --chain also the default key). |
 | `--backend` | string (macos-keychain\|linux-systemd-creds\|linux-secret-service\|windows-dpapi\|wsl-dpapi\|protected-file\|vm-protected-file\|remote-signer\|memory) |  | Key store holding that key (default: where the candidate was created, else the active controller's store). |
 
 ### key address
 
-Show the agent's controller address and the key store that protects it.
+Show the agent's controller address (the default key, or with --chain the key used on that chain) and the key store that protects it; lists chains that use their own key.
 
 - CLI: `up key address [options]`
 - MCP tool: `up_key_address` · risk: **local**
@@ -873,7 +916,7 @@ Check every key store on this machine and show which one protects the controller
 
 ### key backup
 
-Write a passphrase-encrypted backup (Ethereum keystore v3) of the controller key — human-run only.
+Write a passphrase-encrypted backup (Ethereum keystore v3) of the controller key (default key; with --chain the key used on that chain) — human-run only.
 
 Only encrypted backups exist; the raw key is never exported. Requires --encrypted, --explicit-consent, a human approval, and a passphrase (>= 12 characters) in the UP_BACKUP_PASSPHRASE environment variable, set by the human in their own terminal (never passed as an argument, never typed into chat). The preferred recovery path is a second (human) controller on the profile, not a key export.
 
@@ -897,9 +940,9 @@ Generates a new key next to the active one and returns its public address. Nothi
 
 ### key rotate-plan
 
-Show the step-by-step plan to rotate the controller key without changing the profile address.
+Show the step-by-step plan to rotate the controller key without changing the profile address (the default key, or with --chain the key used on that chain).
 
-Returns the rotation drill as data and text. It does not execute anything; each step names the verb that performs it.
+Returns the rotation drill as data and text. It does not execute anything; each step names the verb that performs it. Permissions are stored per chain, so the new key is granted, verified and the old one removed on every chain where the rotated key is used; chains with their own key are rotated separately (--chain).
 
 - CLI: `up key rotate-plan [options]`
 - MCP tool: `up_key_rotate_plan` · risk: **local**

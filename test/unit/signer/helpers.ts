@@ -68,6 +68,12 @@ export function fakeContext(home: string, flags: Partial<Flags> = {}, initial: U
     profile: async () => {
       throw new Error("not used");
     },
+    identity: async () => {
+      throw new Error("not used");
+    },
+    resolveAddress: async () => {
+      throw new Error("not used");
+    },
     log: (m: string) => {
       logs.push(m);
     },

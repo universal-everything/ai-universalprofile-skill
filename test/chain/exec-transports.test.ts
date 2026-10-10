@@ -335,13 +335,22 @@ describe("negative relay / LSP20 cases (testing plan §2 relay class)", () => {
     expect((await executeAsProfile(lctx, { chainId: h.chainId, profile, calls: [{ operation: 0, to: recA, value: 0n, data: "0x" }] }, { via: "km" })).status).toBe("success");
   });
 
-  it("LSP20 path: a non-controller is rejected by the Key Manager (NoPermissionsSet)", async () => {
+  it("LSP20 path: a non-controller is refused by the chain preflight with the per-chain fix, and the Key Manager agrees (NoPermissionsSet)", async () => {
     const stranger = testSigner(generatePrivateKey());
     await h.fund(stranger.address, parseEther("1"));
     const sctx = testContext(ctx.home, stranger, { approval: "ok" });
     const err = await executeAsProfile(sctx, { chainId: h.chainId, profile, calls: [{ operation: 0, to: recA, value: 0n, data: "0x" }] }, { via: "lsp0" }).catch((e) => e);
-    expect(err.code).toBe("SIMULATION_REVERTED");
+    // same code the relay path always used for "not a controller"; nothing was simulated, signed or sent
+    expect(err.code).toBe("NOT_AUTHORISED");
     expect(err.details.errorName).toBe("NoPermissionsSet");
+    expect(err.message).toContain(`this agent's key ${stranger.address} is not a controller of your Universal Profile ${profile}`);
+    expect(err.message).toContain(`(${h.chainId})`);
+    expect(err.hint).toMatch(/ask the human to authorise/);
+    expect(err.hint).toMatch(/up permissions recommend --chain local/);
+    // the on-chain check the preflight anticipates: LSP20 verification through the Key Manager
+    const onchain = await h.request("eth_call", [{ from: stranger.address, to: profile, data: encodeUpExecute({ operation: 0, to: recA, value: 0n, data: "0x" }) }, "latest"]).catch((e: any) => e);
+    const { decodeRevert } = await import("../../src/chain/tx.ts");
+    expect(decodeRevert((onchain?.data?.data ?? onchain?.data) as Hex).errorName).toBe("NoPermissionsSet");
   });
 });
 

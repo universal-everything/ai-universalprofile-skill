@@ -13,6 +13,8 @@ import { join } from "node:path";
 import { concat, getAddress, getContractAddress, type Address, type Hex } from "viem";
 
 export const LOCAL_CHAIN_ID = 31337;
+/** Second, independent in-process chain (multichain tests): same accounts and canonical LSP stack, different chain id and state. */
+export const SECOND_CHAIN_ID = 31338;
 export const NICK_FACTORY = "0x4e59b44847b379578588920cA78FbF26c0B4956C" as Address;
 const NICK_RUNTIME = "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3" as Hex; // eth_getCode on LUKSO mainnet
 
@@ -32,21 +34,38 @@ export interface Harness {
   deployRaw(initCode: Hex, from?: Address): Promise<Address>;
   /** temp UP_HOME with a registry overlay declaring the local chain */
   newHome(): string;
+  /** registry overlay entry of this chain (see multiChainHome) */
+  overlayChain: Record<string, unknown>;
   close(): Promise<void>;
   lsp: Record<string, Address>;
 }
 
 let shared: Promise<Harness> | undefined;
+let second: Promise<Harness> | undefined;
 
 export function getHarness(): Promise<Harness> {
-  return (shared ??= startHarness());
+  return (shared ??= startHarness({ chainId: LOCAL_CHAIN_ID, name: "Local test EVM", slug: "local" }));
 }
 
-async function startHarness(): Promise<Harness> {
+/** A second chain in the same process (separate EDR instance and HTTP endpoint). */
+export function getSecondHarness(): Promise<Harness> {
+  return (second ??= startHarness({ chainId: SECOND_CHAIN_ID, name: "Second test EVM", slug: "local-b" }));
+}
+
+/** temp UP_HOME whose registry overlay and config declare every given chain (the first is the default chain). */
+export function multiChainHome(hs: Harness[]): string {
+  const home = mkdtempSync(join(tmpdir(), "up-home-"));
+  mkdirSync(join(home, "cache", "registry"), { recursive: true, mode: 0o700 });
+  writeFileSync(join(home, "cache", "registry", "overlay.json"), JSON.stringify({ chains: hs.map((x) => x.overlayChain) }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ version: 1, defaultChain: hs[0].chainId, chains: hs.map((x) => x.chainId) }), { mode: 0o600 });
+  return home;
+}
+
+async function startHarness(spec: { chainId: number; name: string; slug: string }): Promise<Harness> {
   process.env.UP_RPC_ALLOW_STALE = "1";
   process.env.UP_POLL_MS = "50";
   const { network } = await import("hardhat");
-  const conn = await network.connect();
+  const conn = spec.chainId === LOCAL_CHAIN_ID ? await network.connect() : await network.connect({ override: { chainId: spec.chainId } as any });
   const provider = conn.provider as unknown as Harness["provider"];
   const request = <T = any>(method: string, params: unknown[] = []) => provider.request({ method, params }) as Promise<T>;
 
@@ -129,36 +148,31 @@ async function startHarness(): Promise<Harness> {
     }
   }
 
+  const overlayChain = {
+    chainId: spec.chainId,
+    name: spec.name,
+    slug: spec.slug,
+    nativeSymbol: "ETH",
+    testnet: true,
+    rpcs: [{ url: rpcUrl, source: "user", trust: "user" }],
+    explorers: [],
+    lsp: { deployed: true, versions: { LSP23LinkedContractsFactory: ["singleton"], UniversalProfileInit: ["0.14.0", "0.12.1"] } },
+    relayers: [],
+    staleAfterSec: 1e9,
+    confirmations: 1,
+  };
   const newHome = () => {
     const home = mkdtempSync(join(tmpdir(), "up-home-"));
     mkdirSync(join(home, "cache", "registry"), { recursive: true, mode: 0o700 });
-    writeFileSync(
-      join(home, "cache", "registry", "overlay.json"),
-      JSON.stringify({
-        chains: [
-          {
-            chainId: LOCAL_CHAIN_ID,
-            name: "Local test EVM",
-            slug: "local",
-            nativeSymbol: "ETH",
-            testnet: true,
-            rpcs: [{ url: rpcUrl, source: "user", trust: "user" }],
-            explorers: [],
-            lsp: { deployed: true, versions: { LSP23LinkedContractsFactory: ["singleton"], UniversalProfileInit: ["0.14.0", "0.12.1"] } },
-            relayers: [],
-            staleAfterSec: 1e9,
-            confirmations: 1,
-          },
-        ],
-      }),
-    );
-    writeFileSync(join(home, "config.json"), JSON.stringify({ version: 1, defaultChain: LOCAL_CHAIN_ID, chains: [LOCAL_CHAIN_ID] }), { mode: 0o600 });
+    writeFileSync(join(home, "cache", "registry", "overlay.json"), JSON.stringify({ chains: [overlayChain] }));
+    writeFileSync(join(home, "config.json"), JSON.stringify({ version: 1, defaultChain: spec.chainId, chains: [spec.chainId] }), { mode: 0o600 });
     return home;
   };
 
   return {
     rpcUrl,
-    chainId: LOCAL_CHAIN_ID,
+    chainId: spec.chainId,
+    overlayChain,
     provider,
     accounts,
     request,

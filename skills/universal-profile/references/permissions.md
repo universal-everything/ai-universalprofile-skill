@@ -1,6 +1,6 @@
 # Permissions: what each controller may do
 
-A Universal Profile is owned by its LSP6 Key Manager. Every address that may act for the profile is a **controller**, and its powers are stored in the profile's own ERC725Y data, **separately on each chain**. Granting, changing or removing permissions is an **admin action**: always `--dry-run`, explain in plain words, and get the human's `--approval`. Read the current state with `up permissions list` (all controllers) and `up permissions show <address>` (one controller, decoded).
+A Universal Profile is owned by its LSP6 Key Manager. Every address that may act for the profile is a **controller**, and its powers are stored in the profile's own ERC725Y data **on each chain where the profile is deployed**: the same profile can have different controllers and permissions on different chains. Granting, changing or removing permissions is an **admin action**: always `--dry-run`, explain in plain words, and get the human's `--approval`. Read the current state with `up permissions list` (all controllers) and `up permissions show <address>` (one controller, decoded).
 
 ## Permission bits (LSP6)
 
@@ -96,16 +96,16 @@ What LSP6 cannot enforce: spending amounts, time limits, counts. The skill's del
 - **Remove** (`up controller remove <address>`, needs `EDITPERMISSIONS`): clears the permission value and allow-lists and removes the address from the array.
   - **Last-controller rule:** the verb refuses to remove the last controller that holds `CHANGEOWNER`, `ADDCONTROLLER` or `EDITPERMISSIONS`; doing so locks the profile forever. Only override when the human, after you explained that the profile can never be administered again, typed an explicit confirmation of exactly that.
   - Removing the agent's own controller ends its ability to act; confirm that is intended.
-- **Every chain separately.** A controller added on LUKSO is not a controller on Base. Repeat and verify per chain (`up permissions show <address> --chain <id>`).
+- **Per chain.** Your profile's permissions live on each chain where it is deployed: a controller added on LUKSO is not a controller on Base, and the agent may sign on some chain with its own key (`up key address` lists them). Grant and verify on every chain where the agent should act (`up permissions show <address> --chain <id>`; `up profile status` shows all chains at once).
 - **Ownership (LSP14)**: `up ownership transfer <newOwner>` starts a two-step transfer; the new owner must call `acceptOwnership` (`up ownership accept`, or for a new Key Manager through that Key Manager). `up ownership renounce` is a two-call, time-windowed process that leaves the profile **without any owner, unrecoverable**; never do it without an explicit, informed human request, and say that plainly.
-- **Key rotation** keeps the profile: add the new key with the same permissions on every chain, test, then remove the old one (`up key rotate-plan`).
+- **Key rotation** keeps the profile: add the new key with the same permissions on every chain where the old key is used, test, then remove the old one (`up key rotate-plan`; a chain with its own key: `up key rotate-plan --chain <id>`).
 
 ## Diagnosing permission errors
 
 | Revert | Meaning | Fix |
 | --- | --- | --- |
-| `NoPermissionsSet(address)` | the address is not a controller on this chain | authorise it on this chain |
-| `NotAuthorised(address, "PERMISSION")` | the controller lacks that permission | ask the human to grant exactly that bit, or use a different action |
+| `NoPermissionsSet(address)` | the address is not a controller on this chain | authorise it on this chain (the error hint names the chain; a grant elsewhere does not count) |
+| `NotAuthorised(address, "PERMISSION")` | the controller lacks that permission on this chain | ask the human to grant exactly that bit on this chain (`up controller edit <key> --add <PERMISSION> --chain <id>`), or use a different action |
 | `NoCallsAllowed(address)` | `CALL`/`TRANSFERVALUE`/`STATICCALL` without any AllowedCalls | add AllowedCalls entries |
 | `NotAllowedCall(address, target, selector)` | target or function not in AllowedCalls | add an entry or use another target |
 | `NoERC725YDataKeysAllowed(address)` / `NotAllowedERC725YDataKey(address, key)` | `SETDATA` without (matching) allowed keys | add the key or prefix |

@@ -3,11 +3,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { decodeFunctionData, type Address } from "viem";
 import { getHarness, type Harness } from "./harness.ts";
-import { testContext, testSigner } from "../support/context.ts";
+import { testContext } from "../support/context.ts";
 import "../../src/social/verbs.ts";
 import { coerceArgs, getVerb } from "../../src/core/verbs.ts";
 import { LSP26_ABI } from "../../src/social/lsp26.ts";
-import { registerKmStub, setupProfile, type KmStub, type ProfileFixture } from "../unit/tokens/support/profile-fixture.ts";
+import { controllerSigner, registerKmStub, setupProfile, type KmStub, type ProfileFixture } from "../unit/tokens/support/profile-fixture.ts";
 import { LSP26_ADDRESS, LSP26_RUNTIME } from "../unit/social/support/lsp26-runtime.ts";
 import type { VerbContext } from "../../src/core/types.ts";
 
@@ -28,7 +28,7 @@ beforeAll(async () => {
   stub = registerKmStub(h, p);
   await h.request("hardhat_setCode", [LSP26_ADDRESS, LSP26_RUNTIME]);
   [A, B, C] = [h.accounts[3], h.accounts[4], h.accounts[5]];
-  ctx = testContext(h.newHome(), testSigner(), { yes: true });
+  ctx = testContext(h.newHome(), controllerSigner(p), { yes: true });
 }, 180_000);
 
 describe("LSP26 follower system", () => {
@@ -83,7 +83,7 @@ describe("LSP26 follower system", () => {
 
   it("refuses to follow itself and honours dry-run", async () => {
     await expect(run("follow", { address: p.up, via: "km" })).rejects.toThrow(/cannot follow itself/);
-    const dry = testContext(ctx.home, testSigner(), { dryRun: true });
+    const dry = testContext(ctx.home, controllerSigner(p), { dryRun: true });
     const r = (await run("follow", { address: C, via: "km" }, dry)).data as any;
     expect(r.outcome.status).toBe("dry-run");
     expect(((await run("is-following", { address: C })).data as any).isFollowing).toBe(false);

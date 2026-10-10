@@ -30,8 +30,10 @@ import { MemoryBackend } from "./memory.ts";
 import { PROTECTED_FILE_WARNING, ProtectedFileBackend } from "./protected-file.ts";
 import { RemoteSignerBackend } from "./remote-signer.ts";
 import { WindowsDpapiBackend } from "./windows-dpapi.ts";
+import { controllerFor, localControllers } from "./select.ts";
 
 export type { SignerEnvironment } from "./env.ts";
+export { controllerFor, chainControllerList, localControllers, type SelectedController } from "./select.ts";
 export { environment, detectEnvironment } from "./env.ts";
 export { createLocalSigner, intendedValidatorDigest } from "./local-signer.ts";
 export { PROTECTED_FILE_WARNING } from "./protected-file.ts";
@@ -169,11 +171,16 @@ export async function chooseBackend(preferred?: string, envOverride?: SignerEnvi
   });
 }
 
-/** Loads the configured controller from its recorded backend. Never falls back to another backend. */
-export async function loadSignerFromConfig(cfg: UpConfig): Promise<Signer> {
-  const c = cfg.controller;
-  if (!c || !c.address) throw new UpError("NO_SIGNER", "no controller key is configured", { hint: "run: up init" });
-  if (!isAddress(c.address, { strict: false })) throw new UpError("NO_SIGNER", "config.controller.address is not a valid address", { hint: "run: up init --force" });
+/**
+ * Loads the controller used on `chainId` (its chain-specific key, else the default key; the
+ * default key without a chain) from its recorded backend. Never falls back to another backend
+ * or to another chain's key.
+ */
+export async function loadSignerFromConfig(cfg: UpConfig, chainId?: number): Promise<Signer> {
+  const d = cfg.controller;
+  if (d?.address && !isAddress(d.address, { strict: false })) throw new UpError("NO_SIGNER", "config.controller.address is not a valid address", { hint: "run: up init --force" });
+  const c = controllerFor({ ...cfg, controller: d?.address ? d : undefined }, chainId);
+  if (!c) throw new UpError("NO_SIGNER", "no controller key is configured", { hint: "run: up init" });
   const backend = getBackend(c.backend);
   return backend.load(getAddress(c.address));
 }
@@ -215,9 +222,11 @@ export function custodyWarnings(backendId: string, home: string = upHome()): str
   return out;
 }
 
-/** Warnings for the configured controller (for `up doctor`). Empty when no controller is configured. */
+/** Warnings for the configured controller keys, default and chain-specific (for `up doctor`). Empty when none is configured. */
 export function controllerCustodyWarnings(cfg: UpConfig, home?: string): string[] {
-  return cfg.controller ? custodyWarnings(cfg.controller.backend, home) : [];
+  const out: string[] = [];
+  for (const k of localControllers(cfg)) for (const w of custodyWarnings(k.backend, home)) if (!out.includes(w)) out.push(w);
+  return out;
 }
 
 /** One line, plain words, no jargon — shown by `up init` and `up key backend`. */

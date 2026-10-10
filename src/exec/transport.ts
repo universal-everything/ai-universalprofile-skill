@@ -58,6 +58,8 @@ export interface ExecOptions {
   channel?: bigint;
   /** LSP25 validity window in seconds from now (relay); 0 = unlimited */
   validitySeconds?: number;
+  /** internal: the chain preflight already ran for this request (executeAuto) */
+  chainChecked?: boolean;
   /** userop only (opt-in ERC-4337 module) */
   userop?: { bundlerUrl?: string | null; selfBundle?: boolean; paymasterAndData?: Hex; gas?: object; nonceKey?: bigint; skipPreflight?: boolean };
 }
@@ -103,14 +105,24 @@ export function availablePaths(): ExecPath[] {
 }
 
 /**
- * Single entry point for every profile action. Resolves the signer, asks for
- * consent (the transport supplies the confirmation block via ctx.consent) and executes.
+ * Single entry point for every profile action. Resolves the agent's key for the request's
+ * chain, runs the chain preflight (profile deployed there, owned by a Key Manager, this key a
+ * controller there — failures name the chain and the fix), then the transport asks for consent
+ * (it supplies the confirmation block via ctx.consent) and executes. Permission and gas
+ * errors from the chain are returned with the per-chain fix in their hint.
  */
 export async function executeAsProfile(ctx: VerbContext, req: ExecRequest, opts: ExecOptions): Promise<ExecOutcome> {
   if (opts.via === "auto") {
     const { executeAuto } = await import("./auto.ts");
     return executeAuto(ctx, req, opts as any);
   }
-  const signer = await ctx.signer();
-  return getTransport(opts.via).execute(ctx, signer, req, opts);
+  const transport = getTransport(opts.via);
+  const signer = await ctx.signer(req.chainId);
+  const { preflightProfileOnChain, withChainContext } = await import("../lsp/multichain.ts");
+  if (!opts.chainChecked) await preflightProfileOnChain(ctx, req.chainId, req.profile, signer.address);
+  try {
+    return await transport.execute(ctx, signer, req, opts);
+  } catch (e) {
+    throw withChainContext(ctx, e, req.chainId, req.profile, signer.address);
+  }
 }

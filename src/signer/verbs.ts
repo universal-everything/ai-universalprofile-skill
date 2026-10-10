@@ -1,6 +1,11 @@
 // Key lifecycle verbs (group "key"): init, key address, key backend,
 // key rotate-plan, key backup, key new-candidate, key activate.
 //
+// One profile, many chains: the agent normally signs with ONE default key on every
+// chain (config.controller). A chain may get its own key (config.chainControllers,
+// set with `key activate <address> --chain <id>`); chain-agnostic verbs report the
+// default key plus these per-chain keys.
+//
 // Results and texts contain public data only (addresses, backend ids,
 // protection descriptions). The private key never leaves the backend except
 // in-process for signing and for the passphrase-encrypted keystore backup.
@@ -13,6 +18,7 @@ import { ensureDir, paths, readJson, writeJson } from "../core/home.ts";
 import type { Address, UpConfig, VerbContext, VerbResult } from "../core/types.ts";
 import { defineVerb } from "../core/verbs.ts";
 import { BACKEND_IDS, chooseBackend, custodyWarnings, environment, internalBackend, plainProtection, probeAll } from "./index.ts";
+import { chainControllerList, controllerFor } from "./select.ts";
 import { decryptKeystoreV3, encryptKeystoreV3, STANDARD_SCRYPT } from "./keystore-v3.ts";
 
 // ---------------------------------------------------------------------------
@@ -97,14 +103,33 @@ export async function withKeyLock<T>(home: string, fn: () => Promise<T>): Promis
   }
 }
 
-/** Config with the controller fields re-read from disk (another process may have changed them). */
+/** Config with the key fields re-read from disk (another process may have changed them). */
 async function freshConfig(ctx: VerbContext): Promise<UpConfig> {
   const c = await ctx.config();
   const disk = await readJson<UpConfig | null>(paths.config(ctx.home), null);
-  if (disk && typeof disk === "object" && !sameAddress(disk.controller?.address, c.controller?.address)) {
-    return { ...c, controller: disk.controller, retiredControllers: disk.retiredControllers };
+  if (disk && typeof disk === "object" && (!sameAddress(disk.controller?.address, c.controller?.address) || JSON.stringify(disk.chainControllers ?? {}) !== JSON.stringify(c.chainControllers ?? {}))) {
+    return { ...c, controller: disk.controller, retiredControllers: disk.retiredControllers, chainControllers: disk.chainControllers };
   }
   return c;
+}
+
+/** True when the verb got an explicit --chain (key verbs never fall back to the default chain). */
+function explicitChain(args: Record<string, any>): boolean {
+  return args.chain !== undefined && args.chain !== "";
+}
+
+/** "Base (8453)" when the registry knows the chain, else "chain 8453". */
+function chainText(ctx: VerbContext, chainId: number): string {
+  try {
+    return `${ctx.registry.chain(chainId).name} (${chainId})`;
+  } catch {
+    return `chain ${chainId}`;
+  }
+}
+
+function perChainLines(ctx: VerbContext, cfg: UpConfig): string[] {
+  const own = chainControllerList(cfg);
+  return own.length ? [`Own key per chain (used there instead of the default): ${own.map((c) => `${chainText(ctx, c.chainId)} → ${c.address} (${c.backend})`).join("; ")}`] : [];
 }
 
 function existingResult(home: string, c: NonNullable<UpConfig["controller"]>, warnings: string[]): VerbResult {
@@ -216,15 +241,28 @@ export const initVerb = defineVerb({
 export const keyAddressVerb = defineVerb({
   name: "key address",
   group: "key",
-  summary: "Show the agent's controller address and the key store that protects it.",
+  summary: "Show the agent's controller address (the default key, or with --chain the key used on that chain) and the key store that protects it; lists chains that use their own key.",
   risk: "local",
   params: [],
-  async run(ctx) {
-    const c = requireController(await ctx.config());
-    const protection = internalBackend(c.backend).protectionInfo();
+  async run(ctx, args) {
+    const cfg = await ctx.config();
+    const chainId = explicitChain(args) ? ctx.chainId(args.chain) : undefined;
+    const c = chainId !== undefined ? controllerFor(cfg, chainId) : undefined;
+    const def = cfg.controller;
+    const used = c ?? requireController(cfg);
+    const protection = internalBackend(used.backend).protectionInfo();
+    const chainControllers = chainControllerList(cfg).map((k) => ({ chainId: k.chainId, address: k.address, backend: k.backend }));
     return {
-      data: { address: c.address, backend: c.backend, createdAt: c.createdAt, level: protection.level },
-      text: `${c.address} (${c.backend})`,
+      data: {
+        address: used.address,
+        backend: used.backend,
+        createdAt: used.createdAt,
+        level: protection.level,
+        ...(chainId !== undefined ? { chainId, scope: c?.scope ?? "default" } : {}),
+        default: def ? { address: def.address, backend: def.backend } : null,
+        chainControllers,
+      },
+      text: [chainId !== undefined ? `${used.address} (${used.backend}) — the agent's ${c?.scope === "chain" ? "own key" : "default key"} on ${chainText(ctx, chainId)}` : `${used.address} (${used.backend})`, ...perChainLines(ctx, cfg)].join("\n"),
     };
   },
 });
@@ -241,18 +279,26 @@ export const keyBackendVerb = defineVerb({
     const activeId = cfg.controller?.backend;
     const custody = activeId ? custodyWarnings(activeId, ctx.home) : [];
     const active = activeId ? { address: cfg.controller!.address, backend: activeId, protection: internalBackend(activeId).protectionInfo(), custodyWarnings: custody } : null;
+    const perChain = chainControllerList(cfg).map((k) => ({ chainId: k.chainId, address: k.address, backend: k.backend }));
+    const chainCustody = perChain.flatMap((k) => custodyWarnings(k.backend, ctx.home)).filter((w, i, all) => !custody.includes(w) && all.indexOf(w) === i);
     const relevant = probes.filter((p) => p.available || p.id === activeId || !["memory", "remote-signer"].includes(p.id));
     const lines: string[] = [];
     lines.push(active ? `Active: ${active.backend} — ${plainProtection(active.protection)}` : "Active: none (run: up init)");
+    lines.push(...perChainLines(ctx, cfg));
     for (const p of relevant) lines.push(`${p.id === activeId ? "*" : " "} ${p.id.padEnd(21)} ${(p.available ? "available" : "unavailable").padEnd(11)} ${p.level.padEnd(17)} ${p.reason}`);
     const warnings: string[] = [];
     const ap = activeId ? probes.find((p) => p.id === activeId) : undefined;
     if (ap && !ap.available) warnings.push(`the active key store ${ap.id} is not available right now: ${ap.reason}`);
-    warnings.push(...custody);
+    for (const k of perChain) {
+      const p = probes.find((x) => x.id === k.backend);
+      if (k.backend !== activeId && p && !p.available) warnings.push(`the key store ${p.id} of the key for ${chainText(ctx, k.chainId)} is not available right now: ${p.reason}`);
+    }
+    warnings.push(...custody, ...chainCustody);
     for (const w of warnings) lines.push(`Warning: ${w}`);
     return {
       data: {
         active,
+        chainControllers: perChain,
         backends: probes,
         environment: { platform: env.platform, wsl: env.wsl, container: env.container, vm: env.vm, agentHost: env.agentHost, headless: env.headless, ssh: env.ssh, systemdVersion: env.systemdVersion, declaredAgentVm: env.isolated, unattendedHost: env.unattendedHost, hints: env.hints },
       },
@@ -269,17 +315,25 @@ export const keyBackendVerb = defineVerb({
 export const keyRotatePlanVerb = defineVerb({
   name: "key rotate-plan",
   group: "key",
-  summary: "Show the step-by-step plan to rotate the controller key without changing the profile address.",
-  description: "Returns the rotation drill as data and text. It does not execute anything; each step names the verb that performs it.",
+  summary: "Show the step-by-step plan to rotate the controller key without changing the profile address (the default key, or with --chain the key used on that chain).",
+  description:
+    "Returns the rotation drill as data and text. It does not execute anything; each step names the verb that performs it. Permissions are stored per chain, so the new key is granted, verified and the old one removed on every chain where the rotated key is used; chains with their own key are rotated separately (--chain).",
   risk: "local",
   params: [],
-  async run(ctx) {
+  async run(ctx, args) {
     const cfg = await ctx.config();
-    const c = requireController(cfg);
+    const chainId = explicitChain(args) ? ctx.chainId(args.chain) : undefined;
+    const c = chainId !== undefined ? (controllerFor(cfg, chainId) ?? requireController(cfg)) : requireController(cfg);
+    const scope = chainId !== undefined && cfg.chainControllers?.[String(chainId)] ? "chain" : "default";
+    const own = chainControllerList(cfg);
     const candidates = (await readCandidates(ctx.home)).filter((k) => !sameAddress(k.address, c.address));
     const next = candidates[candidates.length - 1]?.address;
     const newKey = next ?? "<new-address>";
-    const chains = cfg.chains?.length ? cfg.chains : undefined;
+    // where this key signs: one chain (--chain), else every configured chain without its own key
+    const ownIds = new Set(own.map((k) => k.chainId));
+    const chains = chainId !== undefined ? [chainId] : cfg.chains?.length ? cfg.chains.filter((id) => !ownIds.has(id)) : undefined;
+    const where = chainId !== undefined ? `on ${chainText(ctx, chainId)}` : `on each chain where the profile is deployed${chains ? ` and this key is used (configured: ${chains.join(", ") || "none"})` : ""}${own.length ? `, except chains with their own key (${own.map((k) => chainText(ctx, k.chainId)).join(", ")})` : ""}`;
+    const chainFlag = chainId !== undefined ? `--chain ${chainId}` : "--chain <id>";
     const steps = [
       {
         step: 1,
@@ -290,30 +344,30 @@ export const keyRotatePlanVerb = defineVerb({
       },
       {
         step: 2,
-        title: "Add it as a controller with identical permissions on every chain",
-        detail: `On each chain where the profile is deployed${chains ? ` (configured: ${chains.join(", ")})` : ""}, read the permissions, AllowedCalls and AllowedERC725YDataKeys of ${c.address} and grant exactly the same to ${newKey}. This is an admin action that needs a controller allowed to add controllers (often the human's).`,
-        command: `up permissions show ${c.address} --chain <id>   then   up controller add ${newKey} --chain <id> (same permissions)`,
+        title: chainId !== undefined ? "Add it as a controller with identical permissions on this chain" : "Add it as a controller with identical permissions on every chain",
+        detail: `${where[0].toUpperCase()}${where.slice(1)}, read the permissions, AllowedCalls and AllowedERC725YDataKeys of ${c.address} and grant exactly the same to ${newKey}. Permissions are per chain: a grant on one chain does nothing on another. This is an admin action that needs a controller allowed to add controllers (often the human's).`,
+        command: `up permissions show ${c.address} ${chainFlag}   then   up controller add ${newKey} ${chainFlag} (same permissions)`,
         done: false,
       },
       {
         step: 3,
-        title: "Verify on every chain",
-        detail: `Confirm ${newKey} has exactly the old controller's permissions on each chain before going further.`,
-        command: `up permissions show ${newKey} --chain <id>`,
+        title: chainId !== undefined ? "Verify on this chain" : "Verify on every chain",
+        detail: `Confirm ${newKey} has exactly the old controller's permissions ${chainId !== undefined ? "there" : "on each chain"} before going further (up profile status shows every chain at once).`,
+        command: `up permissions show ${newKey} ${chainFlag}`,
         done: false,
       },
       {
         step: 4,
         title: "Switch the agent to the new key",
-        detail: "Make the new key the active local controller and run a harmless signed action/no-op per chain to prove it works. The old key is kept as retired.",
-        command: `up key activate ${newKey}`,
+        detail: `Make the new key the agent's ${chainId !== undefined ? `key on ${chainText(ctx, chainId)}` : "default key"} and run a harmless signed action/no-op ${chainId !== undefined ? "there" : "per chain"} to prove it works. The old key is kept as retired.${chainId === undefined && own.length ? " Chains with their own key keep it." : ""}`,
+        command: chainId !== undefined ? `up key activate ${newKey} --chain ${chainId}` : `up key activate ${newKey}`,
         done: false,
       },
       {
         step: 5,
-        title: "Remove the old controller on every chain",
-        detail: `Remove ${c.address} (all permissions) on each chain. Never remove the last controller with admin rights.`,
-        command: `up controller remove ${c.address} --chain <id>`,
+        title: chainId !== undefined ? "Remove the old controller on this chain" : "Remove the old controller on every chain",
+        detail: `Remove ${c.address} (all permissions) ${chainId !== undefined ? "there" : "on each chain where it was granted"}. Never remove the last controller with admin rights.`,
+        command: `up controller remove ${c.address} ${chainFlag}`,
         done: false,
       },
       {
@@ -325,11 +379,12 @@ export const keyRotatePlanVerb = defineVerb({
       },
     ];
     const text = [
-      `Rotation plan for ${c.address} (${c.backend}). The profile address never changes.`,
+      `Rotation plan for ${c.address} (${c.backend})${chainId !== undefined ? `, the agent's ${scope === "chain" ? "own key" : "default key"} on ${chainText(ctx, chainId)}` : ""}. The profile address never changes.`,
       ...steps.map((s) => `${s.step}. ${s.title}${s.done ? " [done]" : ""}: ${s.detail}${s.command ? `\n   → ${s.command}` : ""}`),
+      ...(chainId === undefined && own.length ? [`Chains with their own key rotate separately: ${own.map((k) => `up key rotate-plan --chain ${k.chainId}`).join("; ")}.`] : []),
       "Command names for chain steps are indicative; use the controller/permissions verbs listed by: up help.",
     ].join("\n");
-    return { data: { controller: c.address, backend: c.backend, candidate: next ?? null, chains: chains ?? null, steps }, text };
+    return { data: { controller: c.address, backend: c.backend, scope, chainId: chainId ?? null, candidate: next ?? null, chains: chains ?? null, chainControllers: own.map((k) => ({ chainId: k.chainId, address: k.address })), steps }, text };
   },
 });
 
@@ -369,7 +424,7 @@ async function writeNewFileExclusive(file: string, content: string): Promise<voi
 export const keyBackupVerb = defineVerb({
   name: "key backup",
   group: "key",
-  summary: "Write a passphrase-encrypted backup (Ethereum keystore v3) of the controller key — human-run only.",
+  summary: "Write a passphrase-encrypted backup (Ethereum keystore v3) of the controller key (default key; with --chain the key used on that chain) — human-run only.",
   description:
     "Only encrypted backups exist; the raw key is never exported. Requires --encrypted, --explicit-consent, a human approval, " +
     `and a passphrase (>= ${MIN_PASSPHRASE_LENGTH} characters) in the UP_BACKUP_PASSPHRASE environment variable, set by the human in their own terminal ` +
@@ -383,7 +438,9 @@ export const keyBackupVerb = defineVerb({
   async run(ctx, args) {
     if (args.encrypted !== true) throw new UpError("BAD_ARGS", "only encrypted backups are supported (--encrypted); the raw key is never exported");
     if (args["explicit-consent"] !== true) throw new UpError("BAD_ARGS", "a key backup needs --explicit-consent from the human", { hint: PASSPHRASE_HINT });
-    const c = requireController(await ctx.config());
+    // the default key, or with --chain the key the agent uses on that chain
+    const cfgNow = await ctx.config();
+    const c = explicitChain(args) ? (controllerFor(cfgNow, ctx.chainId(args.chain)) ?? requireController(cfgNow)) : requireController(cfgNow);
     const raw = typeof args.path === "string" ? args.path.trim() : "";
     if (!raw) throw new UpError("BAD_ARGS", "--path is required");
     const file = isAbsolute(raw) ? raw : resolve(raw);
@@ -472,7 +529,7 @@ export const keyNewCandidateVerb = defineVerb({
     ctx.log(`candidate key created in ${c.backend}: ${address}`);
     return {
       data: { address, backend: c.backend, active: false, protection: backend.protectionInfo() },
-      text: `New candidate key: ${address} (inactive, ${c.backend}).\nNext: give it the same permissions as ${c.address} on every chain, then run: up key activate ${address}`,
+      text: `New candidate key: ${address} (inactive, ${c.backend}).\nNext: give it the same permissions as ${c.address} on every chain, then run: up key activate ${address}\n(or use it on one chain only: authorise it there, then up key activate ${address} --chain <id>)`,
     };
   },
 });
@@ -480,14 +537,17 @@ export const keyNewCandidateVerb = defineVerb({
 export const keyActivateVerb = defineVerb({
   name: "key activate",
   group: "key",
-  summary: "Make another key from the key store the active controller (rotation or rollback); the previous one is retired.",
+  summary: "Make another key from the key store the agent's controller key: the default key (rotation or rollback; the previous one is retired), or with --chain the key used on that chain only.",
+  description:
+    "Without --chain the default key changes (every chain without its own key follows). With --chain <id> only that chain switches to the key; activating the default key's address for a chain removes the chain's own key (it uses the default again). Only the local signing key changes: the key must be a controller of the profile on that chain (check with: up profile status).",
   risk: "secret",
   params: [
-    { name: "address", type: "string", description: "Address of the key to activate (a candidate or a retired key).", required: true, positional: 0 },
+    { name: "address", type: "string", description: "Address of the key to activate (a candidate, a retired key, or with --chain also the default key).", required: true, positional: 0 },
     { name: "backend", type: "string", description: "Key store holding that key (default: where the candidate was created, else the active controller's store).", enum: BACKEND_IDS },
   ],
   async run(ctx, args) {
     const address = addressArg(args.address, "address");
+    if (explicitChain(args)) return activateForChain(ctx, args, address, ctx.chainId(args.chain));
     const cfg = await freshConfig(ctx);
     const current = cfg.controller;
     if (current && sameAddress(current.address, address)) {
@@ -496,7 +556,9 @@ export const keyActivateVerb = defineVerb({
     const candidates = await readCandidates(ctx.home);
     const cand = candidates.find((k) => sameAddress(k.address, address));
     const retired = cfg.retiredControllers?.find((r) => sameAddress(r.address, address));
-    const backendId: string | undefined = args.backend ?? cand?.backend ?? retired?.backend ?? current?.backend;
+    const own = chainControllerList(cfg);
+    const chainKey = own.find((k) => sameAddress(k.address, address));
+    const backendId: string | undefined = args.backend ?? cand?.backend ?? retired?.backend ?? chainKey?.backend ?? current?.backend;
     if (!backendId) throw new UpError("BAD_ARGS", "cannot tell which key store holds this key; pass --backend", { hint: "run: up key backend" });
     const backend = internalBackend(backendId);
     if (!(await backend.has(address))) {
@@ -507,11 +569,12 @@ export const keyActivateVerb = defineVerb({
       verb: "key activate",
       risk: "secret",
       summary: {
-        effect: "switch the agent's active controller key",
+        effect: "switch the agent's active (default) controller key",
         from: current?.address ?? null,
         to: address,
         backend: backendId,
         note: "only the local signing key changes; on-chain permissions of both keys stay as they are",
+        ...(own.length ? { chainsWithOwnKey: own.map((k) => ({ chainId: k.chainId, address: k.address })) } : {}),
       },
     });
     if (ctx.flags.dryRun) {
@@ -529,16 +592,100 @@ export const keyActivateVerb = defineVerb({
       const retiredList = (latest.retiredControllers ?? []).filter((r) => !sameAddress(r.address, address));
       if (current) retiredList.push({ address: current.address, backend: current.backend, retiredAt: now });
       const next: UpConfig = { ...latest, version: 1, controller: { address, backend: backendId, createdAt: cand?.createdAt ?? now }, retiredControllers: retiredList };
+      // a chain whose own key is now the default key simply uses the default
+      if (next.chainControllers) {
+        const kept = Object.fromEntries(Object.entries(next.chainControllers).filter(([, k]) => !sameAddress(k.address, address)));
+        if (Object.keys(kept).length) next.chainControllers = kept;
+        else delete next.chainControllers;
+      }
       await ctx.saveConfig(next);
       const fresh = await readCandidates(ctx.home);
       if (fresh.some((k) => sameAddress(k.address, address))) await writeCandidates(ctx.home, fresh.filter((k) => !sameAddress(k.address, address)));
     });
     ctx.log(`active controller switched to ${address} (${backendId})`);
+    const ownAfter = own.filter((k) => !sameAddress(k.address, address));
     return {
-      data: { address, backend: backendId, previous: current?.address ?? null, changed: true },
-      text: `${protectionText(address, backendId)}${current ? `\nPrevious controller ${current.address} is retired locally (still on-chain until removed).` : ""}`,
+      data: { address, backend: backendId, previous: current?.address ?? null, changed: true, chainControllers: ownAfter.map((k) => ({ chainId: k.chainId, address: k.address })) },
+      text: [
+        protectionText(address, backendId),
+        current ? `Previous controller ${current.address} is retired locally (still on-chain until removed).` : "",
+        ownAfter.length ? `Chains with their own key keep it: ${ownAfter.map((k) => `${chainText(ctx, k.chainId)} → ${k.address}`).join("; ")}.` : "",
+      ].filter(Boolean).join("\n"),
     };
   },
 });
+
+/** key activate <address> --chain <id>: the key the agent uses on one chain only. */
+async function activateForChain(ctx: VerbContext, args: Record<string, any>, address: Address, chainId: number): Promise<VerbResult> {
+  const where = chainText(ctx, chainId);
+  const cfg = await freshConfig(ctx);
+  const def = cfg.controller;
+  const current = controllerFor(cfg, chainId);
+  if (current && sameAddress(current.address, address)) {
+    return { data: { address: current.address, backend: current.backend, chainId, scope: current.scope, changed: false }, text: `${current.address} already is the agent's key on ${where}.` };
+  }
+  const toDefault = Boolean(def && sameAddress(def.address, address));
+  const candidates = await readCandidates(ctx.home);
+  const cand = candidates.find((k) => sameAddress(k.address, address));
+  const retired = cfg.retiredControllers?.find((r) => sameAddress(r.address, address));
+  const usedElsewhere = chainControllerList(cfg).find((k) => sameAddress(k.address, address));
+  const backendId: string | undefined = args.backend ?? (toDefault ? def!.backend : undefined) ?? usedElsewhere?.backend ?? cand?.backend ?? retired?.backend ?? def?.backend;
+  if (!backendId) throw new UpError("BAD_ARGS", "cannot tell which key store holds this key; pass --backend", { hint: "run: up key backend" });
+  const backend = internalBackend(backendId);
+  if (!(await backend.has(address))) {
+    throw new UpError("NO_SIGNER", `no key for ${address} in ${backendId}`, { hint: "create one with: up key new-candidate" });
+  }
+
+  await ctx.consent({
+    verb: "key activate",
+    risk: "secret",
+    chainId,
+    summary: {
+      effect: toDefault ? `use the default key again on ${where}` : `use ${address} as the agent's key on ${where} only`,
+      chain: where,
+      from: current?.address ?? null,
+      to: address,
+      backend: backendId,
+      note: "only the local signing key for this chain changes; other chains keep their key, and on-chain permissions stay as they are — the key must be a controller of the profile on this chain",
+    },
+  });
+  if (ctx.flags.dryRun) {
+    return { data: { dryRun: true, address, backend: backendId, chainId, previous: current?.address ?? null }, text: `Dry run: ${address} (${backendId}) would become the agent's key on ${where}.` };
+  }
+
+  await withKeyLock(ctx.home, async () => {
+    const latest = await freshConfig(ctx);
+    if (!sameAddress(controllerFor(latest, chainId)?.address, current?.address)) {
+      throw new UpError("BAD_ARGS", `the agent's key on ${where} changed while waiting for approval; nothing was switched`, { hint: `run: up key address --chain ${chainId}, then decide again` });
+    }
+    await backend.load(address);
+    const now = new Date().toISOString();
+    const own = { ...(latest.chainControllers ?? {}) };
+    const previousOwn = own[String(chainId)];
+    if (toDefault) delete own[String(chainId)];
+    else own[String(chainId)] = { address, backend: backendId, createdAt: cand?.createdAt ?? usedElsewhere?.createdAt ?? now };
+    let retiredList = (latest.retiredControllers ?? []).filter((r) => !sameAddress(r.address, address));
+    // the chain's previous own key is retired unless it is still used (as default or on another chain)
+    if (previousOwn && !sameAddress(previousOwn.address, latest.controller?.address) && !Object.values(own).some((k) => sameAddress(k.address, previousOwn.address))) {
+      retiredList = [...retiredList.filter((r) => !sameAddress(r.address, previousOwn.address)), { address: previousOwn.address, backend: previousOwn.backend, retiredAt: now, chainId }];
+    }
+    const next: UpConfig = { ...latest, version: 1, retiredControllers: retiredList.length ? retiredList : undefined };
+    if (Object.keys(own).length) next.chainControllers = own;
+    else delete next.chainControllers;
+    if (!next.retiredControllers) delete next.retiredControllers;
+    await ctx.saveConfig(next);
+    const fresh = await readCandidates(ctx.home);
+    if (fresh.some((k) => sameAddress(k.address, address))) await writeCandidates(ctx.home, fresh.filter((k) => !sameAddress(k.address, address)));
+  });
+  ctx.log(`agent key on chain ${chainId} switched to ${address} (${backendId})`);
+  return {
+    data: { address, backend: backendId, chainId, scope: toDefault ? "default" : "chain", previous: current?.address ?? null, changed: true },
+    text: [
+      toDefault ? `On ${where} the agent uses its default key ${address} again.` : `On ${where} the agent now signs with ${address} (${backendId}); every other chain keeps its key.`,
+      current ? `Previous key there: ${current.address} (still on-chain until removed).` : "",
+      `Check that it is a controller of your profile on ${where}: up profile status --chain ${chainId}`,
+    ].filter(Boolean).join("\n"),
+  };
+}
 
 export const keyVerbs = [initVerb, keyAddressVerb, keyBackendVerb, keyRotatePlanVerb, keyBackupVerb, keyNewCandidateVerb, keyActivateVerb];

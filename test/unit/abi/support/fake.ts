@@ -132,6 +132,8 @@ export function fakeCtx(rpc: RpcManager, cfg: Partial<UpConfig> = {}, home = tmp
       throw new UpError("BAD_ARGS", "no chain given");
     },
     profile: async (arg) => getAddress(String(arg ?? config.defaultProfile)),
+    identity: async (arg) => getAddress(String(arg ?? config.defaultProfile)),
+    resolveAddress: async (arg) => getAddress(String(arg)),
     log: () => {},
   };
 }

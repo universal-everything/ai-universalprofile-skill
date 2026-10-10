@@ -2,12 +2,75 @@
 
 The skill works on every EVM network where the LSP contracts are deployed. Its chain list is a mirror of the official [lsp-smart-contracts `deployments/` folder](https://github.com/lukso-network/lsp-smart-contracts/tree/main/deployments), bundled with the skill and refreshable from GitHub.
 
-## Same address, separate accounts
+## One profile on many chains
 
-- A profile deployed with the same inputs has the **same address on every chain**. It is still a **separate account on each chain**: separate deployment, balances, tokens, controllers, permissions, nonces and relayer quota.
-- Deploying on one chain does not deploy on another. Granting a permission on one chain grants nothing elsewhere. Sending assets to the profile address on chain A does not make them available on chain B.
-- Moving assets between chains needs an explicit bridge (`references/protocols.md`), an approval from the human, and a check that the route exists for that asset and both chains.
-- Always name the chain (name and id) when you talk about balances, addresses, funding or transactions.
+Your Universal Profile is **one account**: one identity, normally at the **same address on every chain** (LSP23 replays the same inputs; the address does not depend on the chain). It can be deployed on as many chains as the human wants. What exists **per chain**:
+
+| Per chain | Why it matters |
+| --- | --- |
+| Deployment | Deploying on one chain deploys nothing elsewhere. Before deployment the address is only a prediction there. |
+| Balances, tokens, NFTs | Assets sent to the profile on chain A are not available on chain B. Moving them needs an explicit bridge. |
+| Controllers and permissions | A controller added or a permission granted on one chain grants nothing on another. |
+| Nonces, relayer quota | Counted separately on each chain. |
+| The agent's key | One default key everywhere, unless a chain has its own key (see below). |
+| The address (rarely) | A profile created with other inputs on some chain has another address there; link it (see below). |
+
+How to talk about it: *"your profile on Base"*, *"on LUKSO your profile already allows me to send LYX; on Base it is not deployed yet"*. Never call the deployments "separate accounts" or "your other account", and always name the chain (name and id) when you talk about balances, addresses, funding or transactions.
+
+Safety stays the same: assets never move between chains by themselves; bridging is explicit, approved by the human and checked for the asset and both chains (`references/protocols.md`); never send or request funds for the profile address on a chain where it is not deployed; verify the state per chain before relying on it.
+
+### The cross-chain overview: `up profile status`
+
+`up profile status` checks every configured chain (plus chains where the profile is known to exist; `--chains 42,8453` or `--chain base` to choose) in parallel. A chain whose RPC is down is reported with its own fix; the other chains are still checked. Per chain it reports:
+
+- the profile's address there (`linked` when it differs) and whether it is deployed (code + LSP0 interface), its owner and Key Manager;
+- which key of the agent applies there (default or chain-specific), whether it is a controller there, its permissions, and whether AllowedCalls / AllowedERC725YDataKeys limit it;
+- native balance of the profile and of the agent's key (gas for direct execution and deployment), relayer coverage (quota is not checked here because that needs a signature: `up relayer quota --chain <id>`);
+- the next step, for example:
+
+```
+Your Universal Profile 0x9a3…F1 — one account on 3 chains; each chain has its own deployment, controllers, permissions and balances (agent key 0x5c1…07):
+- LUKSO (42): deployed (UP 0.14.0); the agent can act with all permissions; profile balance 12.5 LYX; agent key gas 0.4 LYX; relayer lukso-public
+  → ready: the agent can act as your profile on LUKSO gaslessly through the relayer lukso-public (check quota: up relayer quota --chain lukso) or directly
+- Base (8453): not deployed yet
+  → deploy your profile on Base (8453) at the same address: up account deploy --chain base --dry-run, then with the human's approval (replays the saved deployment manifest; the agent's key pays the gas)
+  → do not send assets to 0x9a3…F1 on Base until your profile is deployed there
+- Ethereum (1): deployed (UP 0.14.0); this agent's key 0x5c1…07 is not a controller here yet; profile balance 0 ETH; agent key gas 0.01 ETH
+  → ask the human to authorise this agent's key 0x5c1…07 on Ethereum (1) (permissions are per chain; a grant on another chain does not count here): up permissions recommend --chain ethereum prints the recommended set to hand over
+Ready on: LUKSO.
+```
+
+The result is also stored (merged) in the local profile record as the last known state per chain. It is a snapshot: re-check before acting.
+
+### Acting on a chain
+
+When the human asks for something on a particular chain:
+
+1. **Resolve the chain** from their words (`up chains list [filter]`); ask if it is ambiguous (e.g. "Base" vs "Base Sepolia").
+2. **Check the profile there**: `up profile status --chain <id>`.
+3. **If something is missing, explain and offer the fix** — do not build the action yet:
+   - *Not deployed, agent has the manifest* (J1 profiles): *"Your profile isn't deployed on Base yet. I can deploy it there at the same address 0x…; that needs about <amount> ETH on Base for gas on my key 0x…."* Then `up account deploy --chain base --dry-run`, the funding request if needed, and the deployment with the human's approval. After a replay the profile's first controller on the new chain is the one in the manifest; if the agent signs on that chain with a different key, that key must be added there.
+   - *Not deployed, no manifest* (J2 profiles): ask the human to deploy the profile on that chain with the same inputs (through the app or relayer that created it), or, if it already exists there at another address, to confirm that address so you can link it.
+   - *Deployed, agent's key not a controller there*: *"On Base your profile doesn't let me act yet. Please add my key 0x… there with these permissions: …"* (`up permissions recommend --chain base`). If another local key of the agent already is a controller there, `profile status` says so (`up key activate <that key> --chain base` with the human's approval).
+   - *Permission missing* (e.g. `NotAuthorised(…, "TRANSFERVALUE")`): ask for exactly that permission on that chain (`up controller edit <key> --add TRANSFERVALUE --chain base`).
+   - *No gas and no relayer*: funding request for that chain (`up display address <key> --chain base`), or a relayer the human names.
+4. **Act**: `--dry-run`, consent, run with `--chain <id>`, report with the chain name and explorer link.
+
+The write verbs enforce step 2 themselves: before building any action they check that the profile is deployed on the chain, owned by a Key Manager, and that the agent's key for that chain is a controller there. Failures are `NOT_DEPLOYED` / `NOT_SUPPORTED` / `NOT_AUTHORISED` with the fix for that chain in `error.hint` (and `details.next` / `details.recommendation`); permission and gas errors raised by the chain also get a hint that names the chain. Nothing is signed or sent when the preflight fails.
+
+### A separate key on some chains
+
+By default the agent signs with one key on every chain. A chain can get its own key, for example to keep a low-value chain's key apart from the main one:
+
+1. `up key new-candidate` creates a key (inactive) and shows its address.
+2. The human authorises that address on the chain (`up permissions recommend --chain <id>` for the set).
+3. `up key activate <address> --chain <id>` (human approval) makes it the agent's key on that chain only. Every signature for that chain (transactions, relay calls, relayer quota logins, UserOperations, ERC-1271 signatures, deployments) then uses it; other chains keep theirs.
+
+`up key address` shows the default key and every chain-specific key (`--chain <id>`: the key used there); `up profile status` shows which key applies per chain. `up key activate <default key address> --chain <id>` returns a chain to the default key. Rotation is per key: `up key rotate-plan` covers the default key and lists chains with their own key, `up key rotate-plan --chain <id>` covers one chain's key. New profile addresses are always derived from the default key, so they stay the same on every chain.
+
+### A different address on some chain
+
+Rarely a profile exists on some chain at another address (created by another factory or with another salt). After the human confirms it is theirs, `up profile link <address> --chain <id> --approval "<their words>"` links it: on that chain every verb acts as, and shows, the linked address; other chains keep the usual one. The skill checks that the address is a deployed Universal Profile owned by a Key Manager on that chain and warns when the agent's key is not a controller there. `up profile link --unlink --chain <id>` removes the link. Recipients and other counterparties are never re-mapped.
 
 ## The registry
 

@@ -3,13 +3,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { encodeFunctionData, type Address, type Hex } from "viem";
 import { getHarness, type Harness } from "./harness.ts";
-import { testContext, testSigner } from "../support/context.ts";
+import { testContext } from "../support/context.ts";
 import "../../src/abi/verbs.ts";
 import { coerceArgs, getVerb } from "../../src/core/verbs.ts";
 import { detectStandards, INTERFACE_IDS } from "../../src/abi/detect.ts";
 import { discoverAbi } from "../../src/abi/discovery.ts";
 import { bundledAbi } from "../../src/abi/bundled.ts";
-import { deploy, registerKmStub, setupProfile, type ProfileFixture } from "../unit/tokens/support/profile-fixture.ts";
+import { deploy, controllerSigner, registerKmStub, setupProfile, type ProfileFixture } from "../unit/tokens/support/profile-fixture.ts";
 import { LSP26_RUNTIME } from "../unit/social/support/lsp26-runtime.ts";
 import type { VerbContext } from "../../src/core/types.ts";
 
@@ -36,7 +36,7 @@ beforeAll(async () => {
   await h.request("hardhat_setCode", [LSP26, LSP26_RUNTIME]);
   clone = await h.deployRaw(`0x3d602d80600a3d3981f3363d3d373d3d3d363d73${UP_INIT.slice(2).toLowerCase()}5af43d82803e903d91602b57fd5bf3` as Hex);
   registerKmStub(h, p);
-  ctx = testContext(h.newHome(), testSigner(), { yes: true });
+  ctx = testContext(h.newHome(), controllerSigner(p), { yes: true });
 }, 180_000);
 
 describe("standard detection against real bytecode", () => {
@@ -125,7 +125,7 @@ describe("contract call through the profile (km transport stub)", () => {
     const weird = "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e" as Address;
     await h.request("hardhat_setCode", [weird, "0x60806040528063a9059cbb146100255700"]);
     await expect(run("contract call", { address: weird, fn: "transfer", args: [h.accounts[2], "1"], via: "km", profile: p.up, offline: true })).rejects.toMatchObject({ code: "ABI_UNTRUSTED" });
-    const dry = testContext(ctx.home, testSigner(), { dryRun: true });
+    const dry = testContext(ctx.home, controllerSigner(p), { dryRun: true });
     const r = (await run("contract call", { address: weird, fn: "transfer", args: [h.accounts[2], "1"], via: "km", profile: p.up, offline: true }, dry)) as any;
     expect(r.data.outcome.status).toBe("dry-run");
     expect(r.data.approvalRequired).toBe(true);

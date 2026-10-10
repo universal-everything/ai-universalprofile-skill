@@ -9,7 +9,7 @@ import "../../../src/relayer/verbs.ts";
 import { allVerbs, inputSchema, mcpToolName } from "../../../src/core/verbs.ts";
 
 const chainDir = join(import.meta.dirname, "..", "..", "chain");
-const sources = ["account.test.ts", "permissions.test.ts", "relay.test.ts", "exec.test.ts"].map((f) => readFileSync(join(chainDir, f), "utf8")).join("\n");
+const sources = ["account.test.ts", "permissions.test.ts", "relay.test.ts", "exec.test.ts", "multichain.test.ts"].map((f) => readFileSync(join(chainDir, f), "utf8")).join("\n");
 const ours = allVerbs();
 
 describe("account-core verb surface", () => {

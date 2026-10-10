@@ -14,7 +14,8 @@ import { chainAndProfile } from "../exec/verbs.ts";
 import { ERC1271_ABI } from "./abis.ts";
 import { ERC1271_MAGIC, extensionKey } from "./constants.ts";
 import { hasPermission } from "./permissions.ts";
-import { getData, readControllerPermissions, requireKeyManager } from "./profile.ts";
+import { getData } from "./profile.ts";
+import { preflightProfileOnChain } from "./multichain.ts";
 import { read } from "./read.ts";
 import { addressArg } from "./verbs-account.ts";
 
@@ -87,7 +88,10 @@ async function profilesWith4337(ctx: VerbContext, chainId: number | undefined, p
 
 async function signFlow(ctx: VerbContext, a: Record<string, any>, kind: "message" | "typed-data") {
   const as: "profile" | "controller" = a.as ?? "profile";
-  const signer = await ctx.signer();
+  // The agent's key for the chain the signature is for (as profile: the verb's chain; as controller:
+  // --chain / the default chain when set, else the default key).
+  await ctx.config();
+  const signer = await ctx.signer(as === "profile" || a.chain ? ctx.chainId(a.chain) : undefined);
   let hash: Hex;
   let td: TypedDataDefinition | undefined;
   let message: string | { raw: Hex } | undefined;
@@ -110,10 +114,10 @@ async function signFlow(ctx: VerbContext, a: Record<string, any>, kind: "message
   const warnings = td ? typedDataWarnings(td) : [];
   if (as === "profile") {
     ({ chainId, profile } = await chainAndProfile(ctx, a));
-    await requireKeyManager(ctx, chainId, profile);
-    const perms = await readControllerPermissions(ctx, chainId, profile, signer.address);
+    // deployed on this chain, Key Manager, this key a controller here (per-chain fix in the hint)
+    const { controller: perms } = await preflightProfileOnChain(ctx, chainId, profile, signer.address);
     if (!hasPermission(perms.permissions.value, "SIGN")) {
-      throw new UpError("NOT_AUTHORISED", `controller ${signer.address} lacks the SIGN permission on ${profile} (chain ${chainId}): the profile would reject the signature (ERC-1271)`, { hint: "ask the human to add SIGN: up controller edit <controller> --add SIGN" });
+      throw new UpError("NOT_AUTHORISED", `controller ${signer.address} lacks the SIGN permission on ${profile} (chain ${chainId}): the profile would reject the signature (ERC-1271)`, { hint: `ask the human to add SIGN on this chain: up controller edit ${signer.address} --add SIGN --chain ${chainId} (signing on other chains is unaffected)` });
     }
     if (td?.domain && (td.domain as any).chainId !== undefined && Number((td.domain as any).chainId) !== chainId) warnings.push(`typed-data domain chainId ${(td.domain as any).chainId} differs from the selected chain ${chainId}`);
   }
@@ -204,7 +208,7 @@ defineVerb({
   async run(ctx, a) {
     await ctx.config();
     const chainId = ctx.chainId(a.chain);
-    const address = a.address ? addressArg(a.address, "address") : await ctx.profile(a.profile);
+    const address = a.address ? addressArg(a.address, "address") : await ctx.profile(a.profile, chainId);
     if (!isHex(a.signature)) throw new UpError("BAD_ARGS", "signature must be hex");
     let hash: Hex;
     if (a.hash) {

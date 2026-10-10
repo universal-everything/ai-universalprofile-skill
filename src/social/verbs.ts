@@ -12,8 +12,8 @@ import { counts, encodeFollow, isFollowing, locateLsp26, LSP26_ABI, page } from 
 
 async function single(ctx: VerbContext, a: Record<string, any>, kind: "follow" | "unfollow"): Promise<VerbResult> {
   const chainId = await chainOf(ctx, a);
-  const profile = await ctx.profile(a.profile);
-  const target = await ctx.profile(String(a.address));
+  const profile = await ctx.profile(a.profile, chainId);
+  const target = await ctx.resolveAddress(String(a.address));
   if (target.toLowerCase() === profile.toLowerCase()) throw new UpError("BAD_ARGS", `a profile cannot ${kind} itself`);
   const loc = await locateLsp26(ctx, chainId);
   const already = await isFollowing(ctx, chainId, loc.address, profile, target);
@@ -65,13 +65,13 @@ defineVerb({
   ],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
-    const profile = await ctx.profile(a.profile);
+    const profile = await ctx.profile(a.profile, chainId);
     const kind = a.unfollow ? "unfollow" : "follow";
     const raw = (a.addresses as string[]).flatMap((s) => s.split(",")).map((s) => s.trim()).filter(Boolean);
     if (raw.length === 0) throw new UpError("BAD_ARGS", "no addresses given");
     if (raw.length > 200) throw new UpError("BAD_ARGS", `${raw.length} addresses: split into batches of at most 200 to stay within block gas limits`);
     const resolved: Address[] = [];
-    for (const r of raw) resolved.push(await ctx.profile(r));
+    for (const r of raw) resolved.push(await ctx.resolveAddress(r));
     const seen = new Set<string>();
     const uniq: Address[] = [];
     const duplicates: Address[] = [];
@@ -119,8 +119,8 @@ defineVerb({
   ],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
-    const follower = a.follower ? await ctx.profile(String(a.follower)) : await ctx.profile(a.profile);
-    const target = await ctx.profile(String(a.address));
+    const follower = a.follower ? await ctx.resolveAddress(String(a.follower)) : await ctx.profile(a.profile, chainId);
+    const target = await ctx.resolveAddress(String(a.address));
     const loc = await locateLsp26(ctx, chainId);
     const v = await isFollowing(ctx, chainId, loc.address, follower, target);
     return { data: { chainId, follower, address: target, isFollowing: v, followSystem: loc.address }, text: `${follower} ${v ? "follows" : "does not follow"} ${target} (chain ${chainId})`, warnings: loc.warnings.length ? loc.warnings : undefined };
@@ -140,7 +140,7 @@ defineVerb({
   ],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
-    const addr = a.address ? await ctx.profile(String(a.address)) : await ctx.profile(a.profile);
+    const addr = a.address ? await ctx.resolveAddress(String(a.address)) : await ctx.profile(a.profile, chainId);
     if (a.start < 0) throw new UpError("BAD_ARGS", "--start must be >= 0");
     if (a.limit < 1 || a.limit > 500) throw new UpError("BAD_ARGS", "--limit must be between 1 and 500");
     const loc = await locateLsp26(ctx, chainId);

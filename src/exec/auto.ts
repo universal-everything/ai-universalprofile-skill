@@ -52,10 +52,14 @@ export async function resolveAutoPath(ctx: VerbContext, chainId: number, profile
 /** executeAsProfile with support for via: "auto". */
 export async function executeAuto(ctx: VerbContext, req: ExecRequest, opts: Omit<ExecOptionsExt, "via"> & { via: ExecPath | "auto" }): Promise<ExecOutcome & { autoDecision?: AutoDecision }> {
   if (opts.via !== "auto") return executeAsProfile(ctx, req, opts as ExecOptionsExt);
-  const signer = await ctx.signer();
+  const signer = await ctx.signer(req.chainId);
+  // Chain preflight before choosing a path: a profile that is not deployed on this chain, or a
+  // key that is not a controller here, gets the per-chain fix instead of a relay/km fallback.
+  const { preflightProfileOnChain } = await import("../lsp/multichain.ts");
+  await preflightProfileOnChain(ctx, req.chainId, req.profile, signer.address);
   const d: AutoDecision = opts.fundFromController ? { path: "km", reason: "--fund-from-controller needs a direct path (the controller sends the value)" } : await resolveAutoPath(ctx, req.chainId, req.profile, signer, opts.relayer);
   const r = req as ExecRequestExt;
   const autoInfo = { ...d, quotaLogin: d.quotaSigned ? `signed BEFORE approval to choose the path — ${QUOTA_LOGIN_FORMAT}` : "not signed" };
-  const out = await executeAsProfile(ctx, { ...r, summaryExtra: { ...r.summaryExtra, autoDecision: autoInfo } } as ExecRequestExt, { ...opts, via: d.path, relayer: d.relayer ?? opts.relayer, skipQuota: opts.skipQuota ?? d.quotaSigned } as ExecOptionsExt);
+  const out = await executeAsProfile(ctx, { ...r, summaryExtra: { ...r.summaryExtra, autoDecision: autoInfo } } as ExecRequestExt, { ...opts, via: d.path, relayer: d.relayer ?? opts.relayer, skipQuota: opts.skipQuota ?? d.quotaSigned, chainChecked: true } as ExecOptionsExt);
   return { ...out, autoDecision: d };
 }

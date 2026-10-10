@@ -500,7 +500,7 @@ defineVerb({
     const chainId = await chainOf(ctx, a);
     const target = checksum(a.address);
     const call = await resolveCall(ctx, chainId, target, { fn: a.fn, args: a.args, abi: a.abi, offline: a.offline });
-    const from = a.from === "profile" ? await ctx.profile(a.profile) : a.from ? checksum(a.from) : undefined;
+    const from = a.from === "profile" ? await ctx.profile(a.profile, chainId) : a.from ? checksum(a.from) : undefined;
     const block = /^\d+$/.test(String(a.block)) ? `0x${BigInt(a.block).toString(16)}` : String(a.block);
     let raw: Hex;
     try {
@@ -529,7 +529,7 @@ defineVerb({
   params: [...CALL_PARAMS, { name: "value", type: "string", description: 'Native value sent with the call, in native units ("0.01") or with a unit ("1000 wei", "2 gwei").' }, ...EXEC_PARAMS],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
-    const profile = await ctx.profile(a.profile);
+    const profile = await ctx.profile(a.profile, chainId);
     const target = checksum(a.address);
     const value = parseNativeValue(a.value);
     const call = await resolveCall(ctx, chainId, target, { fn: a.fn, args: a.args, abi: a.abi, offline: a.offline });

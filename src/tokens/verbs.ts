@@ -19,8 +19,9 @@ const STANDARD_PARAM = { name: "standard", type: "string" as const, description:
 const TOKEN_ID_PARAM = { name: "token-id", type: "string" as const, description: "NFT token id: LSP8 bytes32 (or number/address/text per the LSP8TokenIdFormat), ERC-721/1155 uint256." };
 const HOLDER_PARAM = { name: "holder", type: "string" as const, description: "Address or alias to inspect (default: the active profile)." };
 
-async function holderOf(ctx: VerbContext, a: Record<string, any>): Promise<Address> {
-  return a.holder ? ctx.profile(String(a.holder)) : ctx.profile(a.profile);
+/** --holder as given, else the profile's address on `chainId`. */
+async function holderOf(ctx: VerbContext, a: Record<string, any>, chainId: number): Promise<Address> {
+  return a.holder ? ctx.resolveAddress(String(a.holder)) : ctx.profile(a.profile, chainId);
 }
 
 function nativeSymbol(ctx: VerbContext, chainId: number): string {
@@ -45,7 +46,7 @@ defineVerb({
   params: [{ name: "asset", type: "string", description: "Token contract (omit or --native for the native coin).", positional: 0 }, HOLDER_PARAM, { name: "native", type: "boolean", description: "Native coin balance." }, TOKEN_ID_PARAM, STANDARD_PARAM],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
-    const holder = await holderOf(ctx, a);
+    const holder = await holderOf(ctx, a, chainId);
     if (a.native || !a.asset) {
       const wei = BigInt(await ctx.rpc.request<Hex>(chainId, "eth_getBalance", [holder, "latest"]));
       const sym = nativeSymbol(ctx, chainId);
@@ -195,8 +196,8 @@ defineVerb({
   examples: ["up token transfer 0xToken… --to 0xFriend… --amount 12.5 --dry-run", "up token transfer --native --to 0x… --amount 0.1", "up token transfer 0xNft… --to 0x… --token-id 42"],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
-    const profile = await ctx.profile(a.profile);
-    const to = await ctx.profile(String(a.to));
+    const profile = await ctx.profile(a.profile, chainId);
+    const to = await ctx.resolveAddress(String(a.to));
     const data = requireHex(a.data ?? "0x", "--data");
     if (a.native) {
       if (a.asset) throw new UpError("BAD_ARGS", "pass either an asset or --native, not both");
@@ -230,8 +231,8 @@ defineVerb({
   ],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
-    const profile = await ctx.profile(a.profile);
-    const operator = await ctx.profile(String(a.operator));
+    const profile = await ctx.profile(a.profile, chainId);
+    const operator = await ctx.resolveAddress(String(a.operator));
     if (a.unlimited && a.amount !== undefined) throw new UpError("BAD_ARGS", "pass either --amount or --unlimited");
     const asset = await resolveAsset(ctx, chainId, checksum(a.asset), a.standard);
     const plan = await planApprove(ctx, chainId, profile, asset, { operator, mode: a.mode as ApproveMode, amount: a.amount, raw: a.raw, unlimited: a.unlimited, tokenId: a["token-id"], notify: a.notify, data: requireHex(a.data ?? "0x", "--data") });
@@ -257,8 +258,8 @@ defineVerb({
   ],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
-    const holder = await holderOf(ctx, a);
-    const operator = a.operator ? await ctx.profile(String(a.operator)) : undefined;
+    const holder = await holderOf(ctx, a, chainId);
+    const operator = a.operator ? await ctx.resolveAddress(String(a.operator)) : undefined;
     const asset = await resolveAsset(ctx, chainId, checksum(a.asset), a.standard);
     const base = { chainId, holder, asset: asset.address, standard: asset.standard };
     switch (asset.standard) {
@@ -334,7 +335,7 @@ defineVerb({
   ],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
-    const holder = await holderOf(ctx, a);
+    const holder = await holderOf(ctx, a, chainId);
     let chain;
     try {
       chain = ctx.registry.chain(chainId);
