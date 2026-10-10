@@ -9,6 +9,8 @@
 //   node build/publish-main.mjs          checks + dry run (prints what would be published)
 //   node build/publish-main.mjs --push   creates the commit and pushes it to origin/main
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,6 +46,35 @@ try {
 if (parent && git("rev-parse", `${parent}^{tree}`) === tree) {
   console.log(`main already publishes this skill tree (${tree.slice(0, 12)}); nothing to do.`);
   process.exit(0);
+}
+
+// 3) Never drop edits made directly on main (e.g. a README fix in the GitHub UI): every file
+//    changed on main since the last publish must already be identical in the tree to publish.
+if (parent) {
+  const lastPublish = git("log", parent, "--grep=^publish universal-profile ", "-1", "--format=%H");
+  if (lastPublish && lastPublish !== parent) {
+    // The main-side edits are "contained" when their patch applies in reverse onto the tree to
+    // publish (checked in a throwaway index; the real index and working tree are untouched).
+    const patch = execFileSync("git", ["diff", "--binary", lastPublish, parent], { cwd: root, encoding: "utf8" });
+    const indexFile = join(mkdtempSync(join(tmpdir(), "up-publish-")), "index");
+    const env = { ...process.env, GIT_INDEX_FILE: indexFile };
+    let contained = true;
+    try {
+      execFileSync("git", ["read-tree", tree], { cwd: root, env, stdio: "ignore" });
+      execFileSync("git", ["apply", "--cached", "--reverse", "--check", "-"], { cwd: root, env, input: patch, stdio: ["pipe", "ignore", "ignore"] });
+    } catch {
+      contained = false;
+    } finally {
+      rmSync(dirname(indexFile), { recursive: true, force: true });
+    }
+    if (!contained) {
+      const changed = git("diff", "--name-only", lastPublish, parent).split("\n").filter(Boolean);
+      fail(
+        `main has direct edits since the last publish (${lastPublish.slice(0, 7)}..${parent.slice(0, 7)}) that ${PREFIX}/ does not contain yet:\n  ${changed.join("\n  ")}\n` +
+          `  port them first: git diff ${lastPublish.slice(0, 7)} ${parent.slice(0, 7)} | git apply --directory=${PREFIX}, then rebuild, commit and push`,
+      );
+    }
+  }
 }
 
 const version = JSON.parse(git("show", `HEAD:${PREFIX}/scripts/BUILD.json`)).version;

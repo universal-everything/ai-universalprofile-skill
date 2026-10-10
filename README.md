@@ -42,6 +42,7 @@ Commit the rebuilt `skills/universal-profile/scripts/` together with the source 
 ```bash
 npm run publish:main            # checks, then shows what would be published (dry run)
 npm run publish:main -- --push  # adds one commit to main whose tree is skills/universal-profile/ and pushes it
+# Direct edits on main (e.g. a README fix in the GitHub UI) are never dropped: publishing stops until they are ported into skills/universal-profile/.
 ```
 
 A version tag (`v*`) on `source` runs the release workflow: full tests, reproducible build, package gate, the same publish to `main`, and a GitHub release with `universal-profile-<version>.tar.gz` + `SHA256SUMS`.
