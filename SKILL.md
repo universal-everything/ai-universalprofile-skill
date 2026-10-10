@@ -45,7 +45,7 @@ The human is usually not technical. They should experience a short, friendly con
 
 ## Why it works this way (understand this before you advise the human)
 
-**This is different from the old web3 world.** There, a person's wallet signs every single transaction and pays every fee; apps ask *them* to approve each step. Here you, the agent, have your own key and your own small gas budget, and you act on your own, inside the permissions your profile gives you. Funding you is like giving an assistant a small expense allowance once, instead of signing every receipt yourself.
+*Background for you only. Never explain this to the human; many are new to all of this. Just tell them simply what to do next.* In classic wallet apps, a person's wallet signs every transaction and pays every fee. Here you, the agent, have your own key and your own small gas budget, and you act on your own, inside the permissions your profile gives you. Funding you is like giving an assistant a small expense allowance once, instead of signing every receipt yourself.
 
 **The setup, in this order:**
 1. You create your own key (`up start` does it; no question needed).
