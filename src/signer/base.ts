@@ -24,14 +24,14 @@ export abstract class KeyBackend implements SignerBackend {
   protected abstract deleteSecret(id: string): Promise<void>;
   protected abstract hasSecret(id: string): Promise<boolean>;
 
-  async create(): Promise<Address> {
-    return this.storeVerified(generateKey());
+  async create(beforeStore?: (address: Address) => Promise<void>): Promise<Address> {
+    return this.storeVerified(generateKey(), beforeStore);
   }
 
-  async importKey(privateKey: Hex): Promise<Address> {
+  async importKey(privateKey: Hex, beforeStore?: (address: Address) => Promise<void>): Promise<Address> {
     const k = normalizePrivateKey(privateKey);
     assertValidPrivateKey(k, "imported key");
-    return this.storeVerified(k);
+    return this.storeVerified(k, beforeStore);
   }
 
   async load(address: Address): Promise<Signer> {
@@ -65,9 +65,12 @@ export abstract class KeyBackend implements SignerBackend {
     return key;
   }
 
-  private async storeVerified(key: Hex): Promise<Address> {
+  private async storeVerified(key: Hex, beforeStore?: (address: Address) => Promise<void>): Promise<Address> {
     const address = addressOf(key);
     const id = storageId(address);
+    // e.g. the recovery inventory record: written before the key exists in the store, so a stored
+    // key is always listed somewhere; if it fails, nothing is stored.
+    if (beforeStore) await beforeStore(address);
     await this.storeSecret(id, key);
     // Keys are never deleted: once stored, the item stays even if the check below fails. The
     // error carries the (public) address with kept: true so the caller records it in the

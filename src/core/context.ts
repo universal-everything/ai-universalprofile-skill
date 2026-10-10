@@ -2,7 +2,7 @@
 import { getAddress, isAddress, type Address } from "viem";
 import { readFileSync, existsSync } from "node:fs";
 import type { Flags, UpConfig, VerbContext } from "./types.ts";
-import { upHome, paths, readJsonStrict, writeJsonWithBackup, ensureDir } from "./home.ts";
+import { upHome, paths, readJsonStrict, writeJsonWithBackup, ensureDir, isJsonObject } from "./home.ts";
 import { withLock } from "./lock.ts";
 import { UpError } from "./errors.ts";
 import { requireConsent } from "./policy.ts";
@@ -30,13 +30,16 @@ export function upgradeConfig<T>(raw: T): T {
 }
 
 /** config.json as stored (upgraded), or the default when there is none. Throws on an unreadable or invalid file. */
+const MISSING = Symbol("missing");
+
 export async function readConfigFile(home: string): Promise<UpConfig> {
-  const raw = await readJsonStrict<unknown>(paths.config(home), null);
-  if (raw === null) return { ...DEFAULT_CONFIG };
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new UpError("INTERNAL", `${paths.config(home)} does not hold a config object; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${paths.config(home)}.bak)` });
+  const raw = await readJsonStrict<unknown>(paths.config(home), MISSING);
+  if (raw === MISSING) return { ...DEFAULT_CONFIG };
+  // `null`, a list, a number or a string is damage, not "no config": never treat it as empty
+  if (!isJsonObject(raw)) {
+    throw new UpError("INTERNAL", `${paths.config(home)} is damaged (it does not hold a config object); nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${paths.config(home)}.bak); never delete it: it lists the agent's keys` });
   }
-  return { ...DEFAULT_CONFIG, ...upgradeConfig(raw as UpConfig) };
+  return { ...DEFAULT_CONFIG, ...upgradeConfig(raw as unknown as UpConfig) };
 }
 
 type KeyRef = { address: string; backend: string; chainId?: number };
@@ -117,7 +120,7 @@ export function createContext(opts: ContextOptions): VerbContext {
         const latest = await readConfigFile(home);
         const draft = structuredClone(latest);
         const next = preserveKeyInventory(latest, (await fn(draft)) ?? draft);
-        await writeJsonWithBackup(paths.config(home), next);
+        await writeJsonWithBackup(paths.config(home), next, isJsonObject);
         cfgCache = next;
         loaded = structuredClone(next);
         return next;
@@ -148,9 +151,13 @@ export function createContext(opts: ContextOptions): VerbContext {
       if (v !== undefined && v !== "") return registry.chain(v).chainId;
       if (!cfgCache && existsSync(paths.config(home))) {
         try {
-          const c = { ...DEFAULT_CONFIG, ...upgradeConfig(JSON.parse(readFileSync(paths.config(home), "utf8"))) };
-          cfgCache = c;
-          loaded ??= structuredClone(c);
+          const raw: unknown = JSON.parse(readFileSync(paths.config(home), "utf8"));
+          // a damaged file (not an object) is never cached as an empty config; config() reports it
+          if (isJsonObject(raw)) {
+            const c = { ...DEFAULT_CONFIG, ...upgradeConfig(raw as unknown as UpConfig) };
+            cfgCache = c;
+            loaded ??= structuredClone(c);
+          }
         } catch {}
       }
       if (cfgCache?.defaultChain) return cfgCache.defaultChain;

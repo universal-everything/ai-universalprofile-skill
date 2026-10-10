@@ -23,7 +23,7 @@ import { ensureDir, paths, readJsonStrict, writeJsonWithBackup } from "../core/h
 import type { Address, UpConfig, VerbContext, VerbResult } from "../core/types.ts";
 import { defineVerb } from "../core/verbs.ts";
 import { readConfigFile } from "../core/context.ts";
-import { readInventory, recordKey } from "./inventory.ts";
+import { inventoryFile, readInventory, recordKey } from "./inventory.ts";
 import { missingKeyHint } from "./base.ts";
 import { BACKEND_IDS, chooseBackend, custodyWarnings, environment, internalBackend, plainProtection, probeAll } from "./index.ts";
 import { chainControllerList, controllerFor } from "./select.ts";
@@ -47,7 +47,7 @@ function candidatesFile(home: string): string {
 async function readCandidatesRaw(home: string): Promise<unknown[]> {
   const f = candidatesFile(home);
   const v = await readJsonStrict<unknown>(f, []);
-  if (!Array.isArray(v)) throw new UpError("INTERNAL", `${f} does not hold a list; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${f}.bak)` });
+  if (!Array.isArray(v)) throw new UpError("INTERNAL", `${f} is damaged (it does not hold a list); nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${f}.bak); never delete it: it lists the agent's keys` });
   return v;
 }
 
@@ -61,7 +61,7 @@ export async function readCandidates(home: string): Promise<CandidateKey[]> {
 
 /** Read-modify-write of candidates.json (call under withKeyLock). Unknown entries are kept as they are; the old file is kept as .bak. */
 async function updateCandidates(home: string, fn: (list: unknown[]) => unknown[]): Promise<void> {
-  await writeJsonWithBackup(candidatesFile(home), fn(await readCandidatesRaw(home)));
+  await writeJsonWithBackup(candidatesFile(home), fn(await readCandidatesRaw(home)), Array.isArray);
 }
 
 /** An activated key is no longer "not used yet": take it off the candidates list (it is listed in the config now). */
@@ -80,27 +80,30 @@ function sameKey(a: string | undefined, b: string | undefined): boolean {
 }
 
 /**
- * Creates a key in `backend` and records it at once in the append-only recovery inventory
- * (keys/inventory.jsonl), before any other bookkeeping. A key kept after a failed read-back
- * check is recorded too, so it stays listed.
+ * Creates a key in `backend`, recording it in the append-only recovery inventory
+ * (keys/inventory.jsonl) BEFORE it is stored: the key is generated, its public record is
+ * appended, then it is stored. If the record cannot be written, nothing is stored; if storing
+ * fails, a follow-up line marks the record "not stored". So a stored key is always listed.
  */
-async function createRecorded(home: string, backend: { id: string; create(): Promise<Address> }, note?: string): Promise<Address> {
-  let address: Address;
+async function createRecorded(home: string, backend: { id: string; create(beforeStore?: (address: Address) => Promise<void>): Promise<Address> }): Promise<Address> {
+  let recorded: Address | undefined;
   try {
-    address = await backend.create();
+    return await backend.create(async (address) => {
+      try {
+        await recordKey(home, { address, backend: backend.id });
+      } catch (e) {
+        throw new UpError("INTERNAL", `could not record the new key in ${inventoryFile(home)} (${(e as Error).message}); no key was created`, { hint: "fix the state directory (keys/), then retry" });
+      }
+      recorded = address;
+    });
   } catch (e) {
-    const d = (e as UpError)?.details as { address?: string; kept?: boolean; problem?: string } | undefined;
-    if (e instanceof UpError && d?.kept && d.address) await recordKey(home, { address: d.address, backend: backend.id, note: `kept after ${d.problem ?? "a failed check"}` }).catch(() => {});
+    if (recorded) {
+      const d = (e as UpError)?.details as { kept?: boolean; problem?: string } | undefined;
+      const note = d?.kept ? `kept after ${d.problem ?? "a failed check"}` : "creation failed; not stored";
+      await recordKey(home, { address: recorded, backend: backend.id, note, ...(d?.kept ? {} : { notStored: true }) }).catch(() => {});
+    }
     throw e;
   }
-  try {
-    await recordKey(home, { address, backend: backend.id, ...(note ? { note } : {}) });
-  } catch (e) {
-    throw new UpError("INTERNAL", `the new key ${address} was created in ${backend.id} but could not be recorded (${(e as Error).message}); it stays in its store`, {
-      hint: `fix the state directory, then record it with: up key activate ${address} --backend ${backend.id}`,
-    });
-  }
-  return address;
 }
 
 function requireController(cfg: UpConfig): NonNullable<UpConfig["controller"]> {
@@ -207,7 +210,11 @@ async function keptKeys(home: string, cfg: UpConfig): Promise<KeptKey[]> {
   };
   for (const k of cfg.previousControllers ?? []) add(k, "previous");
   for (const k of await readCandidates(home)) add(k, "additional");
-  for (const k of await readInventory(home)) add(k, "recovered");
+  for (const k of await readInventory(home)) {
+    // a record marked "not stored" is listed only if the key does exist in its store after all
+    if (k.notStored && !(await Promise.resolve().then(() => internalBackend(k.backend).has(k.address)).catch(() => false))) continue;
+    add(k, "recovered");
+  }
   return out;
 }
 

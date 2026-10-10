@@ -2,7 +2,7 @@
 // 0700; every file is written atomically (temp + rename) with mode 0600.
 // Never store key material here except through a signer backend that encrypts
 // it or the owner-approved protected-file backend.
-import { appendFile, copyFile, mkdir, readFile, rename, writeFile, chmod, stat } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, open, readFile, rename, writeFile, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -66,19 +66,53 @@ export async function readJsonStrict<T>(file: string, fallback: T): Promise<T> {
   }
 }
 
-/** writeJson that first keeps the current file as `<file>.bak` (0600). */
-export async function writeJsonWithBackup(file: string, value: unknown): Promise<void> {
+/**
+ * writeJson that first keeps the current file as `<file>.bak` (0600) — but only when the current
+ * file parses and has the expected shape (`valid`); a damaged current file never replaces a good .bak.
+ */
+export async function writeJsonWithBackup(file: string, value: unknown, valid: (v: unknown) => boolean = () => true): Promise<void> {
   if (existsSync(file)) {
-    await copyFile(file, `${file}.bak`);
-    if (process.platform !== "win32") await chmod(`${file}.bak`, 0o600).catch(() => {});
+    let good = false;
+    try {
+      good = valid(JSON.parse(await readFile(file, "utf8")));
+    } catch {}
+    if (good) {
+      await copyFile(file, `${file}.bak`);
+      if (process.platform !== "win32") await chmod(`${file}.bak`, 0o600).catch(() => {});
+    }
   }
   await writeJson(file, value);
 }
 
-/** Appends one line to an append-only log file (0600); the file is never rewritten. */
+/** A JSON object (not null, not an array): the expected top-level shape of config.json. */
+export function isJsonObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Appends one line to an append-only log file (0600); the file is never rewritten. If an earlier
+ * append was interrupted (no trailing newline), a newline is written first so the partial line
+ * stays on its own and never swallows this record.
+ */
 export async function appendLine(file: string, line: string): Promise<void> {
   await ensureDir(dirname(file));
-  await appendFile(file, line.endsWith("\n") ? line : line + "\n", { mode: 0o600 });
+  let prefix = "";
+  try {
+    const fh = await open(file, "r");
+    try {
+      const { size } = await fh.stat();
+      if (size > 0) {
+        const b = Buffer.alloc(1);
+        await fh.read(b, 0, 1, size - 1);
+        if (b[0] !== 0x0a) prefix = "\n";
+      }
+    } finally {
+      await fh.close();
+    }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  await appendFile(file, prefix + (line.endsWith("\n") ? line : line + "\n"), { mode: 0o600 });
 }
 
 export const paths = {

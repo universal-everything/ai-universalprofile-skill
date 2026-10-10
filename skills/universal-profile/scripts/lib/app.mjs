@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint b9011cc052a4 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint d98555771416 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -264,7 +264,7 @@ var init_json = __esm({
 });
 
 // src/core/home.ts
-import { appendFile, copyFile, mkdir, readFile, rename, writeFile, chmod, stat } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, open, readFile, rename, writeFile, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -317,17 +317,43 @@ async function readJsonStrict(file2, fallback) {
     throw new UpError2("INTERNAL", `${file2} is not valid JSON; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${file2}.bak); never delete it: it lists the agent's keys` });
   }
 }
-async function writeJsonWithBackup(file2, value) {
+async function writeJsonWithBackup(file2, value, valid = () => true) {
   if (existsSync(file2)) {
-    await copyFile(file2, `${file2}.bak`);
-    if (process.platform !== "win32") await chmod(`${file2}.bak`, 384).catch(() => {
-    });
+    let good = false;
+    try {
+      good = valid(JSON.parse(await readFile(file2, "utf8")));
+    } catch {
+    }
+    if (good) {
+      await copyFile(file2, `${file2}.bak`);
+      if (process.platform !== "win32") await chmod(`${file2}.bak`, 384).catch(() => {
+      });
+    }
   }
   await writeJson(file2, value);
 }
+function isJsonObject(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
 async function appendLine(file2, line) {
   await ensureDir(dirname(file2));
-  await appendFile(file2, line.endsWith("\n") ? line : line + "\n", { mode: 384 });
+  let prefix = "";
+  try {
+    const fh = await open(file2, "r");
+    try {
+      const { size: size4 } = await fh.stat();
+      if (size4 > 0) {
+        const b = Buffer.alloc(1);
+        await fh.read(b, 0, 1, size4 - 1);
+        if (b[0] !== 10) prefix = "\n";
+      }
+    } finally {
+      await fh.close();
+    }
+  } catch (e) {
+    if (e.code !== "ENOENT") throw e;
+  }
+  await appendFile(file2, prefix + (line.endsWith("\n") ? line : line + "\n"), { mode: 384 });
 }
 var paths;
 var init_home = __esm({
@@ -4993,13 +5019,13 @@ var init_base = __esm({
     init_errors();
     init_local_signer();
     KeyBackend = class {
-      async create() {
-        return this.storeVerified(generateKey());
+      async create(beforeStore) {
+        return this.storeVerified(generateKey(), beforeStore);
       }
-      async importKey(privateKey) {
+      async importKey(privateKey, beforeStore) {
         const k = normalizePrivateKey(privateKey);
         assertValidPrivateKey(k, "imported key");
-        return this.storeVerified(k);
+        return this.storeVerified(k, beforeStore);
       }
       async load(address) {
         const key = await this.exportPrivateKey(address);
@@ -5028,9 +5054,10 @@ var init_base = __esm({
         }
         return key;
       }
-      async storeVerified(key) {
+      async storeVerified(key, beforeStore) {
         const address = addressOf(key);
         const id = storageId(address);
+        if (beforeStore) await beforeStore(address);
         await this.storeSecret(id, key);
         let readBack2;
         try {
@@ -5474,14 +5501,14 @@ var init_memory = __esm({
       async probe() {
         return memoryEnabled() ? probeResult(this, "ephemeral", true, "test mode (UP_TEST_EPHEMERAL_KEY is set)") : probeResult(this, "ephemeral", false, "tests only: set UP_TEST_EPHEMERAL_KEY to enable");
       }
-      async create() {
+      async create(beforeStore) {
         this.assertEnabled();
         const k = fixedKey();
         if (k && !fixedKeyUsed && !store.has(storageId(addressOf(k)))) {
           fixedKeyUsed = true;
-          return this.importKey(k);
+          return this.importKey(k, beforeStore);
         }
-        return this.importKey(generateKey());
+        return this.importKey(generateKey(), beforeStore);
       }
       async storeSecret(id, privateKey) {
         this.assertEnabled();
@@ -6130,7 +6157,7 @@ var init_signer = __esm({
 });
 
 // src/core/lock.ts
-import { writeFile as writeFile3, link, readFile as readFile5, unlink, mkdir as mkdir2, stat as stat3, open } from "node:fs/promises";
+import { writeFile as writeFile3, link, readFile as readFile5, unlink, mkdir as mkdir2, stat as stat3, open as open2 } from "node:fs/promises";
 import { randomBytes as randomBytes4 } from "node:crypto";
 import { join as join7 } from "node:path";
 function alive(pid) {
@@ -6160,7 +6187,7 @@ async function withLock(home, name, fn) {
       });
       if (["EPERM", "ENOTSUP", "ENOSYS", "EXDEV", "EOPNOTSUPP"].includes(e?.code)) {
         try {
-          const fh = await open(file2, "wx", 384);
+          const fh = await open2(file2, "wx", 384);
           await fh.writeFile(JSON.stringify({ pid: process.pid, at: Date.now() }));
           await fh.close();
           break;
@@ -9008,7 +9035,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "b9011cc052a4" : "source";
+var SOURCE = true ? "d98555771416" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -9482,7 +9509,7 @@ defineVerb({
 init_errors();
 init_home();
 init_verbs();
-import { chmod as chmod2, link as link2, lstat as lstat2, open as open2, rm as rm4, stat as stat4, writeFile as writeFile4 } from "node:fs/promises";
+import { chmod as chmod2, link as link2, lstat as lstat2, open as open3, rm as rm4, stat as stat4, writeFile as writeFile4 } from "node:fs/promises";
 import { randomBytes as randomBytes6 } from "node:crypto";
 import { basename, dirname as dirname3, isAbsolute, join as join9, resolve as resolve3 } from "node:path";
 import { getAddress as getAddress12, isAddress as isAddress9 } from "./vendor-viem.mjs";
@@ -9510,11 +9537,12 @@ function upgradeConfig(raw) {
   }
   return prev.length ? { ...rest, previousControllers: prev } : rest;
 }
+var MISSING = /* @__PURE__ */ Symbol("missing");
 async function readConfigFile(home) {
-  const raw = await readJsonStrict(paths.config(home), null);
-  if (raw === null) return { ...DEFAULT_CONFIG };
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new UpError("INTERNAL", `${paths.config(home)} does not hold a config object; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${paths.config(home)}.bak)` });
+  const raw = await readJsonStrict(paths.config(home), MISSING);
+  if (raw === MISSING) return { ...DEFAULT_CONFIG };
+  if (!isJsonObject(raw)) {
+    throw new UpError("INTERNAL", `${paths.config(home)} is damaged (it does not hold a config object); nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${paths.config(home)}.bak); never delete it: it lists the agent's keys` });
   }
   return { ...DEFAULT_CONFIG, ...upgradeConfig(raw) };
 }
@@ -9572,7 +9600,7 @@ function createContext(opts) {
         const latest = await readConfigFile(home);
         const draft = structuredClone(latest);
         const next = preserveKeyInventory(latest, await fn(draft) ?? draft);
-        await writeJsonWithBackup(paths.config(home), next);
+        await writeJsonWithBackup(paths.config(home), next, isJsonObject);
         cfgCache = next;
         loaded = structuredClone(next);
         return next;
@@ -9601,9 +9629,12 @@ function createContext(opts) {
       if (v !== void 0 && v !== "") return registry2.chain(v).chainId;
       if (!cfgCache && existsSync13(paths.config(home))) {
         try {
-          const c = { ...DEFAULT_CONFIG, ...upgradeConfig(JSON.parse(readFileSync7(paths.config(home), "utf8"))) };
-          cfgCache = c;
-          loaded ??= structuredClone(c);
+          const raw = JSON.parse(readFileSync7(paths.config(home), "utf8"));
+          if (isJsonObject(raw)) {
+            const c = { ...DEFAULT_CONFIG, ...upgradeConfig(raw) };
+            cfgCache = c;
+            loaded ??= structuredClone(c);
+          }
         } catch {
         }
       }
@@ -9661,8 +9692,22 @@ function inventoryFile(home) {
   return join8(paths.keys(home), "inventory.jsonl");
 }
 async function recordKey(home, entry) {
-  const line = { address: getAddress11(entry.address), backend: entry.backend, createdAt: entry.createdAt ?? (/* @__PURE__ */ new Date()).toISOString(), ...entry.note ? { note: entry.note } : {} };
+  const line = { address: getAddress11(entry.address), backend: entry.backend, createdAt: entry.createdAt ?? (/* @__PURE__ */ new Date()).toISOString(), ...entry.note ? { note: entry.note } : {}, ...entry.notStored ? { notStored: true } : {} };
   await appendLine(inventoryFile(home), JSON.stringify(line));
+}
+function recordsIn(line) {
+  try {
+    return [JSON.parse(line)];
+  } catch {
+    const out = [];
+    for (const m of line.match(/\{[^{}]*\}/g) ?? []) {
+      try {
+        out.push(JSON.parse(m));
+      } catch {
+      }
+    }
+    return out;
+  }
 }
 async function readInventory(home) {
   let text = "";
@@ -9675,19 +9720,16 @@ async function readInventory(home) {
   const out = [];
   for (const raw of text.split("\n")) {
     if (!raw.trim()) continue;
-    let v;
-    try {
-      v = JSON.parse(raw);
-    } catch {
-      continue;
+    for (const v of recordsIn(raw)) {
+      if (!v || typeof v.address !== "string" || !isAddress8(v.address, { strict: false }) || typeof v.backend !== "string") continue;
+      const prev = out.find((x) => x.address.toLowerCase() === v.address.toLowerCase());
+      if (prev) {
+        if (v.note) prev.note = prev.note ? `${prev.note}; ${v.note}` : v.note;
+        if (v.notStored === true) prev.notStored = true;
+        continue;
+      }
+      out.push({ address: getAddress11(v.address), backend: v.backend, createdAt: typeof v.createdAt === "string" ? v.createdAt : "", ...v.note ? { note: String(v.note) } : {}, ...v.notStored === true ? { notStored: true } : {} });
     }
-    if (!v || typeof v.address !== "string" || !isAddress8(v.address, { strict: false }) || typeof v.backend !== "string") continue;
-    const prev = out.find((x) => x.address.toLowerCase() === v.address.toLowerCase());
-    if (prev) {
-      if (v.note) prev.note = prev.note ? `${prev.note}; ${v.note}` : v.note;
-      continue;
-    }
-    out.push({ address: getAddress11(v.address), backend: v.backend, createdAt: typeof v.createdAt === "string" ? v.createdAt : "", ...v.note ? { note: String(v.note) } : {} });
   }
   return out;
 }
@@ -9797,7 +9839,7 @@ function candidatesFile(home) {
 async function readCandidatesRaw(home) {
   const f = candidatesFile(home);
   const v = await readJsonStrict(f, []);
-  if (!Array.isArray(v)) throw new UpError("INTERNAL", `${f} does not hold a list; nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${f}.bak)` });
+  if (!Array.isArray(v)) throw new UpError("INTERNAL", `${f} is damaged (it does not hold a list); nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${f}.bak); never delete it: it lists the agent's keys` });
   return v;
 }
 function isCandidate(c) {
@@ -9807,7 +9849,7 @@ async function readCandidates(home) {
   return (await readCandidatesRaw(home)).filter(isCandidate);
 }
 async function updateCandidates(home, fn) {
-  await writeJsonWithBackup(candidatesFile(home), fn(await readCandidatesRaw(home)));
+  await writeJsonWithBackup(candidatesFile(home), fn(await readCandidatesRaw(home)), Array.isArray);
 }
 async function dropCandidate(home, address) {
   const raw = await readCandidatesRaw(home);
@@ -9819,24 +9861,26 @@ function sameAddress(a, b) {
 function sameKey(a, b) {
   return !a && !b || sameAddress(a, b);
 }
-async function createRecorded(home, backend, note) {
-  let address;
+async function createRecorded(home, backend) {
+  let recorded;
   try {
-    address = await backend.create();
-  } catch (e) {
-    const d = e?.details;
-    if (e instanceof UpError && d?.kept && d.address) await recordKey(home, { address: d.address, backend: backend.id, note: `kept after ${d.problem ?? "a failed check"}` }).catch(() => {
+    return await backend.create(async (address) => {
+      try {
+        await recordKey(home, { address, backend: backend.id });
+      } catch (e) {
+        throw new UpError("INTERNAL", `could not record the new key in ${inventoryFile(home)} (${e.message}); no key was created`, { hint: "fix the state directory (keys/), then retry" });
+      }
+      recorded = address;
     });
+  } catch (e) {
+    if (recorded) {
+      const d = e?.details;
+      const note = d?.kept ? `kept after ${d.problem ?? "a failed check"}` : "creation failed; not stored";
+      await recordKey(home, { address: recorded, backend: backend.id, note, ...d?.kept ? {} : { notStored: true } }).catch(() => {
+      });
+    }
     throw e;
   }
-  try {
-    await recordKey(home, { address, backend: backend.id, ...note ? { note } : {} });
-  } catch (e) {
-    throw new UpError("INTERNAL", `the new key ${address} was created in ${backend.id} but could not be recorded (${e.message}); it stays in its store`, {
-      hint: `fix the state directory, then record it with: up key activate ${address} --backend ${backend.id}`
-    });
-  }
-  return address;
 }
 function requireController(cfg) {
   if (!cfg.controller) throw new UpError("NO_SIGNER", "no controller key is configured", { hint: "run: up init" });
@@ -9860,7 +9904,7 @@ async function withKeyLock(home, fn) {
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (; ; ) {
     try {
-      const fh = await open2(lock, "wx", 384);
+      const fh = await open3(lock, "wx", 384);
       await fh.writeFile(`${process.pid} ${(/* @__PURE__ */ new Date()).toISOString()}
 `);
       await fh.close();
@@ -9913,7 +9957,10 @@ async function keptKeys(home, cfg) {
   };
   for (const k of cfg.previousControllers ?? []) add2(k, "previous");
   for (const k of await readCandidates(home)) add2(k, "additional");
-  for (const k of await readInventory(home)) add2(k, "recovered");
+  for (const k of await readInventory(home)) {
+    if (k.notStored && !await Promise.resolve().then(() => internalBackend(k.backend).has(k.address)).catch(() => false)) continue;
+    add2(k, "recovered");
+  }
   return out;
 }
 var KIND_TEXT = { additional: "not used yet", previous: "used before", recovered: "created, not recorded in the config" };

@@ -7,7 +7,7 @@
 //    that address works in every process, so separate CLI invocations in chain
 //    tests share the same controller.
 import { UpError } from "../core/errors.ts";
-import type { BackendProbe, Hex, ProtectionInfo } from "../core/types.ts";
+import type { Address, BackendProbe, Hex, ProtectionInfo } from "../core/types.ts";
 import { KeyBackend, probeResult } from "./base.ts";
 import { addressOf, generateKey, isValidPrivateKey, normalizePrivateKey, storageId } from "./local-signer.ts";
 
@@ -51,14 +51,14 @@ export class MemoryBackend extends KeyBackend {
       : probeResult(this, "ephemeral", false, "tests only: set UP_TEST_EPHEMERAL_KEY to enable");
   }
 
-  override async create() {
+  override async create(beforeStore?: (address: Address) => Promise<void>) {
     this.assertEnabled();
     const k = fixedKey();
     if (k && !fixedKeyUsed && !store.has(storageId(addressOf(k)))) {
       fixedKeyUsed = true;
-      return this.importKey(k);
+      return this.importKey(k, beforeStore);
     }
-    return this.importKey(generateKey());
+    return this.importKey(generateKey(), beforeStore);
   }
 
   protected async storeSecret(id: string, privateKey: Hex): Promise<void> {

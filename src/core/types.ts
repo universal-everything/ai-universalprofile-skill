@@ -162,10 +162,14 @@ export interface SignerBackend {
   readonly id: string;
   readonly label: string;
   probe(): Promise<BackendProbe>;
-  /** Generate a new secp256k1 key inside the backend; returns the public address only. */
-  create(): Promise<Address>;
+  /**
+   * Generate a new secp256k1 key inside the backend; returns the public address only.
+   * `beforeStore` runs with the new (public) address after the key is generated and before it
+   * is stored; if it throws, nothing is stored (used to record the key in the recovery inventory first).
+   */
+  create(beforeStore?: (address: Address) => Promise<void>): Promise<Address>;
   /** Import an existing private key (tests only). */
-  importKey?(privateKey: Hex): Promise<Address>;
+  importKey?(privateKey: Hex, beforeStore?: (address: Address) => Promise<void>): Promise<Address>;
   load(address: Address): Promise<Signer>;
   remove(address: Address): Promise<void>;
   has(address: Address): Promise<boolean>;

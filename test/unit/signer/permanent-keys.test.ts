@@ -3,17 +3,17 @@
 // listed earlier keys under the legacy field still load, and those keys stay listed and usable.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import "../../../src/verbs/index.ts";
 import { configKeys, createContext, preserveKeyInventory, upgradeConfig } from "../../../src/core/context.ts";
 import { UpError } from "../../../src/core/errors.ts";
 import type { VerbContext } from "../../../src/core/types.ts";
 import { allVerbs, coerceArgs, getVerb, mcpToolName } from "../../../src/core/verbs.ts";
-import { paths } from "../../../src/core/home.ts";
+import { isJsonObject, paths, writeJsonWithBackup } from "../../../src/core/home.ts";
 import { internalBackend, setBackendsForTests } from "../../../src/signer/index.ts";
 import { MemoryBackend, resetMemoryBackend } from "../../../src/signer/memory.ts";
-import { inventoryFile, readInventory } from "../../../src/signer/inventory.ts";
+import { inventoryFile, readInventory, recordKey } from "../../../src/signer/inventory.ts";
 import { tempHome } from "./helpers.ts";
 
 describe("no key rotation or key deletion in the verb registry", () => {
@@ -259,5 +259,88 @@ describe("keys are never lost, forgotten or unlisted (concurrency and damaged st
     for (const f of [join(srcDir, "cli", "main.ts"), join(srcDir, "mcp", "server.ts")]) {
       expect(readFileSync(f, "utf8")).toMatch(/withLock\(ctx\.home, "write", async \(\) => \{[^}]*?await ctx\.refreshConfig\?\.\(\);/s);
     }
+  });
+
+  it("config.json holding null, a list, a number or a string is damage: nothing changes, it is never overwritten, the good .bak is kept", async () => {
+    const [A] = await setupKeys(0);
+    await run(mk(), "config set", { key: "default-chain", value: "42" }); // second write: .bak = config with A
+    const bak = paths.config(home.dir) + ".bak";
+    const goodBak = readFileSync(bak, "utf8");
+    expect(JSON.parse(goodBak).controller.address).toBe(A);
+    for (const damaged of ["null", "[]", "7", '"x"']) {
+      await writeFile(paths.config(home.dir), damaged, { mode: 0o600 });
+      const e1 = await run(mk(), "init", { backend: "memory" }).catch((x) => x);
+      expect(e1.message).toMatch(/is damaged .*nothing was changed and it will not be overwritten/);
+      const e2 = await run(mk(), "config set", { key: "default-chain", value: "1" }).catch((x) => x);
+      expect(e2).toBeInstanceOf(UpError);
+      const e3 = await mk().saveConfig({ version: 1 }).catch((x) => x);
+      expect(e3).toBeInstanceOf(UpError);
+      expect(readFileSync(paths.config(home.dir), "utf8")).toBe(damaged);
+      expect(readFileSync(bak, "utf8")).toBe(goodBak);
+    }
+    expect((await readInventory(home.dir)).map((k) => k.address)).toEqual([A]); // no key was created
+  });
+
+  it("writeJsonWithBackup never replaces a good .bak with a damaged current file", async () => {
+    const f = join(home.dir, "x.json");
+    await writeFile(f + ".bak", JSON.stringify({ good: true }));
+    await writeFile(f, "null");
+    await writeJsonWithBackup(f, { next: 1 }, isJsonObject);
+    expect(JSON.parse(readFileSync(f + ".bak", "utf8"))).toEqual({ good: true });
+    expect(JSON.parse(readFileSync(f, "utf8"))).toEqual({ next: 1 });
+    await writeJsonWithBackup(f, { next: 2 }, isJsonObject); // a good current file is backed up
+    expect(JSON.parse(readFileSync(f + ".bak", "utf8"))).toEqual({ next: 1 });
+  });
+
+  it("a candidates list holding null is damage: nothing changes and no key is created", async () => {
+    const [A] = await setupKeys(0);
+    const f = join(home.dir, "keys", "candidates.json");
+    await writeFile(f, "null", { mode: 0o600 });
+    const e = await run(mk("add"), "key new-candidate").catch((x) => x);
+    expect(e.message).toMatch(/is damaged .*will not be overwritten/);
+    expect(readFileSync(f, "utf8")).toBe("null");
+    expect((await readInventory(home.dir)).map((k) => k.address)).toEqual([A]);
+  });
+
+  it("the inventory record is written before the key is stored: if it fails, no key is stored", async () => {
+    await mkdir(inventoryFile(home.dir), { recursive: true }); // appending to a directory fails
+    const e = await run(mk(), "init", { backend: "protected-file" }).catch((x) => x);
+    expect(e.message).toMatch(/could not record the new key .*no key was created/);
+    expect(readdirSync(join(home.dir, "keys")).filter((f) => f.endsWith(".key"))).toEqual([]);
+    expect(existsSync(paths.config(home.dir))).toBe(false);
+  });
+
+  it("if storing fails after the record was written, a follow-up line marks it 'not stored' (and it is not listed as a key)", async () => {
+    class FailingStore extends MemoryBackend {
+      protected override async storeSecret(): Promise<void> {
+        throw new UpError("SIGNER_LOCKED", "store refused");
+      }
+    }
+    setBackendsForTests([new FailingStore()]);
+    const e = await run(mk(), "init", { backend: "memory" }).catch((x) => x);
+    expect(e.message).toMatch(/store refused/);
+    const inv = await readInventory(home.dir);
+    expect(inv).toHaveLength(1);
+    expect(inv[0]).toMatchObject({ notStored: true, note: "creation failed; not stored" });
+    expect(readFileSync(inventoryFile(home.dir), "utf8").trim().split("\n")).toHaveLength(2);
+    setBackendsForTests();
+    const listedErr = await run(mk(), "key address").catch((x) => x);
+    expect(listedErr).toMatchObject({ code: "NO_SIGNER", hint: "run: up init" });
+  });
+
+  it("an interrupted append (partial last line) never hides the next record", async () => {
+    const A = "0x00000000000000000000000000000000000000a1";
+    const B = "0x00000000000000000000000000000000000000b2";
+    await recordKey(home.dir, { address: A, backend: "memory" });
+    const f = inventoryFile(home.dir);
+    await writeFile(f, readFileSync(f, "utf8") + '{"address":"0x12', { flag: "w" }); // truncated tail, no newline
+    await recordKey(home.dir, { address: B, backend: "memory" });
+    const lines = readFileSync(f, "utf8").split("\n");
+    expect(lines.some((l) => l === '{"address":"0x12')).toBe(true); // the partial line stays on its own
+    expect((await readInventory(home.dir)).map((k) => k.address.toLowerCase())).toEqual([A, B]);
+    // a file where two records were already glued together is salvaged by the reader
+    const C = "0x00000000000000000000000000000000000000c3";
+    await writeFile(f, '{"address":"0xpart' + JSON.stringify({ address: C, backend: "memory", createdAt: "t" }) + "\n");
+    expect((await readInventory(home.dir)).map((k) => k.address.toLowerCase())).toEqual([C]);
   });
 });
