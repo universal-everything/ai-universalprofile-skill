@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint b0e9d55a5705 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 60b20c86f57a (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -9158,7 +9158,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "b0e9d55a5705" : "source";
+var SOURCE = true ? "60b20c86f57a" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -19628,7 +19628,7 @@ function onboardingPaths(ctx, website = UNIVERSAL_RELAYER_WEBSITE) {
     {
       id: "universal-relayer",
       title: "Create it with the Universal Relayer (gas included)",
-      subtitle: `One subscription gives gas on several networks: ${listWords(networks.map((n) => n.name))}. My account is ready on all of them right away. This opens a separate website with its own terms.`,
+      subtitle: `One subscription gives gas on several networks: ${listWords(networks.map((n) => n.name))}. My account is ready on all of them right away. The relayer only pays the gas; it never controls your profile. This opens a separate website with its own terms.`,
       gas: "the Universal Relayer pays the gas (subscription)",
       journey: "J2-relayer",
       next: ["up permissions recommend", "up display address <controller>", "up profile join <profileAddress>"],

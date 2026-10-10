@@ -66,7 +66,7 @@ export function onboardingPaths(ctx: VerbContext, website: string | undefined = 
     {
       id: "universal-relayer",
       title: "Create it with the Universal Relayer (gas included)",
-      subtitle: `One subscription gives gas on several networks: ${listWords(networks.map((n) => n.name))}. My account is ready on all of them right away. This opens a separate website with its own terms.`,
+      subtitle: `One subscription gives gas on several networks: ${listWords(networks.map((n) => n.name))}. My account is ready on all of them right away. The relayer only pays the gas; it never controls your profile. This opens a separate website with its own terms.`,
       gas: "the Universal Relayer pays the gas (subscription)",
       journey: "J2-relayer",
       next: ["up permissions recommend", "up display address <controller>", "up profile join <profileAddress>"],
