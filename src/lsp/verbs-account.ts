@@ -145,11 +145,10 @@ defineVerb({
     const say = choices.length === 1
       ? `This will be my profile's address: ${choices[0].address}. It stays the same on every network.`
       : [
-          `My profile needs an address. It's permanent and the same on every network. I've prepared ${choices.length} options to choose from:`,
+          `My profile needs an address. It's permanent and the same on every network. I've prepared ${choices.length} options:`,
+          ...choices.map((c) => `${c.choice} · ${c.short.replace("..", "…")}`),
           "",
-          ...choices.map((c) => `${c.choice}. ${c.address}`),
-          "",
-          (media.length ? "The picture shows each address's pattern, with its number underneath. Apps show that pattern next to an address so it's easy to recognise at a glance. " : "") +
+          (media.length ? "The picture shows each address's pattern with its number. Apps show that pattern next to an address so it's easy to recognise at a glance. " : "") +
             "Which number do you like? It's only a matter of taste, everything else is identical. If you don't mind, I'll take number 1. You can still add a real profile picture later.",
         ].join("\n");
     return {
@@ -168,7 +167,7 @@ defineVerb({
         onChainCrossCheck: onChain,
         reproduce: a.salt ? undefined : `up account precompute --seed ${seed} --count ${a.count} --controller ${controller}${a.preset ? ` --preset ${a.preset}` : ""}`,
         next: [
-          "Tell the human `say` and attach the one picture in `media` in the same message (text first, then the picture). Never send separate unlabelled identicons and never send a picture without its explanation.",
+          "Tell the human `say` and attach the one picture in `media` in the same message (text first, then the picture). Never send separate unlabelled identicons, never send a picture without its explanation, never list full addresses (see references/onboarding-ux.md, step 3). After their choice, confirm it with the full address from `choices`.",
           `The human answers with a choice number n: deploy candidate n-1, i.e. up account deploy --seed ${seed} --candidate <n-1> --chain <id>   (or --salt <salt>)`,
         ],
       },

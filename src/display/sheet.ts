@@ -45,21 +45,25 @@ export interface SheetItem {
   address: string;
 }
 
-const IDENTICON_SCALE = 12; // 8 cells -> 96 px
+const IDENTICON_SCALE = 9; // 8 cells -> 72 px
 const NUMBER_SCALE = 4;
 const ADDRESS_SCALE = 2;
-const MARGIN = 24;
-const GAP = 24;
+const MARGIN = 20;
+const ROW_GAP = 16;
+const COL_GAP = 20;
 
-/** Renders the labelled identicons as one PNG (white background, dark text). */
+/**
+ * Renders the labelled identicons as one PNG (white background, dark text): one row per choice,
+ * "[identicon]  n  0x1a2b..9f0e". Rows, not one wide strip, because chat apps on phones crop or
+ * shrink wide images and the human must always see every number.
+ */
 export function candidateSheetPng(items: SheetItem[]): Buffer {
   if (!items.length) throw new Error("no candidates to draw");
   const iconSize = BLOCKIE_GRID * IDENTICON_SCALE;
-  const colWidth = Math.max(iconSize, ...items.map((it) => Math.max(textWidth(shortAddress(it.address), ADDRESS_SCALE), textWidth(it.label, NUMBER_SCALE))));
-  const numberH = GLYPH_H * NUMBER_SCALE;
-  const addressH = GLYPH_H * ADDRESS_SCALE;
-  const width = 2 * MARGIN + items.length * colWidth + (items.length - 1) * GAP;
-  const height = 2 * MARGIN + iconSize + 14 + numberH + 10 + addressH;
+  const numberW = Math.max(...items.map((it) => textWidth(it.label, NUMBER_SCALE)));
+  const addressW = Math.max(...items.map((it) => textWidth(shortAddress(it.address), ADDRESS_SCALE)));
+  const width = 2 * MARGIN + iconSize + COL_GAP + numberW + COL_GAP + addressW;
+  const height = 2 * MARGIN + items.length * iconSize + (items.length - 1) * ROW_GAP;
 
   const palette: Rgba[] = [[255, 255, 255, 255], [34, 34, 34, 255]];
   const colour = (c: [number, number, number]) => {
@@ -82,21 +86,19 @@ export function candidateSheetPng(items: SheetItem[]): Buffer {
   };
 
   items.forEach((it, i) => {
-    const x = MARGIN + i * (colWidth + GAP);
+    const y = MARGIN + i * (iconSize + ROW_GAP);
     const b = blockie(it.address);
     const bg = colour(b.colors.bgcolor);
     const fg = colour(b.colors.color);
     const spot = colour(b.colors.spotcolor);
-    const ix = x + Math.floor((colWidth - iconSize) / 2);
     b.grid.forEach((v, cell) => {
       const cx = cell % BLOCKIE_GRID;
       const cy = Math.floor(cell / BLOCKIE_GRID);
-      rect(ix + cx * IDENTICON_SCALE, MARGIN + cy * IDENTICON_SCALE, IDENTICON_SCALE, IDENTICON_SCALE, v ? (v === 1 ? fg : spot) : bg);
+      rect(MARGIN + cx * IDENTICON_SCALE, y + cy * IDENTICON_SCALE, IDENTICON_SCALE, IDENTICON_SCALE, v ? (v === 1 ? fg : spot) : bg);
     });
-    const numberY = MARGIN + iconSize + 14;
-    text(it.label, x + Math.floor((colWidth - textWidth(it.label, NUMBER_SCALE)) / 2), numberY, NUMBER_SCALE);
-    const short = shortAddress(it.address);
-    text(short, x + Math.floor((colWidth - textWidth(short, ADDRESS_SCALE)) / 2), numberY + numberH + 10, ADDRESS_SCALE);
+    const numberX = MARGIN + iconSize + COL_GAP;
+    text(it.label, numberX + numberW - textWidth(it.label, NUMBER_SCALE), y + Math.floor((iconSize - GLYPH_H * NUMBER_SCALE) / 2), NUMBER_SCALE);
+    text(shortAddress(it.address), numberX + numberW + COL_GAP, y + Math.floor((iconSize - GLYPH_H * ADDRESS_SCALE) / 2), ADDRESS_SCALE);
   });
   return encodeIndexedPng({ width, height, palette, pixels });
 }

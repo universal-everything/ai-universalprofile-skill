@@ -15,26 +15,26 @@ describe("address choice sheet", () => {
     expect(shortAddress(ADDRS[0])).toBe("0x0f41..1f1f");
   });
 
-  it("draws every identicon with the right colours, side by side, on one white image", () => {
+  it("draws one row per choice with the right identicon colours, on one white, phone-friendly image", () => {
     const img = decodePng(candidateSheetPng(ADDRS.map((address, i) => ({ label: String(i + 1), address }))));
-    expect(img.width).toBeGreaterThan(ADDRS.length * 96);
+    expect(img.height).toBe(2 * 20 + ADDRS.length * 72 + (ADDRS.length - 1) * 16);
+    expect(img.width).toBeLessThan(400); // narrow enough that chat apps show it whole
     expect(pixel(img, 0, 0)).toEqual([255, 255, 255]);
-    // Column width = widest label (short address at scale 2) = (12*6-1)*2 = 142 px; gap 24; margin 24.
     ADDRS.forEach((address, i) => {
       const b = blockie(address);
-      const x0 = 24 + i * (142 + 24) + Math.floor((142 - 96) / 2);
+      const y0 = 20 + i * (72 + 16);
       for (let cell = 0; cell < 64; cell++) {
         const v = b.grid[cell];
         const want = v === 0 ? b.colors.bgcolor : v === 1 ? b.colors.color : b.colors.spotcolor;
-        expect(pixel(img, x0 + (cell % 8) * 12 + 6, 24 + Math.floor(cell / 8) * 12 + 6)).toEqual(want);
+        expect(pixel(img, 20 + (cell % 8) * 9 + 4, y0 + Math.floor(cell / 8) * 9 + 4)).toEqual(want);
       }
     });
   });
 
-  it("prints dark label text under each identicon", () => {
+  it("prints dark label text next to each identicon", () => {
     const img = decodePng(candidateSheetPng([{ label: "1", address: ADDRS[0] }]));
     let dark = 0;
-    for (let y = 24 + 96; y < img.height; y++) for (let x = 0; x < img.width; x++) if (pixel(img, x, y).join() === "34,34,34") dark++;
+    for (let y = 0; y < img.height; y++) for (let x = 20 + 72; x < img.width; x++) if (pixel(img, x, y).join() === "34,34,34") dark++;
     expect(dark).toBeGreaterThan(100);
   });
 
