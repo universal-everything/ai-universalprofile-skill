@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint b7b1f314b3e0 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint df7b3a08cd71 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -282,6 +282,19 @@ var init_json = __esm({
 });
 
 // src/core/home.ts
+var home_exports = {};
+__export(home_exports, {
+  appendLine: () => appendLine,
+  ensureDir: () => ensureDir,
+  isJsonObject: () => isJsonObject,
+  paths: () => paths,
+  readJson: () => readJson,
+  readJsonStrict: () => readJsonStrict,
+  upHome: () => upHome,
+  writeFileAtomic: () => writeFileAtomic,
+  writeJson: () => writeJson,
+  writeJsonWithBackup: () => writeJsonWithBackup
+});
 import { appendFile, copyFile, mkdir, open, readFile, rename, writeFile, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -746,6 +759,12 @@ var init_rpc = __esm({
 });
 
 // src/chain/registry.ts
+var registry_exports = {};
+__export(registry_exports, {
+  LSP: () => LSP,
+  createRegistry: () => createRegistry,
+  loadOverlay: () => loadOverlay
+});
 import { readFileSync as readFileSync2, existsSync as existsSync3 } from "node:fs";
 function loadOverlay(home) {
   const f = paths.cache(home, "registry", "overlay.json");
@@ -2012,7 +2031,17 @@ var init_bundled = __esm({
 });
 
 // src/core/secret-guard.ts
-import { readFileSync as readFileSync3, realpathSync } from "node:fs";
+var secret_guard_exports = {};
+__export(secret_guard_exports, {
+  WITHHELD_MESSAGE: () => WITHHELD_MESSAGE,
+  assertNotKeyMaterialPath: () => assertNotKeyMaterialPath,
+  clearSecretsForTests: () => clearSecretsForTests,
+  containsSecret: () => containsSecret,
+  guardOutput: () => guardOutput,
+  registerSecret: () => registerSecret,
+  safeWords: () => safeWords
+});
+import { closeSync, fstatSync, openSync, readFileSync as readFileSync3, readSync, realpathSync } from "node:fs";
 import { resolve as resolve2, sep } from "node:path";
 function forms(secret) {
   const s = secret.trim().toLowerCase();
@@ -2054,6 +2083,20 @@ function indexedBackups() {
     return [];
   }
 }
+function startsLikeBackup(file2) {
+  let fd;
+  try {
+    fd = openSync(file2, "r");
+    if (!fstatSync(fd).isFile()) return false;
+    const buf = Buffer.alloc(160);
+    const n = readSync(fd, buf, 0, buf.length, 0);
+    return /^\uFEFF?\s*\{\s*"version"\s*:\s*2\s*,\s*"backupDate"\s*:/.test(buf.subarray(0, n).toString("utf8"));
+  } catch {
+    return false;
+  } finally {
+    if (fd !== void 0) closeSync(fd);
+  }
+}
 function assertNotKeyMaterialPath(file2, what = "file", opts = {}) {
   let real = resolve2(file2);
   try {
@@ -2071,19 +2114,22 @@ function assertNotKeyMaterialPath(file2, what = "file", opts = {}) {
     throw new UpError("BAD_ARGS", `refusing to read ${what} from the key store or a key file`, { hint: "key files are only ever used inside the skill for signing; pass a different file" });
   }
   if (!opts.allowBackups) {
-    const backupsDir2 = resolve2(paths.backups(upHome()));
-    let backupsReal = backupsDir2;
+    const backupsDir = resolve2(paths.backups(upHome()));
+    let backupsReal = backupsDir;
     try {
-      backupsReal = realpathSync(backupsDir2);
+      backupsReal = realpathSync(backupsDir);
     } catch {
     }
-    if (inside(backupsDir2) || inside(backupsReal) || /(^|[\\/])universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real)) {
+    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real) || startsLikeBackup(real)) {
       throw new UpError("BAD_ARGS", `refusing to read ${what} from the backups or a backup file`, { hint: "backup files hold encrypted (or, if asked for, plain) keys; only the backup verbs open them. Never read or send a backup file's contents" });
     }
   }
 }
 function safeWords(words) {
   return words.map((w) => /[0-9a-f]{32,}/i.test(w) ? "<hidden>" : w.length > 64 ? `${w.slice(0, 32)}…` : w).join(" ");
+}
+function clearSecretsForTests() {
+  secrets.length = 0;
 }
 var secrets, WITHHELD_MESSAGE;
 var init_secret_guard = __esm({
@@ -2695,10 +2741,10 @@ var init_assets2 = __esm({
 // src/tokens/metadata.ts
 import { decodeData, encodeArrayKey } from "./vendor-erc725.mjs";
 import { getAddress as getAddress3, keccak256 as keccak2564, toHex } from "./vendor-viem.mjs";
-function decodeKey(keyName2, value) {
+function decodeKey(keyName, value) {
   if (typeof value !== "string" || value === "0x") return void 0;
   try {
-    return decodeData([{ keyName: keyName2, value }], SCHEMAS)[0]?.value;
+    return decodeData([{ keyName, value }], SCHEMAS)[0]?.value;
   } catch {
     return void 0;
   }
@@ -3059,7 +3105,7 @@ var init_proc = __esm({
     SECRET_ENV_VARS = ["UP_TEST_EPHEMERAL_KEY", "UP_BACKUP_PASSPHRASE"];
     INJECTION_ENV = /^(LD_PRELOAD|LD_AUDIT|LD_LIBRARY_PATH|DYLD_.*)$/;
     SYSTEM_BIN_DIRS = ["/usr/bin", "/bin", "/usr/sbin", "/sbin", "/run/current-system/sw/bin"];
-    runProcess = (cmd, args, opts = {}) => new Promise((resolve8) => {
+    runProcess = (cmd, args, opts = {}) => new Promise((resolve7) => {
       const out = [];
       const err = [];
       let settled = false;
@@ -3068,7 +3114,7 @@ var init_proc = __esm({
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        resolve8(r);
+        resolve7(r);
       };
       let child;
       try {
@@ -3080,7 +3126,7 @@ var init_proc = __esm({
         });
       } catch (e) {
         const code = e.code;
-        return resolve8({ code: null, stdout: Buffer.alloc(0), stderr: "", error: { code: code === "ENOENT" ? "ENOENT" : code === "EACCES" ? "EACCES" : "SPAWN", message: `cannot start ${cmd}` } });
+        return resolve7({ code: null, stdout: Buffer.alloc(0), stderr: "", error: { code: code === "ENOENT" ? "ENOENT" : code === "EACCES" ? "EACCES" : "SPAWN", message: `cannot start ${cmd}` } });
       }
       const timer = setTimeout(() => {
         timedOut = true;
@@ -3313,6 +3359,18 @@ var init_env = __esm({
 });
 
 // src/signer/local-signer.ts
+var local_signer_exports = {};
+__export(local_signer_exports, {
+  SECP256K1_N: () => SECP256K1_N,
+  addressOf: () => addressOf,
+  assertValidPrivateKey: () => assertValidPrivateKey,
+  createLocalSigner: () => createLocalSigner,
+  generateKey: () => generateKey,
+  intendedValidatorDigest: () => intendedValidatorDigest,
+  isValidPrivateKey: () => isValidPrivateKey,
+  normalizePrivateKey: () => normalizePrivateKey,
+  storageId: () => storageId
+});
 import { concat, getAddress as getAddress4, isAddress as isAddress2, isHex as isHex3, keccak256 as keccak2566 } from "./vendor-viem.mjs";
 import { generatePrivateKey, privateKeyToAccount } from "./vendor-viem.mjs";
 function isValidPrivateKey(key) {
@@ -4295,6 +4353,12 @@ var init_windows_dpapi = __esm({
 });
 
 // src/signer/select.ts
+var select_exports = {};
+__export(select_exports, {
+  chainControllerList: () => chainControllerList,
+  controllerFor: () => controllerFor,
+  localControllers: () => localControllers
+});
 import { getAddress as getAddress6, isAddress as isAddress3 } from "./vendor-viem.mjs";
 function checked(c, where) {
   if (!c || typeof c.address !== "string" || !isAddress3(c.address, { strict: false }) || typeof c.backend !== "string") {
@@ -4804,6 +4868,17 @@ var init_profile_record = __esm({
 });
 
 // src/lsp/read.ts
+var read_exports = {};
+__export(read_exports, {
+  assertRpcChainId: () => assertRpcChainId,
+  ethCall: () => ethCall2,
+  getBalance: () => getBalance,
+  getCode: () => getCode2,
+  hasCode: () => hasCode,
+  latestBlock: () => latestBlock,
+  read: () => read2,
+  tryRead: () => tryRead2
+});
 import { decodeFunctionResult as decodeFunctionResult3, encodeFunctionData as encodeFunctionData4 } from "./vendor-viem.mjs";
 async function ethCall2(ctx, chainId, req) {
   try {
@@ -4857,6 +4932,17 @@ var init_read2 = __esm({
 });
 
 // src/lsp/abis.ts
+var abis_exports = {};
+__export(abis_exports, {
+  ERC1271_ABI: () => ERC1271_ABI,
+  ERC165_ABI: () => ERC165_ABI2,
+  KM_ABI: () => KM_ABI,
+  KM_INIT_ABI: () => KM_INIT_ABI,
+  LSP23_ABI: () => LSP23_ABI,
+  POST_DEPLOYMENT_MODULE_ABI: () => POST_DEPLOYMENT_MODULE_ABI,
+  UP_ABI: () => UP_ABI,
+  UP_INIT_ABI: () => UP_INIT_ABI
+});
 import { parseAbi as parseAbi4 } from "./vendor-viem.mjs";
 var UP_ABI, KM_ABI, LSP23_ABI, UP_INIT_ABI, KM_INIT_ABI, POST_DEPLOYMENT_MODULE_ABI, ERC165_ABI2, ERC1271_ABI;
 var init_abis = __esm({
@@ -4921,6 +5007,41 @@ var init_abis = __esm({
 });
 
 // src/lsp/constants.ts
+var constants_exports = {};
+__export(constants_exports, {
+  ADMIN_PERMISSIONS: () => ADMIN_PERMISSIONS,
+  ALL_PERMISSIONS: () => ALL_PERMISSIONS,
+  ALL_PERMISSIONS_HEX: () => ALL_PERMISSIONS_HEX,
+  CALLTYPE: () => CALLTYPE,
+  DATA_KEYS: () => DATA_KEYS,
+  ERC1271_FAIL: () => ERC1271_FAIL,
+  ERC1271_MAGIC: () => ERC1271_MAGIC,
+  ERC20_PROBES: () => ERC20_PROBES,
+  INTERFACE_IDS: () => INTERFACE_IDS2,
+  KNOWN_EXTENSION_SELECTORS: () => KNOWN_EXTENSION_SELECTORS,
+  LSP14_RENOUNCE_DELAY: () => LSP14_RENOUNCE_DELAY,
+  LSP14_RENOUNCE_PERIOD: () => LSP14_RENOUNCE_PERIOD,
+  LSP20_MAGIC: () => LSP20_MAGIC,
+  LSP25_VERSION: () => LSP25_VERSION,
+  OPERATIONS: () => OPERATIONS,
+  PERMISSIONS: () => PERMISSIONS,
+  PERMISSION_ALIASES: () => PERMISSION_ALIASES,
+  PERMISSION_BITS: () => PERMISSION_BITS,
+  PERMISSION_NAMES: () => PERMISSION_NAMES,
+  TYPE_IDS: () => TYPE_IDS,
+  URD_PERMISSIONS: () => URD_PERMISSIONS,
+  VERIFICATION_METHODS: () => VERIFICATION_METHODS,
+  WILDCARD_ADDRESS: () => WILDCARD_ADDRESS,
+  WILDCARD_BYTES4: () => WILDCARD_BYTES4,
+  allowedCallsKey: () => allowedCallsKey,
+  allowedDataKeysKey: () => allowedDataKeysKey,
+  extensionKey: () => extensionKey,
+  parseArrayLength: () => parseArrayLength,
+  permissionsArrayIndexKey: () => permissionsArrayIndexKey,
+  permissionsKey: () => permissionsKey,
+  uint128Hex: () => uint128Hex,
+  urdTypeKey: () => urdTypeKey
+});
 function permissionsKey(controller) {
   return DATA_KEYS.AddressPermissionsPermissionsPrefix + addr20(controller);
 }
@@ -4938,6 +5059,11 @@ function extensionKey(selector) {
   if (!/^[0-9a-f]{8}$/.test(s)) throw new Error(`invalid bytes4 selector: ${selector}`);
   return DATA_KEYS.LSP17ExtensionPrefix + s + "0".repeat(32);
 }
+function urdTypeKey(typeId) {
+  const t = typeId.toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]{64}$/.test(t)) throw new Error(`invalid bytes32 typeId: ${typeId}`);
+  return DATA_KEYS.LSP1UniversalReceiverDelegatePrefix + t.slice(0, 40);
+}
 function uint128Hex(n) {
   return "0x" + BigInt(n).toString(16).padStart(32, "0");
 }
@@ -4945,7 +5071,7 @@ function parseArrayLength(v) {
   if (!v || v === "0x") return 0n;
   return BigInt(v);
 }
-var PERMISSION_BITS, PERMISSION_NAMES, PERMISSIONS, PERMISSION_ALIASES, ALL_PERMISSIONS, URD_PERMISSIONS, ADMIN_PERMISSIONS, CALLTYPE, WILDCARD_ADDRESS, WILDCARD_BYTES4, DATA_KEYS, INTERFACE_IDS2, ERC1271_MAGIC, LSP25_VERSION, LSP14_RENOUNCE_DELAY, LSP14_RENOUNCE_PERIOD, KNOWN_EXTENSION_SELECTORS, addr20;
+var PERMISSION_BITS, PERMISSION_NAMES, PERMISSIONS, PERMISSION_ALIASES, ALL_PERMISSIONS, ALL_PERMISSIONS_HEX, URD_PERMISSIONS, ADMIN_PERMISSIONS, CALLTYPE, WILDCARD_ADDRESS, WILDCARD_BYTES4, DATA_KEYS, INTERFACE_IDS2, ERC20_PROBES, ERC1271_MAGIC, ERC1271_FAIL, LSP20_MAGIC, LSP25_VERSION, LSP14_RENOUNCE_DELAY, LSP14_RENOUNCE_PERIOD, TYPE_IDS, VERIFICATION_METHODS, OPERATIONS, KNOWN_EXTENSION_SELECTORS, addr20;
 var init_constants = __esm({
   "src/lsp/constants.ts"() {
     "use strict";
@@ -5000,6 +5126,7 @@ var init_constants = __esm({
       SUPER_STATIC_CALL: "SUPER_STATICCALL"
     };
     ALL_PERMISSIONS = 0x7f3f7fn;
+    ALL_PERMISSIONS_HEX = "0x00000000000000000000000000000000000000000000000000000000007f3f7f";
     URD_PERMISSIONS = PERMISSIONS.SUPER_SETDATA | PERMISSIONS.REENTRANCY;
     ADMIN_PERMISSIONS = PERMISSIONS.CHANGEOWNER | PERMISSIONS.ADDCONTROLLER | PERMISSIONS.EDITPERMISSIONS;
     CALLTYPE = {
@@ -5073,10 +5200,29 @@ var init_constants = __esm({
       ERC1155: "0xd9b67a26"
       // ERC-20 has no ERC-165 id: detect with probes (decimals()/totalSupply()/balanceOf()).
     };
+    ERC20_PROBES = { totalSupply: "0x18160ddd", balanceOf: "0x70a08231", decimals: "0x313ce567" };
     ERC1271_MAGIC = "0x1626ba7e";
+    ERC1271_FAIL = "0xffffffff";
+    LSP20_MAGIC = {
+      VERIFY_CALL_WITH_POST_VERIFICATION: "0xde928f01",
+      VERIFY_CALL_WITHOUT_POST_VERIFICATION: "0xde928f00",
+      VERIFY_CALL_RESULT: "0xd3fc45d3"
+    };
     LSP25_VERSION = 25n;
     LSP14_RENOUNCE_DELAY = 200n;
     LSP14_RENOUNCE_PERIOD = 200n;
+    TYPE_IDS = {
+      LSP0ValueReceived: "0x9c4705229491d365fb5434052e12a386d6771d976bea61070a8c694e8affea3d",
+      LSP0OwnershipTransferStarted: "0xe17117c9d2665d1dbeb479ed8058bbebde3c50ac50e2e65619f60006caac6926",
+      LSP0OwnershipTransferred_SenderNotification: "0xa4e59c931d14f7c8a7a35027f92ee40b5f2886b9fdcdb78f30bc5ecce5a2f814",
+      LSP0OwnershipTransferred_RecipientNotification: "0xceca317f109c43507871523e82dc2a3cc64dfa18f12da0b6db14f6e23f995538"
+    };
+    VERIFICATION_METHODS = {
+      "keccak256(utf8)": "0x6f357c6a",
+      "keccak256(bytes)": "0x8019f9b1",
+      ecdsa: "0xac75a10e"
+    };
+    OPERATIONS = { CALL: 0, CREATE: 1, CREATE2: 2, STATICCALL: 3, DELEGATECALL: 4 };
     KNOWN_EXTENSION_SELECTORS = {
       "0x3a871cdd": "validateUserOp (ERC-4337 v0.6, Extension4337)",
       "0x150b7a02": "onERC721Received (ERC-721 safe transfers)",
@@ -5834,8 +5980,8 @@ var init_client = __esm({
 });
 
 // src/relayer/registry.ts
-var registry_exports = {};
-__export(registry_exports, {
+var registry_exports2 = {};
+__export(registry_exports2, {
   clientFor: () => clientFor,
   getCapabilities: () => getCapabilities,
   listRelayers: () => listRelayers,
@@ -5889,515 +6035,14 @@ var init_registry2 = __esm({
   }
 });
 
-// src/chain/funding.ts
-var funding_exports = {};
-__export(funding_exports, {
-  ACTION_GAS: () => ACTION_GAS,
-  PRICE_API: () => PRICE_API,
-  STARTER_ACTIONS: () => STARTER_ACTIONS,
-  displaySymbol: () => displaySymbol,
-  friendlyAmount: () => friendlyAmount,
-  howLong: () => howLong,
-  priceIdFor: () => priceIdFor,
-  priceUsd: () => priceUsd,
-  starterUsd: () => starterUsd
-});
-import { formatEther, keccak256 as keccak25610, parseEther, toHex as toHex2 } from "./vendor-viem.mjs";
-function displaySymbol(symbol) {
-  return /ETH$/.test(symbol) && symbol !== "ETH" && !/^W/.test(symbol) ? "ETH" : symbol;
-}
-function priceIdFor(symbol) {
-  const s = displaySymbol(symbol);
-  if (s === "ETH") return "ethereum";
-  const ids = { LYX: "lukso-token-2", BNB: "binancecoin", POL: "polygon-ecosystem-token", AVAX: "avalanche-2" };
-  if (ids[s]) return ids[s];
-  if (/^(xDAI|USDC|USDT0|PathUSD)/.test(s)) return "usd";
-  return void 0;
-}
-async function priceUsd(ctx, symbol, opts = {}) {
-  const id = priceIdFor(symbol);
-  if (!id) return void 0;
-  if (id === "usd") return 1;
-  const now = opts.now ?? Date.now();
-  const cacheFile = paths.cache(ctx.home, "prices.json");
-  const cache2 = await readJson(cacheFile, {});
-  const hit = cache2[id];
-  if (hit && now - hit.at < PRICE_TTL_MS && hit.usd > 0) return hit.usd;
-  try {
-    const r = await httpJson(`${PRICE_API}?ids=${id}&vs_currencies=usd`, { fetch: opts.fetch, timeoutMs: 8e3, retries: 1, label: "price API" });
-    const usd = r.status === 200 ? r.body?.[id]?.usd : void 0;
-    if (typeof usd === "number" && usd > 0) {
-      cache2[id] = { usd, at: now };
-      await writeJson(cacheFile, cache2).catch(() => {
-      });
-      return usd;
-    }
-  } catch {
-  }
-  return hit?.usd;
-}
-function friendlyAmount(wei) {
-  if (wei <= 0n) return "0";
-  const s = formatEther(wei);
-  const n = Number(s);
-  const mag = Math.floor(Math.log10(n));
-  const step = 10 ** (mag - 1);
-  const up = Math.ceil(n / step - 1e-9) * step;
-  return up >= 1 ? String(Number(up.toPrecision(2))) : up.toFixed(Math.max(0, 1 - mag));
-}
-function starterUsd(chainId, needUsd) {
-  const step = (x) => USD_STEPS.find((s) => s >= x) ?? Math.ceil(x);
-  const base = needUsd !== void 0 && Number.isFinite(needUsd) ? step(needUsd) : 1;
-  if (chainId === 1) return { min: Math.max(2, base), max: Math.max(10, base) };
-  return { min: base, max: base };
-}
-function howLong(actions) {
-  if (!Number.isFinite(actions) || actions >= 1e3) return "that's enough for a very long time of normal activity (likely a year or more)";
-  if (actions >= 200) return `that's enough for hundreds of actions, so it lasts a good while`;
-  if (actions >= 20) return `that's enough for roughly ${Math.floor(actions / 10) * 10} actions afterwards`;
-  if (actions >= 3) return `that's only enough for a few actions afterwards (about ${Math.floor(actions)}), because gas is expensive here`;
-  return "that leaves very little for actions afterwards, because gas is expensive here";
-}
-function usdToWei(usd, priceUsd2) {
-  return parseEther((usd / priceUsd2).toFixed(18));
-}
-async function deploymentCostWei(ctx, chainId, from) {
-  try {
-    const { planDeployment: planDeployment2, DEFAULT_IMPL_VERSION: DEFAULT_IMPL_VERSION2 } = await Promise.resolve().then(() => (init_lsp23(), lsp23_exports));
-    const { getPreset: getPreset2, toBytes32: toBytes322 } = await Promise.resolve().then(() => (init_permissions(), permissions_exports));
-    const salt = keccak25610(toHex2(`funding-estimate-${from}`));
-    const plan = planDeployment2({ salt, controller: from, permissions: toBytes322(getPreset2("agent-owner").permissions), implementationVersion: DEFAULT_IMPL_VERSION2 });
-    const g = await gasCheck(ctx, from, { chainId, to: plan.factory, data: plan.deployCalldata });
-    return g.maxCostWei;
-  } catch {
-    return void 0;
-  }
-}
-async function relayerCoverage(ctx, chainId, key) {
-  try {
-    const { selectRelayer: selectRelayer2 } = await Promise.resolve().then(() => (init_registry2(), registry_exports));
-    const r = await selectRelayer2(ctx, chainId);
-    if (!r) return void 0;
-    const profile = await ctx.profile(void 0, chainId).catch(() => void 0);
-    if (!profile) return void 0;
-    const { readControllerPermissions: readControllerPermissions2 } = await Promise.resolve().then(() => (init_profile(), profile_exports));
-    const { resolveKeyManager: resolveKeyManager2 } = await Promise.resolve().then(() => (init_profile(), profile_exports));
-    const km = await resolveKeyManager2(ctx, chainId, profile).catch(() => void 0);
-    if (!km) return void 0;
-    const perms = await readControllerPermissions2(ctx, chainId, profile, key).catch(() => void 0);
-    if (!perms?.permissions.names.includes("EXECUTE_RELAY_CALL")) return void 0;
-    try {
-      const { getVerb: getVerb2 } = await Promise.resolve().then(() => (init_verbs(), verbs_exports));
-      const q3 = await getVerb2("relayer quota").run(ctx, { chain: String(chainId), relayer: r.name });
-      const d = q3?.data ?? {};
-      if (d.available === false) return { name: r.name, quotaReadable: false };
-      return { name: r.name, quota: d.quota !== void 0 ? String(d.quota) : void 0, unit: d.unit, hasQuota: d.hasQuota, quotaReadable: true };
-    } catch {
-      return { name: r.name, quotaReadable: false };
-    }
-  } catch {
-    return void 0;
-  }
-}
-var PRICE_API, PRICE_TTL_MS, ACTION_GAS, STARTER_ACTIONS, USD_STEPS;
-var init_funding = __esm({
-  "src/chain/funding.ts"() {
-    "use strict";
-    init_verbs();
-    init_errors();
-    init_home();
-    init_http();
-    init_tx();
-    PRICE_API = "https://api.coingecko.com/api/v3/simple/price";
-    PRICE_TTL_MS = 10 * 6e4;
-    ACTION_GAS = 150000n;
-    STARTER_ACTIONS = 20;
-    USD_STEPS = [1, 2, 5, 10, 20, 50];
-    defineVerb({
-      name: "funding suggest",
-      group: "chains",
-      summary: "How much native coin to ask the human to send to the agent's address on a network: about $1 worth to create the profile plus some gas, about $10 worth for more actions (never less than the current deployment cost). Plain-language text included.",
-      description: "Uses a live price (CoinGecko, cached 10 minutes) and an on-chain estimate of the profile deployment on that network. Without a price it suggests a coin amount only and makes no dollar claim. Show the QR of the address (up display address <address>) together with `text`.",
-      risk: "read",
-      params: [
-        { name: "address", type: "string", description: "Address to fund (default: this agent's key for the chain)." },
-        { name: "purpose", type: "string", description: "setup: first funding (create the profile + some gas); refill: the agent is running low.", enum: ["setup", "refill"], default: "setup" }
-      ],
-      examples: ["up funding suggest --chain lukso", "up funding suggest --chain ethereum", "up funding suggest --chain base --purpose refill"],
-      async run(ctx, a) {
-        const chainId = ctx.chainId(a.chain);
-        const chain = ctx.registry.chain(chainId);
-        const address = a.address ? a.address : (await ctx.signer(chainId)).address;
-        const symbol = displaySymbol(chain.nativeSymbol);
-        const [price, deployCost, balanceHex, gasPriceHex] = await Promise.all([
-          chain.testnet ? Promise.resolve(void 0) : priceUsd(ctx, chain.nativeSymbol),
-          // test coins have no price
-          deploymentCostWei(ctx, chainId, address),
-          ctx.rpc.request(chainId, "eth_getBalance", [address, "latest"]),
-          ctx.rpc.request(chainId, "eth_gasPrice", []).catch(() => void 0)
-        ]);
-        const gasPrice = gasPriceHex ? BigInt(gasPriceHex) : void 0;
-        const weiToUsd = (wei) => price ? Number(formatEther(wei)) * price : void 0;
-        const actionUsd = gasPrice !== void 0 ? weiToUsd(gasPrice * ACTION_GAS) : void 0;
-        const deployUsd = deployCost !== void 0 ? weiToUsd(deployCost) : void 0;
-        const needUsd = actionUsd !== void 0 && deployUsd !== void 0 ? deployUsd * 1.5 + actionUsd * STARTER_ACTIONS : void 0;
-        const floor = deployCost ? deployCost * 3n / 2n : 0n;
-        const max = (x, y) => x > y ? x : y;
-        const tier = starterUsd(chainId, needUsd);
-        const starterMinWei = price ? max(usdToWei(tier.min, price), floor) : floor * 2n;
-        const starterWei = price ? max(usdToWei(tier.max, price), floor) : floor * 2n;
-        const moreWei = price ? max(usdToWei(10, price), starterWei * 2n) : starterWei * 10n;
-        if (starterWei === 0n) throw new UpError("NETWORK_ERROR", `could not estimate gas or price on ${chain.name}`, { hint: `retry, or check the network: up chains verify ${chainId}` });
-        const usdOf = (wei) => price ? Math.round(Number(formatEther(wei)) * price * 100) / 100 : void 0;
-        const balanceWei = BigInt(balanceHex);
-        const purpose = a.purpose === "refill" ? "refill" : "setup";
-        const s = {
-          chainId,
-          network: chain.name,
-          symbol,
-          address,
-          priceUsd: price,
-          deploymentCost: deployCost ? formatEther(deployCost) : void 0,
-          balance: formatEther(balanceWei),
-          balanceUsd: usdOf(balanceWei),
-          actionUsd: actionUsd !== void 0 ? Math.round(actionUsd * 1e4) / 1e4 : void 0,
-          // setup: below the suggested start budget; refill: below half of it (a few actions left)
-          low: purpose === "refill" ? balanceWei < starterMinWei / 2n : balanceWei < starterMinWei,
-          starter: {
-            amount: friendlyAmount(starterWei),
-            usd: usdOf(starterWei),
-            ...price && tier.min !== tier.max ? { range: { min: friendlyAmount(starterMinWei), max: friendlyAmount(starterWei), usdMin: tier.min, usdMax: tier.max } } : {}
-          },
-          more: { amount: friendlyAmount(moreWei), usd: usdOf(moreWei) }
-        };
-        const relay = await relayerCoverage(ctx, chainId, address);
-        if (relay) {
-          s.relayer = relay;
-          if (relay.hasQuota !== false) {
-            s.gasNotNeeded = true;
-            s.low = false;
-            const quotaText = relay.quotaReadable && relay.quota !== void 0 ? ` (quota left: ${relay.quota}${relay.unit ? ` ${relay.unit}` : ""})` : "";
-            return { data: s, text: `On ${chain.name} the relayer ${relay.name} pays the gas for my actions${quotaText}, so I don't need any coins for gas there.` };
-          }
-        }
-        const usd = (v) => v !== void 0 ? ` (about $${v < 10 ? v.toFixed(2) : Math.round(v)})` : "";
-        const ask = s.starter.range ? `about ${s.starter.range.min}–${s.starter.range.max} ${symbol} (about $${s.starter.range.usdMin}–$${s.starter.range.usdMax})` : `about ${s.starter.amount} ${symbol}${usd(s.starter.usd)}`;
-        const test = chain.testnet ? " (test coins, e.g. from a faucet)" : "";
-        const text = purpose === "refill" && !s.low ? `I still have ${friendlyAmount(balanceWei)} ${symbol}${usd(s.balanceUsd)} for gas on ${chain.name}; that's enough for now, no top-up needed.` : purpose === "refill" ? [
-          `I'm running low on gas on ${chain.name}: I have ${friendlyAmount(balanceWei)} ${symbol}${usd(s.balanceUsd)} left.`,
-          `Could you top me up with ${ask}${test} to my gas address ${address} (QR attached)? Then I can keep acting for you there.`,
-          `For a bigger buffer, about ${s.more.amount} ${symbol}${usd(s.more.usd)}.`
-        ].join(" ") : [
-          `Please send ${ask}${test} on ${chain.name} to my gas address ${address} (QR attached).`,
-          `That covers creating the profile, and ${actionUsd !== void 0 && actionUsd > 0 ? howLong(((price ? tier.min : 0) - (deployUsd ?? 0)) / actionUsd) : "leaves gas so I can keep acting for you afterwards without running out right away"}.`,
-          `If you'd like me to do more right away, send about ${s.more.amount} ${symbol}${usd(s.more.usd)} instead.`,
-          "This is my own gas money: with it I do everything myself, so you never have to sign anything."
-        ].join(" ");
-        return { data: s, text };
-      }
-    });
-  }
-});
-
-// src/lsp/lsp23.ts
-var lsp23_exports = {};
-__export(lsp23_exports, {
-  DEFAULT_IMPL_VERSION: () => DEFAULT_IMPL_VERSION,
-  buildInitialData: () => buildInitialData,
-  candidateSalts: () => candidateSalts,
-  checkPrerequisites: () => checkPrerequisites,
-  computeERC1167Addresses: () => computeERC1167Addresses,
-  computeOnChain: () => computeOnChain,
-  deployFromManifest: () => deployFromManifest,
-  erc1167InitCode: () => erc1167InitCode,
-  loadManifest: () => loadManifest,
-  manifestFromPlan: () => manifestFromPlan,
-  planDeployment: () => planDeployment,
-  readProfileRecord: () => readProfileRecord,
-  resolveImplementations: () => resolveImplementations,
-  saveManifest: () => saveManifest,
-  verifyDeployment: () => verifyDeployment,
-  verifyManifest: () => verifyManifest,
-  writeProfileRecord: () => writeProfileRecord
-});
-import { concat as concat2, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData5, encodePacked as encodePacked2, formatEther as formatEther2, getAddress as getAddress16, getContractAddress, keccak256 as keccak25611 } from "./vendor-viem.mjs";
-function erc1167InitCode(implementation) {
-  return concat2(["0x3d602d80600a3d3981f3363d3d373d3d3d363d73", getAddress16(implementation), "0x5af43d82803e903d91602b57fd5bf3"]);
-}
-function resolveImplementations(inputs) {
-  const v = inputs.implementationVersion ?? DEFAULT_IMPL_VERSION;
-  const upInit = inputs.upInit ?? LSP.UP_INIT[v];
-  const kmInit = inputs.kmInit ?? LSP.KM_INIT[v];
-  const urd = inputs.urd ?? LSP.URD[v];
-  if (!upInit || !kmInit || !urd) throw new UpError("BAD_ARGS", `no canonical UP/KM/URD implementation for version ${v}`, { hint: `known versions: ${Object.keys(LSP.UP_INIT).join(", ")}` });
-  return {
-    version: v,
-    factory: getAddress16(inputs.factory ?? LSP.LSP23_FACTORY),
-    postDeploymentModule: getAddress16(inputs.postDeploymentModule ?? LSP.UP_INIT_POST_DEPLOYMENT_MODULE),
-    upInit: getAddress16(upInit),
-    kmInit: getAddress16(kmInit),
-    urd: getAddress16(urd)
-  };
-}
-function buildInitialData(controller, permissions, urd, opts = {}) {
-  const controllers = [{ address: getAddress16(controller), permissions }, ...(opts.extraControllers ?? []).map((c) => ({ address: getAddress16(c.address), permissions: c.permissions }))];
-  const seen = /* @__PURE__ */ new Set();
-  for (const c of controllers) {
-    if (seen.has(c.address)) throw new UpError("BAD_ARGS", `controller ${c.address} listed twice`);
-    if (c.address === getAddress16(urd)) throw new UpError("BAD_ARGS", "a controller cannot be the Universal Receiver Delegate");
-    if (!/^0x[0-9a-fA-F]{64}$/.test(c.permissions) || BigInt(c.permissions) === 0n) throw new UpError("BAD_ARGS", `controller ${c.address} needs a non-zero bytes32 permission value`);
-    seen.add(c.address);
-  }
-  const dataKeys = [DATA_KEYS["SupportedStandards:LSP3Profile"]];
-  const dataValues = [DATA_KEYS.SupportedStandardsLSP3Value];
-  if (opts.lsp3 && opts.lsp3 !== "0x") {
-    dataKeys.push(DATA_KEYS.LSP3Profile);
-    dataValues.push(opts.lsp3);
-  }
-  dataKeys.push(DATA_KEYS.LSP1UniversalReceiverDelegate, permissionsKey(urd));
-  dataValues.push(getAddress16(urd).toLowerCase(), toBytes32(URD_PERMISSIONS));
-  for (const c of controllers) {
-    dataKeys.push(permissionsKey(c.address));
-    dataValues.push(c.permissions.toLowerCase());
-  }
-  const listed = [...controllers.map((c) => c.address), getAddress16(urd)];
-  dataKeys.push(DATA_KEYS["AddressPermissions[]"]);
-  dataValues.push(uint128Hex(listed.length));
-  listed.forEach((a, i) => {
-    dataKeys.push(permissionsArrayIndexKey(i));
-    dataValues.push(a.toLowerCase());
-  });
-  return { dataKeys, dataValues };
-}
-function planDeployment(inputs) {
-  if (!/^0x[0-9a-fA-F]{64}$/.test(inputs.salt)) throw new UpError("BAD_ARGS", "salt must be 32 bytes hex");
-  const impl = resolveImplementations(inputs);
-  const { dataKeys, dataValues } = buildInitialData(inputs.controller, inputs.permissions, impl.urd, { lsp3: inputs.lsp3, extraControllers: inputs.extraControllers });
-  const postDeploymentModuleCalldata = encodeAbiParameters2([{ type: "bytes32[]" }, { type: "bytes[]" }], [dataKeys, dataValues]);
-  const primary = {
-    salt: inputs.salt.toLowerCase(),
-    fundingAmount: 0n,
-    implementationContract: impl.upInit,
-    initializationCalldata: encodeFunctionData5({ abi: UP_INIT_ABI, functionName: "initialize", args: [impl.postDeploymentModule] })
-  };
-  const secondary = {
-    fundingAmount: 0n,
-    implementationContract: impl.kmInit,
-    initializationCalldata: encodeFunctionData5({ abi: KM_INIT_ABI, functionName: "initialize", args: ["0x0000000000000000000000000000000000000000"] }).slice(0, 10),
-    addPrimaryContractAddress: true,
-    extraInitializationParams: "0x"
-  };
-  const { profile, keyManager, generatedSalt } = computeERC1167Addresses(impl.factory, primary, secondary, impl.postDeploymentModule, postDeploymentModuleCalldata);
-  const deployCalldata = encodeFunctionData5({ abi: LSP23_ABI, functionName: "deployERC1167Proxies", args: [primary, secondary, impl.postDeploymentModule, postDeploymentModuleCalldata] });
-  return {
-    factory: impl.factory,
-    postDeploymentModule: impl.postDeploymentModule,
-    implementations: {
-      universalProfileInit: { version: impl.version, address: impl.upInit },
-      keyManagerInit: { version: impl.version, address: impl.kmInit },
-      universalReceiverDelegate: { version: impl.version, address: impl.urd }
-    },
-    dataKeys,
-    dataValues,
-    primaryContractDeploymentInit: { ...primary, fundingAmount: "0" },
-    secondaryContractDeploymentInit: { ...secondary, fundingAmount: "0" },
-    postDeploymentModuleCalldata,
-    generatedSalt,
-    profile,
-    keyManager,
-    deployCalldata
-  };
-}
-function computeERC1167Addresses(factory, primary, secondary, postDeploymentModule, postDeploymentModuleCalldata) {
-  const generatedSalt = keccak25611(
-    encodeAbiParameters2(
-      [{ type: "bytes32" }, { type: "address" }, { type: "bytes" }, { type: "bool" }, { type: "bytes" }, { type: "address" }, { type: "bytes" }],
-      [primary.salt, secondary.implementationContract, secondary.initializationCalldata, secondary.addPrimaryContractAddress, secondary.extraInitializationParams, postDeploymentModule, postDeploymentModuleCalldata]
-    )
-  );
-  const profile = getContractAddress({ opcode: "CREATE2", from: factory, salt: generatedSalt, bytecodeHash: keccak25611(erc1167InitCode(primary.implementationContract)) });
-  const keyManager = getContractAddress({ opcode: "CREATE2", from: factory, salt: keccak25611(encodePacked2(["address"], [profile])), bytecodeHash: keccak25611(erc1167InitCode(secondary.implementationContract)) });
-  return { profile, keyManager, generatedSalt };
-}
-function candidateSalts(seed, count, offset = 0) {
-  if (!/^0x[0-9a-fA-F]{64}$/.test(seed)) throw new UpError("BAD_ARGS", "seed must be 32 bytes hex");
-  if (!Number.isInteger(count) || count < 1 || count > 100) throw new UpError("BAD_ARGS", "count must be 1..100");
-  return Array.from({ length: count }, (_, i) => keccak25611(encodePacked2(["bytes32", "uint256"], [seed, BigInt(offset + i)])));
-}
-async function computeOnChain(ctx, chainId, plan) {
-  const p = { ...plan.primaryContractDeploymentInit, fundingAmount: 0n };
-  const s = { ...plan.secondaryContractDeploymentInit, fundingAmount: 0n };
-  const [profile, keyManager] = await read2(ctx, chainId, plan.factory, LSP23_ABI, "computeERC1167Addresses", [p, s, plan.postDeploymentModule, plan.postDeploymentModuleCalldata]);
-  return { profile: getAddress16(profile), keyManager: getAddress16(keyManager) };
-}
-function manifestFromPlan(inputs, plan, extra = {}) {
-  const { deployCalldata, ...rest } = plan;
-  return {
-    version: 1,
-    kind: "lsp23-erc1167-up",
-    profile: plan.profile,
-    keyManager: plan.keyManager,
-    controller: getAddress16(inputs.controller),
-    preset: inputs.preset,
-    permissions: inputs.permissions,
-    permissionNames: decodePermissions(inputs.permissions).names,
-    extraControllers: inputs.extraControllers,
-    lsp3: inputs.lsp3,
-    salt: plan.primaryContractDeploymentInit.salt,
-    seed: extra.seed,
-    candidateIndex: extra.candidateIndex,
-    plan: rest,
-    deployCalldata,
-    chains: [],
-    deployments: {},
-    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    note: "Replaying deployCalldata through the LSP23 factory on another chain yields the same profile and Key Manager addresses. Changing ANY input (controller, permissions, salt, versions, LSP3 value) changes the address."
-  };
-}
-async function loadManifest(home, profile) {
-  const r = await readProfileRecord(home, profile);
-  return r.deployment;
-}
-async function saveManifest(home, m) {
-  await updateProfileRecord(home, m.profile, (latest) => {
-    const cur = latest.deployment;
-    if (!cur || cur.profile !== m.profile || cur.deployCalldata !== m.deployCalldata) return { deployment: m };
-    return { deployment: { ...m, chains: [.../* @__PURE__ */ new Set([...cur.chains ?? [], ...m.chains])], deployments: { ...cur.deployments ?? {}, ...m.deployments } } };
-  });
-}
-function verifyManifest(m) {
-  const p = m.plan;
-  const c = computeERC1167Addresses(p.factory, p.primaryContractDeploymentInit, p.secondaryContractDeploymentInit, p.postDeploymentModule, p.postDeploymentModuleCalldata);
-  const deploy = encodeFunctionData5({
-    abi: LSP23_ABI,
-    functionName: "deployERC1167Proxies",
-    args: [{ ...p.primaryContractDeploymentInit, fundingAmount: 0n }, { ...p.secondaryContractDeploymentInit, fundingAmount: 0n }, p.postDeploymentModule, p.postDeploymentModuleCalldata]
-  });
-  const ok = c.profile === getAddress16(m.profile) && c.keyManager === getAddress16(m.keyManager) && deploy.toLowerCase() === m.deployCalldata.toLowerCase();
-  return { ok, profile: c.profile, keyManager: c.keyManager };
-}
-async function checkPrerequisites(ctx, chainId, plan) {
-  const req = {
-    LSP23LinkedContractsFactory: plan.factory,
-    UniversalProfileInitPostDeploymentModule: plan.postDeploymentModule,
-    UniversalProfileInit: plan.implementations.universalProfileInit.address,
-    LSP6KeyManagerInit: plan.implementations.keyManagerInit.address,
-    LSP1UniversalReceiverDelegateUP: plan.implementations.universalReceiverDelegate.address
-  };
-  const out = {};
-  for (const [n, a] of Object.entries(req)) out[n] = await hasCode(ctx, chainId, a);
-  return out;
-}
-async function verifyDeployment(ctx, chainId, m) {
-  const km = await resolveKeyManager(ctx, chainId, m.profile);
-  const ctl = await readControllerPermissions(ctx, chainId, m.profile, m.controller);
-  const urd = await getData(ctx, chainId, m.profile, DATA_KEYS.LSP1UniversalReceiverDelegate);
-  return {
-    profileHasCode: await hasCode(ctx, chainId, m.profile),
-    keyManagerHasCode: await hasCode(ctx, chainId, m.keyManager),
-    ownerIsKeyManager: km.owner === getAddress16(m.keyManager),
-    keyManagerTargetIsProfile: km.keyManager === getAddress16(m.keyManager),
-    supportsLSP0: await supportsInterface(ctx, chainId, m.profile, INTERFACE_IDS2.LSP0ERC725Account),
-    keyManagerSupportsLSP6: await supportsInterface(ctx, chainId, m.keyManager, INTERFACE_IDS2.LSP6KeyManager),
-    controllerPermissionsMatch: ctl.permissions.hex.toLowerCase() === m.permissions.toLowerCase(),
-    universalReceiverDelegateSet: urd.toLowerCase() === m.plan.implementations.universalReceiverDelegate.address.toLowerCase()
-  };
-}
-async function deployFromManifest(ctx, signer, m, chainId, verb = "account deploy") {
-  const v = verifyManifest(m);
-  if (!v.ok) throw new UpError("INTERNAL", "deployment manifest is inconsistent (stored addresses/calldata do not re-derive)", { hint: "do not edit manifests by hand; re-run up account precompute", details: v });
-  const prerequisites = await checkPrerequisites(ctx, chainId, m.plan);
-  const missing = Object.entries(prerequisites).filter(([, ok]) => !ok).map(([n]) => n);
-  if (missing.length) {
-    throw new UpError("NOT_DEPLOYED", `the canonical LSP contracts are missing on chain ${chainId}: ${missing.join(", ")}`, {
-      hint: "these are deployed through Nick's factory with fixed salts; check: up chains verify " + chainId,
-      details: prerequisites
-    });
-  }
-  const onchain = await computeOnChain(ctx, chainId, m.plan);
-  const onChainCompute = { ...onchain, matches: onchain.profile === getAddress16(m.profile) && onchain.keyManager === getAddress16(m.keyManager) };
-  if (!onChainCompute.matches) {
-    throw new UpError("INTERNAL", `factory on chain ${chainId} computes ${onchain.profile}/${onchain.keyManager}, manifest says ${m.profile}/${m.keyManager}`, { hint: "the factory at the canonical address behaves differently on this chain; do not deploy", details: onChainCompute });
-  }
-  const confirmation = {
-    action: "deploy Universal Profile via LSP23",
-    chainId,
-    profile: m.profile,
-    keyManager: m.keyManager,
-    factory: m.plan.factory,
-    gasPayer: `controller EOA ${signer.address}`,
-    initialController: m.controller,
-    controllerPermissions: { hex: m.permissions, names: m.permissionNames, preset: m.preset },
-    universalReceiverDelegate: m.plan.implementations.universalReceiverDelegate.address,
-    implementations: m.plan.implementations,
-    salt: m.salt,
-    value: "0",
-    calldata: m.deployCalldata
-  };
-  if (await hasCode(ctx, chainId, m.profile)) {
-    const verified2 = await verifyDeployment(ctx, chainId, m);
-    const rec = { chainId, status: "already-deployed", deployedAt: (/* @__PURE__ */ new Date()).toISOString(), verified: verified2 };
-    m.deployments[String(chainId)] = { ...m.deployments[String(chainId)] ?? {}, ...rec };
-    if (!m.chains.includes(chainId)) m.chains.push(chainId);
-    if (!ctx.flags.dryRun) await saveManifest(ctx.home, m);
-    return { chainId, profile: m.profile, keyManager: m.keyManager, status: "already-deployed", verified: verified2, onChainCompute, prerequisites, confirmation };
-  }
-  await simulate(ctx, { chainId, from: signer.address, to: m.plan.factory, data: m.deployCalldata });
-  const g = await gasCheck(ctx, signer.address, { chainId, to: m.plan.factory, data: m.deployCalldata });
-  const symbol = await (async () => {
-    try {
-      const { displaySymbol: displaySymbol2 } = await Promise.resolve().then(() => (init_funding(), funding_exports));
-      return displaySymbol2(ctx.registry.chain(chainId).nativeSymbol);
-    } catch {
-      return "native";
-    }
-  })();
-  const gasInfo = { payer: signer.address, symbol, maxCost: formatEther2(g.maxCostWei), balance: formatEther2(g.balanceWei), enough: g.enough, ...g.enough ? {} : { missing: formatEther2(g.shortfallWei), suggestedFunding: formatEther2(g.suggestedFundingWei) } };
-  confirmation.gas = gasInfo;
-  if (!g.enough && !ctx.flags.dryRun) {
-    throw new UpError("TX_FAILED", `the agent's key ${signer.address} needs gas on chain ${chainId}: it has ${gasInfo.balance} ${symbol}, the deployment may cost up to ${gasInfo.maxCost} ${symbol}`, {
-      hint: `ask the human to send about ${gasInfo.suggestedFunding} ${symbol} to ${signer.address} (show it as a QR: up display address ${signer.address} --chain ${chainId}); then deploy. The human only sends gas; never ask them to sign, connect a wallet or pay the deployment`,
-      details: { reason: "needs-gas", gas: gasInfo }
-    });
-  }
-  await ctx.consent({ verb, risk: "write", chainId, summary: confirmation, value: 0n, target: m.plan.factory, selector: m.deployCalldata.slice(0, 10) });
-  if (ctx.flags.dryRun) return { chainId, profile: m.profile, keyManager: m.keyManager, status: "dry-run", onChainCompute, prerequisites, confirmation, gas: gasInfo };
-  const tx = await sendTx(ctx, signer, { chainId, to: m.plan.factory, data: m.deployCalldata });
-  const verified = await verifyDeployment(ctx, chainId, m);
-  const allOk = Object.values(verified).every(Boolean);
-  m.deployments[String(chainId)] = { chainId, status: "deployed", txHash: tx.hash, blockNumber: tx.blockNumber, deployedAt: (/* @__PURE__ */ new Date()).toISOString(), deployer: signer.address, verified };
-  if (!m.chains.includes(chainId)) m.chains.push(chainId);
-  await saveManifest(ctx.home, m);
-  if (!allOk) {
-    throw new UpError("TX_FAILED", `deployment transaction ${tx.hash} succeeded but post-deployment checks failed`, { details: verified });
-  }
-  return { chainId, profile: m.profile, keyManager: m.keyManager, status: "deployed", txHash: tx.hash, blockNumber: tx.blockNumber, gasUsed: tx.gasUsed, explorerUrl: tx.explorerUrl, verified, onChainCompute, prerequisites, confirmation };
-}
-var DEFAULT_IMPL_VERSION;
-var init_lsp23 = __esm({
-  "src/lsp/lsp23.ts"() {
-    "use strict";
-    init_errors();
-    init_profile_record();
-    init_registry();
-    init_tx();
-    init_abis();
-    init_constants();
-    init_permissions();
-    init_read2();
-    init_profile();
-    DEFAULT_IMPL_VERSION = "0.14.0";
-  }
-});
-
 // src/lsp/controllers.ts
-import { encodeFunctionData as encodeFunctionData6, getAddress as getAddress22 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData5, getAddress as getAddress16 } from "./vendor-viem.mjs";
 function setDataPayload(keys, values) {
   if (keys.length !== values.length || keys.length === 0) throw new UpError("BAD_ARGS", "setData needs matching, non-empty keys and values");
-  return keys.length === 1 ? encodeFunctionData6({ abi: UP_ABI, functionName: "setData", args: [keys[0], values[0]] }) : encodeFunctionData6({ abi: UP_ABI, functionName: "setDataBatch", args: [keys, values] });
+  return keys.length === 1 ? encodeFunctionData5({ abi: UP_ABI, functionName: "setData", args: [keys[0], values[0]] }) : encodeFunctionData5({ abi: UP_ABI, functionName: "setDataBatch", args: [keys, values] });
 }
 function find(state, address) {
-  const a = getAddress22(address);
+  const a = getAddress16(address);
   return state.controllers.find((c) => c.address === a);
 }
 function allowedWrites(address, spec, keys, values, warnings, summary) {
@@ -6418,7 +6063,7 @@ function finish(keys, values, summary, warnings) {
   return { keys, values, payload: setDataPayload(keys, values), summary: { ...summary, dataKeys: keys, dataValues: values }, warnings };
 }
 function buildAddController(state, address, spec) {
-  const addr2 = getAddress22(address);
+  const addr2 = getAddress16(address);
   const existing = find(state, addr2);
   if (existing && existing.permissions.value !== 0n) throw new UpError("BAD_ARGS", `${addr2} is already a controller (${existing.permissions.names.join(", ")})`, { hint: "use: up controller edit" });
   if (spec.permissions === 0n) throw new UpError("BAD_ARGS", "refusing to add a controller with no permissions");
@@ -6451,7 +6096,7 @@ function buildAddController(state, address, spec) {
   return finish(keys, values, summary, warnings);
 }
 function buildEditController(state, address, spec) {
-  const addr2 = getAddress22(address);
+  const addr2 = getAddress16(address);
   const existing = find(state, addr2);
   const current = existing?.permissions.value ?? 0n;
   if (current === 0n) throw new UpError("BAD_ARGS", `${addr2} is not a controller on this chain`, { hint: "use: up controller add" });
@@ -6475,7 +6120,7 @@ function buildEditController(state, address, spec) {
   return finish(keys, values, summary, warnings);
 }
 function buildRemoveController(state, address) {
-  const addr2 = getAddress22(address);
+  const addr2 = getAddress16(address);
   const existing = find(state, addr2);
   if (!existing || existing.permissions.value === 0n && existing.index === void 0) throw new UpError("BAD_ARGS", `${addr2} is not a controller on this chain`);
   if (state.truncated) throw new UpError("NOT_SUPPORTED", "the controller list is too long to rewrite safely in one step");
@@ -6506,7 +6151,7 @@ function buildRemoveController(state, address) {
 function adminControllers(state, override) {
   const out = [];
   for (const c of state.controllers) {
-    const p = override && c.address === getAddress22(override.address) ? override.permissions : c.permissions.value;
+    const p = override && c.address === getAddress16(override.address) ? override.permissions : c.permissions.value;
     if (p !== null && (p & ADMIN_PERMISSIONS) !== 0n) out.push(c.address);
   }
   return out;
@@ -6532,11 +6177,11 @@ function recommend(controller, profile, opts = {}) {
   const d = decodePermissions(perms);
   const all = ["CHANGEOWNER", "ADDCONTROLLER", "EDITPERMISSIONS", "ADDEXTENSIONS", "CHANGEEXTENSIONS", "ADDUNIVERSALRECEIVERDELEGATE", "CHANGEUNIVERSALRECEIVERDELEGATE", "SUPER_CALL", "SUPER_TRANSFERVALUE", "SUPER_SETDATA", "DEPLOY", "REENTRANCY", "DELEGATECALL"];
   const notAllowed = all.filter((n) => !d.names.includes(n));
-  const ctl = getAddress22(controller);
+  const ctl = getAddress16(controller);
   const encodedCalls = encodeAllowedCalls(entries);
   const encodedKeys = encodeAllowedDataKeys(keys);
   const lines = [
-    `Please authorise the agent's controller address ${ctl}${profile ? ` on Universal Profile ${getAddress22(profile)}` : ""} on every network you want it to act on.`,
+    `Please authorise the agent's controller address ${ctl}${profile ? ` on Universal Profile ${getAddress16(profile)}` : ""} on every network you want it to act on.`,
     `Recommended permissions (${preset.name}): ${d.names.join(", ")}`,
     `Permission value (bytes32): ${d.hex}`,
     "What the agent CAN do:",
@@ -6587,7 +6232,7 @@ __export(multichain_exports, {
   saveStatusSnapshot: () => saveStatusSnapshot,
   withChainContext: () => withChainContext
 });
-import { formatEther as formatEther3, getAddress as getAddress23, isAddress as isAddress14 } from "./vendor-viem.mjs";
+import { formatEther, getAddress as getAddress17, isAddress as isAddress12 } from "./vendor-viem.mjs";
 function chainLabel(ctx, chainId) {
   try {
     const c = ctx.registry.chain(chainId);
@@ -6600,7 +6245,7 @@ function onChain(l) {
   return l.name === `chain ${l.chainId}` ? l.name : `${l.name} (${l.chainId})`;
 }
 function formatAmount2(wei, sym) {
-  const [int, dec = ""] = formatEther3(wei).split(".");
+  const [int, dec = ""] = formatEther(wei).split(".");
   const d = dec.slice(0, 6).replace(/0+$/, "");
   if (wei > 0n && int === "0" && !d) return `< 0.000001 ${sym}`;
   return `${int}${d ? `.${d}` : ""} ${sym}`;
@@ -6632,7 +6277,7 @@ async function readChainStatus(ctx, identity, chainId, opts = {}) {
     chain: l.name,
     chainArg: l.arg,
     nativeSymbol: l.nativeSymbol,
-    profile: getAddress23(identity),
+    profile: getAddress17(identity),
     linked: false,
     lspContracts: l.lspDeployed,
     deployed: false,
@@ -6643,7 +6288,7 @@ async function readChainStatus(ctx, identity, chainId, opts = {}) {
   };
   try {
     s.profile = await profileAddressOn(ctx.home, identity, chainId);
-    s.linked = s.profile !== getAddress23(identity);
+    s.linked = s.profile !== getAddress17(identity);
     let key;
     try {
       const k = controllerFor(cfg, chainId);
@@ -6698,12 +6343,12 @@ async function readChainStatus(ctx, identity, chainId, opts = {}) {
 async function otherLocalController(ctx, cfg, chainId, profile, except, missing = []) {
   const candidates = /* @__PURE__ */ new Map();
   const add2 = (c) => {
-    if (c?.address && typeof c.backend === "string" && isAddress14(c.address, { strict: false }) && !candidates.has(getAddress23(c.address))) candidates.set(getAddress23(c.address), c.backend);
+    if (c?.address && typeof c.backend === "string" && isAddress12(c.address, { strict: false }) && !candidates.has(getAddress17(c.address))) candidates.set(getAddress17(c.address), c.backend);
   };
   add2(cfg.controller);
   for (const c of Object.values(cfg.chainControllers ?? {})) add2(c);
   for (const c of cfg.previousControllers ?? []) add2(c);
-  candidates.delete(getAddress23(except));
+  candidates.delete(getAddress17(except));
   const { internalBackend: internalBackend2 } = await Promise.resolve().then(() => (init_signer(), signer_exports));
   for (const [a, backend] of candidates) {
     const p = await readControllerPermissions(ctx, chainId, profile, a).catch(() => void 0);
@@ -6975,6 +6620,507 @@ var init_transport = __esm({
     init_errors();
     OPERATION = { CALL: 0, CREATE: 1, CREATE2: 2, STATICCALL: 3, DELEGATECALL: 4 };
     transports = /* @__PURE__ */ new Map();
+  }
+});
+
+// src/chain/funding.ts
+var funding_exports = {};
+__export(funding_exports, {
+  ACTION_GAS: () => ACTION_GAS,
+  PRICE_API: () => PRICE_API,
+  STARTER_ACTIONS: () => STARTER_ACTIONS,
+  displaySymbol: () => displaySymbol,
+  friendlyAmount: () => friendlyAmount,
+  howLong: () => howLong,
+  priceIdFor: () => priceIdFor,
+  priceUsd: () => priceUsd,
+  starterUsd: () => starterUsd
+});
+import { formatEther as formatEther3, keccak256 as keccak25612, parseEther, toHex as toHex2 } from "./vendor-viem.mjs";
+function displaySymbol(symbol) {
+  return /ETH$/.test(symbol) && symbol !== "ETH" && !/^W/.test(symbol) ? "ETH" : symbol;
+}
+function priceIdFor(symbol) {
+  const s = displaySymbol(symbol);
+  if (s === "ETH") return "ethereum";
+  const ids = { LYX: "lukso-token-2", BNB: "binancecoin", POL: "polygon-ecosystem-token", AVAX: "avalanche-2" };
+  if (ids[s]) return ids[s];
+  if (/^(xDAI|USDC|USDT0|PathUSD)/.test(s)) return "usd";
+  return void 0;
+}
+async function priceUsd(ctx, symbol, opts = {}) {
+  const id = priceIdFor(symbol);
+  if (!id) return void 0;
+  if (id === "usd") return 1;
+  const now = opts.now ?? Date.now();
+  const cacheFile = paths.cache(ctx.home, "prices.json");
+  const cache2 = await readJson(cacheFile, {});
+  const hit = cache2[id];
+  if (hit && now - hit.at < PRICE_TTL_MS && hit.usd > 0) return hit.usd;
+  try {
+    const r = await httpJson(`${PRICE_API}?ids=${id}&vs_currencies=usd`, { fetch: opts.fetch, timeoutMs: 8e3, retries: 1, label: "price API" });
+    const usd = r.status === 200 ? r.body?.[id]?.usd : void 0;
+    if (typeof usd === "number" && usd > 0) {
+      cache2[id] = { usd, at: now };
+      await writeJson(cacheFile, cache2).catch(() => {
+      });
+      return usd;
+    }
+  } catch {
+  }
+  return hit?.usd;
+}
+function friendlyAmount(wei) {
+  if (wei <= 0n) return "0";
+  const s = formatEther3(wei);
+  const n = Number(s);
+  const mag = Math.floor(Math.log10(n));
+  const step = 10 ** (mag - 1);
+  const up = Math.ceil(n / step - 1e-9) * step;
+  return up >= 1 ? String(Number(up.toPrecision(2))) : up.toFixed(Math.max(0, 1 - mag));
+}
+function starterUsd(chainId, needUsd) {
+  const step = (x) => USD_STEPS.find((s) => s >= x) ?? Math.ceil(x);
+  const base = needUsd !== void 0 && Number.isFinite(needUsd) ? step(needUsd) : 1;
+  if (chainId === 1) return { min: Math.max(2, base), max: Math.max(10, base) };
+  return { min: base, max: base };
+}
+function howLong(actions) {
+  if (!Number.isFinite(actions) || actions >= 1e3) return "that's enough for a very long time of normal activity (likely a year or more)";
+  if (actions >= 200) return `that's enough for hundreds of actions, so it lasts a good while`;
+  if (actions >= 20) return `that's enough for roughly ${Math.floor(actions / 10) * 10} actions afterwards`;
+  if (actions >= 3) return `that's only enough for a few actions afterwards (about ${Math.floor(actions)}), because gas is expensive here`;
+  return "that leaves very little for actions afterwards, because gas is expensive here";
+}
+function usdToWei(usd, priceUsd2) {
+  return parseEther((usd / priceUsd2).toFixed(18));
+}
+async function deploymentCostWei(ctx, chainId, from) {
+  try {
+    const { planDeployment: planDeployment2, DEFAULT_IMPL_VERSION: DEFAULT_IMPL_VERSION2 } = await Promise.resolve().then(() => (init_lsp23(), lsp23_exports));
+    const { getPreset: getPreset2, toBytes32: toBytes322 } = await Promise.resolve().then(() => (init_permissions(), permissions_exports));
+    const salt = keccak25612(toHex2(`funding-estimate-${from}`));
+    const plan = planDeployment2({ salt, controller: from, permissions: toBytes322(getPreset2("agent-owner").permissions), implementationVersion: DEFAULT_IMPL_VERSION2 });
+    const g = await gasCheck(ctx, from, { chainId, to: plan.factory, data: plan.deployCalldata });
+    return g.maxCostWei;
+  } catch {
+    return void 0;
+  }
+}
+async function relayerCoverage(ctx, chainId, key) {
+  try {
+    const { selectRelayer: selectRelayer2 } = await Promise.resolve().then(() => (init_registry2(), registry_exports2));
+    const r = await selectRelayer2(ctx, chainId);
+    if (!r) return void 0;
+    const profile = await ctx.profile(void 0, chainId).catch(() => void 0);
+    if (!profile) return void 0;
+    const { readControllerPermissions: readControllerPermissions2 } = await Promise.resolve().then(() => (init_profile(), profile_exports));
+    const { resolveKeyManager: resolveKeyManager2 } = await Promise.resolve().then(() => (init_profile(), profile_exports));
+    const km = await resolveKeyManager2(ctx, chainId, profile).catch(() => void 0);
+    if (!km) return void 0;
+    const perms = await readControllerPermissions2(ctx, chainId, profile, key).catch(() => void 0);
+    if (!perms?.permissions.names.includes("EXECUTE_RELAY_CALL")) return void 0;
+    try {
+      const { getVerb: getVerb2 } = await Promise.resolve().then(() => (init_verbs(), verbs_exports));
+      const q3 = await getVerb2("relayer quota").run(ctx, { chain: String(chainId), relayer: r.name });
+      const d = q3?.data ?? {};
+      if (d.available === false) return { name: r.name, quotaReadable: false };
+      return { name: r.name, quota: d.quota !== void 0 ? String(d.quota) : void 0, unit: d.unit, hasQuota: d.hasQuota, quotaReadable: true };
+    } catch {
+      return { name: r.name, quotaReadable: false };
+    }
+  } catch {
+    return void 0;
+  }
+}
+var PRICE_API, PRICE_TTL_MS, ACTION_GAS, STARTER_ACTIONS, USD_STEPS;
+var init_funding = __esm({
+  "src/chain/funding.ts"() {
+    "use strict";
+    init_verbs();
+    init_errors();
+    init_home();
+    init_http();
+    init_tx();
+    PRICE_API = "https://api.coingecko.com/api/v3/simple/price";
+    PRICE_TTL_MS = 10 * 6e4;
+    ACTION_GAS = 150000n;
+    STARTER_ACTIONS = 20;
+    USD_STEPS = [1, 2, 5, 10, 20, 50];
+    defineVerb({
+      name: "funding suggest",
+      group: "chains",
+      summary: "How much native coin to ask the human to send to the agent's address on a network: about $1 worth to create the profile plus some gas, about $10 worth for more actions (never less than the current deployment cost). Plain-language text included.",
+      description: "Uses a live price (CoinGecko, cached 10 minutes) and an on-chain estimate of the profile deployment on that network. Without a price it suggests a coin amount only and makes no dollar claim. Show the QR of the address (up display address <address>) together with `text`.",
+      risk: "read",
+      params: [
+        { name: "address", type: "string", description: "Address to fund (default: this agent's key for the chain)." },
+        { name: "purpose", type: "string", description: "setup: first funding (create the profile + some gas); refill: the agent is running low.", enum: ["setup", "refill"], default: "setup" }
+      ],
+      examples: ["up funding suggest --chain lukso", "up funding suggest --chain ethereum", "up funding suggest --chain base --purpose refill"],
+      async run(ctx, a) {
+        const chainId = ctx.chainId(a.chain);
+        const chain = ctx.registry.chain(chainId);
+        const address = a.address ? a.address : (await ctx.signer(chainId)).address;
+        const symbol = displaySymbol(chain.nativeSymbol);
+        const [price, deployCost, balanceHex, gasPriceHex] = await Promise.all([
+          chain.testnet ? Promise.resolve(void 0) : priceUsd(ctx, chain.nativeSymbol),
+          // test coins have no price
+          deploymentCostWei(ctx, chainId, address),
+          ctx.rpc.request(chainId, "eth_getBalance", [address, "latest"]),
+          ctx.rpc.request(chainId, "eth_gasPrice", []).catch(() => void 0)
+        ]);
+        const gasPrice = gasPriceHex ? BigInt(gasPriceHex) : void 0;
+        const weiToUsd = (wei) => price ? Number(formatEther3(wei)) * price : void 0;
+        const actionUsd = gasPrice !== void 0 ? weiToUsd(gasPrice * ACTION_GAS) : void 0;
+        const deployUsd = deployCost !== void 0 ? weiToUsd(deployCost) : void 0;
+        const needUsd = actionUsd !== void 0 && deployUsd !== void 0 ? deployUsd * 1.5 + actionUsd * STARTER_ACTIONS : void 0;
+        const floor = deployCost ? deployCost * 3n / 2n : 0n;
+        const max = (x, y) => x > y ? x : y;
+        const tier = starterUsd(chainId, needUsd);
+        const starterMinWei = price ? max(usdToWei(tier.min, price), floor) : floor * 2n;
+        const starterWei = price ? max(usdToWei(tier.max, price), floor) : floor * 2n;
+        const moreWei = price ? max(usdToWei(10, price), starterWei * 2n) : starterWei * 10n;
+        if (starterWei === 0n) throw new UpError("NETWORK_ERROR", `could not estimate gas or price on ${chain.name}`, { hint: `retry, or check the network: up chains verify ${chainId}` });
+        const usdOf = (wei) => price ? Math.round(Number(formatEther3(wei)) * price * 100) / 100 : void 0;
+        const balanceWei = BigInt(balanceHex);
+        const purpose = a.purpose === "refill" ? "refill" : "setup";
+        const s = {
+          chainId,
+          network: chain.name,
+          symbol,
+          address,
+          priceUsd: price,
+          deploymentCost: deployCost ? formatEther3(deployCost) : void 0,
+          balance: formatEther3(balanceWei),
+          balanceUsd: usdOf(balanceWei),
+          actionUsd: actionUsd !== void 0 ? Math.round(actionUsd * 1e4) / 1e4 : void 0,
+          // setup: below the suggested start budget; refill: below half of it (a few actions left)
+          low: purpose === "refill" ? balanceWei < starterMinWei / 2n : balanceWei < starterMinWei,
+          starter: {
+            amount: friendlyAmount(starterWei),
+            usd: usdOf(starterWei),
+            ...price && tier.min !== tier.max ? { range: { min: friendlyAmount(starterMinWei), max: friendlyAmount(starterWei), usdMin: tier.min, usdMax: tier.max } } : {}
+          },
+          more: { amount: friendlyAmount(moreWei), usd: usdOf(moreWei) }
+        };
+        const relay = await relayerCoverage(ctx, chainId, address);
+        if (relay) {
+          s.relayer = relay;
+          if (relay.hasQuota !== false) {
+            s.gasNotNeeded = true;
+            s.low = false;
+            const quotaText = relay.quotaReadable && relay.quota !== void 0 ? ` (quota left: ${relay.quota}${relay.unit ? ` ${relay.unit}` : ""})` : "";
+            return { data: s, text: `On ${chain.name} the relayer ${relay.name} pays the gas for my actions${quotaText}, so I don't need any coins for gas there.` };
+          }
+        }
+        const usd = (v) => v !== void 0 ? ` (about $${v < 10 ? v.toFixed(2) : Math.round(v)})` : "";
+        const ask = s.starter.range ? `about ${s.starter.range.min}–${s.starter.range.max} ${symbol} (about $${s.starter.range.usdMin}–$${s.starter.range.usdMax})` : `about ${s.starter.amount} ${symbol}${usd(s.starter.usd)}`;
+        const test = chain.testnet ? " (test coins, e.g. from a faucet)" : "";
+        const text = purpose === "refill" && !s.low ? `I still have ${friendlyAmount(balanceWei)} ${symbol}${usd(s.balanceUsd)} for gas on ${chain.name}; that's enough for now, no top-up needed.` : purpose === "refill" ? [
+          `I'm running low on gas on ${chain.name}: I have ${friendlyAmount(balanceWei)} ${symbol}${usd(s.balanceUsd)} left.`,
+          `Could you top me up with ${ask}${test} to my gas address ${address} (QR attached)? Then I can keep acting for you there.`,
+          `For a bigger buffer, about ${s.more.amount} ${symbol}${usd(s.more.usd)}.`
+        ].join(" ") : [
+          `Please send ${ask}${test} on ${chain.name} to my gas address ${address} (QR attached).`,
+          `That covers creating the profile, and ${actionUsd !== void 0 && actionUsd > 0 ? howLong(((price ? tier.min : 0) - (deployUsd ?? 0)) / actionUsd) : "leaves gas so I can keep acting for you afterwards without running out right away"}.`,
+          `If you'd like me to do more right away, send about ${s.more.amount} ${symbol}${usd(s.more.usd)} instead.`,
+          "This is my own gas money: with it I do everything myself, so you never have to sign anything."
+        ].join(" ");
+        return { data: s, text };
+      }
+    });
+  }
+});
+
+// src/lsp/lsp23.ts
+var lsp23_exports = {};
+__export(lsp23_exports, {
+  DEFAULT_IMPL_VERSION: () => DEFAULT_IMPL_VERSION,
+  buildInitialData: () => buildInitialData,
+  candidateSalts: () => candidateSalts,
+  checkPrerequisites: () => checkPrerequisites,
+  computeERC1167Addresses: () => computeERC1167Addresses,
+  computeOnChain: () => computeOnChain,
+  deployFromManifest: () => deployFromManifest,
+  erc1167InitCode: () => erc1167InitCode,
+  loadManifest: () => loadManifest,
+  manifestFromPlan: () => manifestFromPlan,
+  planDeployment: () => planDeployment,
+  readProfileRecord: () => readProfileRecord,
+  resolveImplementations: () => resolveImplementations,
+  saveManifest: () => saveManifest,
+  verifyDeployment: () => verifyDeployment,
+  verifyManifest: () => verifyManifest,
+  writeProfileRecord: () => writeProfileRecord
+});
+import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData12, encodePacked as encodePacked3, formatEther as formatEther4, getAddress as getAddress23, getContractAddress, keccak256 as keccak25613 } from "./vendor-viem.mjs";
+function erc1167InitCode(implementation) {
+  return concat3(["0x3d602d80600a3d3981f3363d3d373d3d3d363d73", getAddress23(implementation), "0x5af43d82803e903d91602b57fd5bf3"]);
+}
+function resolveImplementations(inputs) {
+  const v = inputs.implementationVersion ?? DEFAULT_IMPL_VERSION;
+  const upInit = inputs.upInit ?? LSP.UP_INIT[v];
+  const kmInit = inputs.kmInit ?? LSP.KM_INIT[v];
+  const urd = inputs.urd ?? LSP.URD[v];
+  if (!upInit || !kmInit || !urd) throw new UpError("BAD_ARGS", `no canonical UP/KM/URD implementation for version ${v}`, { hint: `known versions: ${Object.keys(LSP.UP_INIT).join(", ")}` });
+  return {
+    version: v,
+    factory: getAddress23(inputs.factory ?? LSP.LSP23_FACTORY),
+    postDeploymentModule: getAddress23(inputs.postDeploymentModule ?? LSP.UP_INIT_POST_DEPLOYMENT_MODULE),
+    upInit: getAddress23(upInit),
+    kmInit: getAddress23(kmInit),
+    urd: getAddress23(urd)
+  };
+}
+function buildInitialData(controller, permissions, urd, opts = {}) {
+  const controllers = [{ address: getAddress23(controller), permissions }, ...(opts.extraControllers ?? []).map((c) => ({ address: getAddress23(c.address), permissions: c.permissions }))];
+  const seen = /* @__PURE__ */ new Set();
+  for (const c of controllers) {
+    if (seen.has(c.address)) throw new UpError("BAD_ARGS", `controller ${c.address} listed twice`);
+    if (c.address === getAddress23(urd)) throw new UpError("BAD_ARGS", "a controller cannot be the Universal Receiver Delegate");
+    if (!/^0x[0-9a-fA-F]{64}$/.test(c.permissions) || BigInt(c.permissions) === 0n) throw new UpError("BAD_ARGS", `controller ${c.address} needs a non-zero bytes32 permission value`);
+    seen.add(c.address);
+  }
+  const dataKeys = [DATA_KEYS["SupportedStandards:LSP3Profile"]];
+  const dataValues = [DATA_KEYS.SupportedStandardsLSP3Value];
+  if (opts.lsp3 && opts.lsp3 !== "0x") {
+    dataKeys.push(DATA_KEYS.LSP3Profile);
+    dataValues.push(opts.lsp3);
+  }
+  dataKeys.push(DATA_KEYS.LSP1UniversalReceiverDelegate, permissionsKey(urd));
+  dataValues.push(getAddress23(urd).toLowerCase(), toBytes32(URD_PERMISSIONS));
+  for (const c of controllers) {
+    dataKeys.push(permissionsKey(c.address));
+    dataValues.push(c.permissions.toLowerCase());
+  }
+  const listed = [...controllers.map((c) => c.address), getAddress23(urd)];
+  dataKeys.push(DATA_KEYS["AddressPermissions[]"]);
+  dataValues.push(uint128Hex(listed.length));
+  listed.forEach((a, i) => {
+    dataKeys.push(permissionsArrayIndexKey(i));
+    dataValues.push(a.toLowerCase());
+  });
+  return { dataKeys, dataValues };
+}
+function planDeployment(inputs) {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(inputs.salt)) throw new UpError("BAD_ARGS", "salt must be 32 bytes hex");
+  const impl = resolveImplementations(inputs);
+  const { dataKeys, dataValues } = buildInitialData(inputs.controller, inputs.permissions, impl.urd, { lsp3: inputs.lsp3, extraControllers: inputs.extraControllers });
+  const postDeploymentModuleCalldata = encodeAbiParameters2([{ type: "bytes32[]" }, { type: "bytes[]" }], [dataKeys, dataValues]);
+  const primary = {
+    salt: inputs.salt.toLowerCase(),
+    fundingAmount: 0n,
+    implementationContract: impl.upInit,
+    initializationCalldata: encodeFunctionData12({ abi: UP_INIT_ABI, functionName: "initialize", args: [impl.postDeploymentModule] })
+  };
+  const secondary = {
+    fundingAmount: 0n,
+    implementationContract: impl.kmInit,
+    initializationCalldata: encodeFunctionData12({ abi: KM_INIT_ABI, functionName: "initialize", args: ["0x0000000000000000000000000000000000000000"] }).slice(0, 10),
+    addPrimaryContractAddress: true,
+    extraInitializationParams: "0x"
+  };
+  const { profile, keyManager, generatedSalt } = computeERC1167Addresses(impl.factory, primary, secondary, impl.postDeploymentModule, postDeploymentModuleCalldata);
+  const deployCalldata = encodeFunctionData12({ abi: LSP23_ABI, functionName: "deployERC1167Proxies", args: [primary, secondary, impl.postDeploymentModule, postDeploymentModuleCalldata] });
+  return {
+    factory: impl.factory,
+    postDeploymentModule: impl.postDeploymentModule,
+    implementations: {
+      universalProfileInit: { version: impl.version, address: impl.upInit },
+      keyManagerInit: { version: impl.version, address: impl.kmInit },
+      universalReceiverDelegate: { version: impl.version, address: impl.urd }
+    },
+    dataKeys,
+    dataValues,
+    primaryContractDeploymentInit: { ...primary, fundingAmount: "0" },
+    secondaryContractDeploymentInit: { ...secondary, fundingAmount: "0" },
+    postDeploymentModuleCalldata,
+    generatedSalt,
+    profile,
+    keyManager,
+    deployCalldata
+  };
+}
+function computeERC1167Addresses(factory, primary, secondary, postDeploymentModule, postDeploymentModuleCalldata) {
+  const generatedSalt = keccak25613(
+    encodeAbiParameters2(
+      [{ type: "bytes32" }, { type: "address" }, { type: "bytes" }, { type: "bool" }, { type: "bytes" }, { type: "address" }, { type: "bytes" }],
+      [primary.salt, secondary.implementationContract, secondary.initializationCalldata, secondary.addPrimaryContractAddress, secondary.extraInitializationParams, postDeploymentModule, postDeploymentModuleCalldata]
+    )
+  );
+  const profile = getContractAddress({ opcode: "CREATE2", from: factory, salt: generatedSalt, bytecodeHash: keccak25613(erc1167InitCode(primary.implementationContract)) });
+  const keyManager = getContractAddress({ opcode: "CREATE2", from: factory, salt: keccak25613(encodePacked3(["address"], [profile])), bytecodeHash: keccak25613(erc1167InitCode(secondary.implementationContract)) });
+  return { profile, keyManager, generatedSalt };
+}
+function candidateSalts(seed, count, offset = 0) {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(seed)) throw new UpError("BAD_ARGS", "seed must be 32 bytes hex");
+  if (!Number.isInteger(count) || count < 1 || count > 100) throw new UpError("BAD_ARGS", "count must be 1..100");
+  return Array.from({ length: count }, (_, i) => keccak25613(encodePacked3(["bytes32", "uint256"], [seed, BigInt(offset + i)])));
+}
+async function computeOnChain(ctx, chainId, plan) {
+  const p = { ...plan.primaryContractDeploymentInit, fundingAmount: 0n };
+  const s = { ...plan.secondaryContractDeploymentInit, fundingAmount: 0n };
+  const [profile, keyManager] = await read2(ctx, chainId, plan.factory, LSP23_ABI, "computeERC1167Addresses", [p, s, plan.postDeploymentModule, plan.postDeploymentModuleCalldata]);
+  return { profile: getAddress23(profile), keyManager: getAddress23(keyManager) };
+}
+function manifestFromPlan(inputs, plan, extra = {}) {
+  const { deployCalldata, ...rest } = plan;
+  return {
+    version: 1,
+    kind: "lsp23-erc1167-up",
+    profile: plan.profile,
+    keyManager: plan.keyManager,
+    controller: getAddress23(inputs.controller),
+    preset: inputs.preset,
+    permissions: inputs.permissions,
+    permissionNames: decodePermissions(inputs.permissions).names,
+    extraControllers: inputs.extraControllers,
+    lsp3: inputs.lsp3,
+    salt: plan.primaryContractDeploymentInit.salt,
+    seed: extra.seed,
+    candidateIndex: extra.candidateIndex,
+    plan: rest,
+    deployCalldata,
+    chains: [],
+    deployments: {},
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    note: "Replaying deployCalldata through the LSP23 factory on another chain yields the same profile and Key Manager addresses. Changing ANY input (controller, permissions, salt, versions, LSP3 value) changes the address."
+  };
+}
+async function loadManifest(home, profile) {
+  const r = await readProfileRecord(home, profile);
+  return r.deployment;
+}
+async function saveManifest(home, m) {
+  await updateProfileRecord(home, m.profile, (latest) => {
+    const cur = latest.deployment;
+    if (!cur || cur.profile !== m.profile || cur.deployCalldata !== m.deployCalldata) return { deployment: m };
+    return { deployment: { ...m, chains: [.../* @__PURE__ */ new Set([...cur.chains ?? [], ...m.chains])], deployments: { ...cur.deployments ?? {}, ...m.deployments } } };
+  });
+}
+function verifyManifest(m) {
+  const p = m.plan;
+  const c = computeERC1167Addresses(p.factory, p.primaryContractDeploymentInit, p.secondaryContractDeploymentInit, p.postDeploymentModule, p.postDeploymentModuleCalldata);
+  const deploy = encodeFunctionData12({
+    abi: LSP23_ABI,
+    functionName: "deployERC1167Proxies",
+    args: [{ ...p.primaryContractDeploymentInit, fundingAmount: 0n }, { ...p.secondaryContractDeploymentInit, fundingAmount: 0n }, p.postDeploymentModule, p.postDeploymentModuleCalldata]
+  });
+  const ok = c.profile === getAddress23(m.profile) && c.keyManager === getAddress23(m.keyManager) && deploy.toLowerCase() === m.deployCalldata.toLowerCase();
+  return { ok, profile: c.profile, keyManager: c.keyManager };
+}
+async function checkPrerequisites(ctx, chainId, plan) {
+  const req = {
+    LSP23LinkedContractsFactory: plan.factory,
+    UniversalProfileInitPostDeploymentModule: plan.postDeploymentModule,
+    UniversalProfileInit: plan.implementations.universalProfileInit.address,
+    LSP6KeyManagerInit: plan.implementations.keyManagerInit.address,
+    LSP1UniversalReceiverDelegateUP: plan.implementations.universalReceiverDelegate.address
+  };
+  const out = {};
+  for (const [n, a] of Object.entries(req)) out[n] = await hasCode(ctx, chainId, a);
+  return out;
+}
+async function verifyDeployment(ctx, chainId, m) {
+  const km = await resolveKeyManager(ctx, chainId, m.profile);
+  const ctl = await readControllerPermissions(ctx, chainId, m.profile, m.controller);
+  const urd = await getData(ctx, chainId, m.profile, DATA_KEYS.LSP1UniversalReceiverDelegate);
+  return {
+    profileHasCode: await hasCode(ctx, chainId, m.profile),
+    keyManagerHasCode: await hasCode(ctx, chainId, m.keyManager),
+    ownerIsKeyManager: km.owner === getAddress23(m.keyManager),
+    keyManagerTargetIsProfile: km.keyManager === getAddress23(m.keyManager),
+    supportsLSP0: await supportsInterface(ctx, chainId, m.profile, INTERFACE_IDS2.LSP0ERC725Account),
+    keyManagerSupportsLSP6: await supportsInterface(ctx, chainId, m.keyManager, INTERFACE_IDS2.LSP6KeyManager),
+    controllerPermissionsMatch: ctl.permissions.hex.toLowerCase() === m.permissions.toLowerCase(),
+    universalReceiverDelegateSet: urd.toLowerCase() === m.plan.implementations.universalReceiverDelegate.address.toLowerCase()
+  };
+}
+async function deployFromManifest(ctx, signer, m, chainId, verb = "account deploy") {
+  const v = verifyManifest(m);
+  if (!v.ok) throw new UpError("INTERNAL", "deployment manifest is inconsistent (stored addresses/calldata do not re-derive)", { hint: "do not edit manifests by hand; re-run up account precompute", details: v });
+  const prerequisites = await checkPrerequisites(ctx, chainId, m.plan);
+  const missing = Object.entries(prerequisites).filter(([, ok]) => !ok).map(([n]) => n);
+  if (missing.length) {
+    throw new UpError("NOT_DEPLOYED", `the canonical LSP contracts are missing on chain ${chainId}: ${missing.join(", ")}`, {
+      hint: "these are deployed through Nick's factory with fixed salts; check: up chains verify " + chainId,
+      details: prerequisites
+    });
+  }
+  const onchain = await computeOnChain(ctx, chainId, m.plan);
+  const onChainCompute = { ...onchain, matches: onchain.profile === getAddress23(m.profile) && onchain.keyManager === getAddress23(m.keyManager) };
+  if (!onChainCompute.matches) {
+    throw new UpError("INTERNAL", `factory on chain ${chainId} computes ${onchain.profile}/${onchain.keyManager}, manifest says ${m.profile}/${m.keyManager}`, { hint: "the factory at the canonical address behaves differently on this chain; do not deploy", details: onChainCompute });
+  }
+  const confirmation = {
+    action: "deploy Universal Profile via LSP23",
+    chainId,
+    profile: m.profile,
+    keyManager: m.keyManager,
+    factory: m.plan.factory,
+    gasPayer: `controller EOA ${signer.address}`,
+    initialController: m.controller,
+    controllerPermissions: { hex: m.permissions, names: m.permissionNames, preset: m.preset },
+    universalReceiverDelegate: m.plan.implementations.universalReceiverDelegate.address,
+    implementations: m.plan.implementations,
+    salt: m.salt,
+    value: "0",
+    calldata: m.deployCalldata
+  };
+  if (await hasCode(ctx, chainId, m.profile)) {
+    const verified2 = await verifyDeployment(ctx, chainId, m);
+    const rec = { chainId, status: "already-deployed", deployedAt: (/* @__PURE__ */ new Date()).toISOString(), verified: verified2 };
+    m.deployments[String(chainId)] = { ...m.deployments[String(chainId)] ?? {}, ...rec };
+    if (!m.chains.includes(chainId)) m.chains.push(chainId);
+    if (!ctx.flags.dryRun) await saveManifest(ctx.home, m);
+    return { chainId, profile: m.profile, keyManager: m.keyManager, status: "already-deployed", verified: verified2, onChainCompute, prerequisites, confirmation };
+  }
+  await simulate(ctx, { chainId, from: signer.address, to: m.plan.factory, data: m.deployCalldata });
+  const g = await gasCheck(ctx, signer.address, { chainId, to: m.plan.factory, data: m.deployCalldata });
+  const symbol = await (async () => {
+    try {
+      const { displaySymbol: displaySymbol2 } = await Promise.resolve().then(() => (init_funding(), funding_exports));
+      return displaySymbol2(ctx.registry.chain(chainId).nativeSymbol);
+    } catch {
+      return "native";
+    }
+  })();
+  const gasInfo = { payer: signer.address, symbol, maxCost: formatEther4(g.maxCostWei), balance: formatEther4(g.balanceWei), enough: g.enough, ...g.enough ? {} : { missing: formatEther4(g.shortfallWei), suggestedFunding: formatEther4(g.suggestedFundingWei) } };
+  confirmation.gas = gasInfo;
+  if (!g.enough && !ctx.flags.dryRun) {
+    throw new UpError("TX_FAILED", `the agent's key ${signer.address} needs gas on chain ${chainId}: it has ${gasInfo.balance} ${symbol}, the deployment may cost up to ${gasInfo.maxCost} ${symbol}`, {
+      hint: `ask the human to send about ${gasInfo.suggestedFunding} ${symbol} to ${signer.address} (show it as a QR: up display address ${signer.address} --chain ${chainId}); then deploy. The human only sends gas; never ask them to sign, connect a wallet or pay the deployment`,
+      details: { reason: "needs-gas", gas: gasInfo }
+    });
+  }
+  await ctx.consent({ verb, risk: "write", chainId, summary: confirmation, value: 0n, target: m.plan.factory, selector: m.deployCalldata.slice(0, 10) });
+  if (ctx.flags.dryRun) return { chainId, profile: m.profile, keyManager: m.keyManager, status: "dry-run", onChainCompute, prerequisites, confirmation, gas: gasInfo };
+  const tx = await sendTx(ctx, signer, { chainId, to: m.plan.factory, data: m.deployCalldata });
+  const verified = await verifyDeployment(ctx, chainId, m);
+  const allOk = Object.values(verified).every(Boolean);
+  m.deployments[String(chainId)] = { chainId, status: "deployed", txHash: tx.hash, blockNumber: tx.blockNumber, deployedAt: (/* @__PURE__ */ new Date()).toISOString(), deployer: signer.address, verified };
+  if (!m.chains.includes(chainId)) m.chains.push(chainId);
+  await saveManifest(ctx.home, m);
+  if (!allOk) {
+    throw new UpError("TX_FAILED", `deployment transaction ${tx.hash} succeeded but post-deployment checks failed`, { details: verified });
+  }
+  return { chainId, profile: m.profile, keyManager: m.keyManager, status: "deployed", txHash: tx.hash, blockNumber: tx.blockNumber, gasUsed: tx.gasUsed, explorerUrl: tx.explorerUrl, verified, onChainCompute, prerequisites, confirmation };
+}
+var DEFAULT_IMPL_VERSION;
+var init_lsp23 = __esm({
+  "src/lsp/lsp23.ts"() {
+    "use strict";
+    init_errors();
+    init_profile_record();
+    init_registry();
+    init_tx();
+    init_abis();
+    init_constants();
+    init_permissions();
+    init_read2();
+    init_profile();
+    DEFAULT_IMPL_VERSION = "0.14.0";
   }
 });
 
@@ -7294,8 +7440,8 @@ __export(media_exports, {
   writeMedia: () => writeMedia,
   writeMediaFile: () => writeMediaFile
 });
-import { randomBytes as randomBytes8 } from "node:crypto";
-import { join as join12 } from "node:path";
+import { randomBytes as randomBytes7 } from "node:crypto";
+import { join as join11 } from "node:path";
 function slug(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "image";
 }
@@ -7306,7 +7452,7 @@ async function writeMediaFile(home, nameHint, bytes, ext, mimeType, description)
   const dir = paths.media(home);
   await ensureDir(dir, 448);
   const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "");
-  const file2 = join12(dir, `${slug(nameHint)}-${stamp}-${randomBytes8(4).toString("hex")}.${ext.replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin"}`);
+  const file2 = join11(dir, `${slug(nameHint)}-${stamp}-${randomBytes7(4).toString("hex")}.${ext.replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin"}`);
   await writeFileAtomic(file2, bytes, 384);
   return { path: file2, mimeType, description };
 }
@@ -7327,7 +7473,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "b7b1f314b3e0" : "source";
+var SOURCE = true ? "df7b3a08cd71" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -7798,6 +7944,23 @@ defineVerb({
 });
 
 // src/signer/verbs.ts
+var verbs_exports2 = {};
+__export(verbs_exports2, {
+  MIN_PASSPHRASE_LENGTH: () => MIN_PASSPHRASE_LENGTH,
+  importRecorded: () => importRecorded,
+  initVerb: () => initVerb,
+  keptKeys: () => keptKeys,
+  keyActivateVerb: () => keyActivateVerb,
+  keyAddressVerb: () => keyAddressVerb,
+  keyBackendVerb: () => keyBackendVerb,
+  keyBackupVerb: () => keyBackupVerb,
+  keyNewCandidateVerb: () => keyNewCandidateVerb,
+  keyVerbs: () => keyVerbs,
+  readCandidates: () => readCandidates,
+  updateCandidates: () => updateCandidates,
+  withKeyLock: () => withKeyLock,
+  writeNewFileExclusive: () => writeNewFileExclusive
+});
 init_secret_guard();
 init_errors();
 init_home();
@@ -7977,6 +8140,12 @@ function checksum(a) {
 }
 
 // src/signer/inventory.ts
+var inventory_exports = {};
+__export(inventory_exports, {
+  inventoryFile: () => inventoryFile,
+  readInventory: () => readInventory,
+  recordKey: () => recordKey
+});
 init_home();
 import { readFile as readFile6 } from "node:fs/promises";
 import { join as join8 } from "node:path";
@@ -8685,1006 +8854,30 @@ async function activateForChain(ctx, args, address, chainId) {
     ].filter(Boolean).join("\n")
   };
 }
+var keyVerbs = [initVerb, keyAddressVerb, keyBackendVerb, keyBackupVerb, keyNewCandidateVerb, keyActivateVerb];
 
 // src/backup/verbs.ts
-init_errors();
-init_json();
 init_verbs();
-init_signer();
-import { readFile as readFile8, stat as stat6 } from "node:fs/promises";
-import { basename as basename3 } from "node:path";
-
-// src/backup/build.ts
-init_errors();
-init_home();
-init_profile_record();
-init_read2();
-init_lsp23();
-init_profile();
-init_signer();
-init_select();
-import { readdir } from "node:fs/promises";
-import { getAddress as getAddress20, isAddress as isAddress13 } from "./vendor-viem.mjs";
-
-// src/backup/lsp30-format.ts
-init_errors();
-import { getAddress as getAddress18 } from "./vendor-viem.mjs";
-
-// src/backup/lsp30-crypto.ts
-init_errors();
-init_secret_guard();
-init_local_signer();
-import { createCipheriv as createCipheriv2, createDecipheriv as createDecipheriv2, pbkdf2 as pbkdf22, randomBytes as randomBytes7 } from "node:crypto";
-import { getAddress as getAddress17 } from "./vendor-viem.mjs";
-var ENCRYPTION_TYPE = "Key from PBKDF2. Encrypted with AES-GCM.";
-var KDF_DESCRIPTION = "PBKDF2-HMAC-SHA256 (10,000 iterations), AES-256-GCM";
-var APP_ITERATIONS = 1e4;
-var SPEC_ITERATIONS = 6e5;
-var KEY_BYTES = 32;
-var SALT_BYTES = 32;
-var IV_BYTES = 16;
-var TAG_BYTES = 16;
-var WRONG_PASSWORD = "wrong password or damaged file";
-function derive(password, salt, iterations) {
-  return new Promise((resolve8, reject) => pbkdf22(Buffer.from(password, "utf8"), salt, iterations, KEY_BYTES, "sha256", (e, k) => e ? reject(e) : resolve8(k)));
-}
-function payloadText(keys) {
-  const inner = JSON.stringify({ privateKeys: keys.map((k) => ({ address: getAddress17(k.address), privateKey: k.privateKey.toLowerCase() })), seedPhrases: [] });
-  return JSON.stringify(inner);
-}
-async function encryptSecrets(keys, password, fixed = {}) {
-  const salt = fixed.salt ?? randomBytes7(SALT_BYTES);
-  const iv = fixed.iv ?? randomBytes7(IV_BYTES);
-  if (salt.length !== SALT_BYTES || iv.length !== IV_BYTES) throw new UpError("INTERNAL", "salt or IV has the wrong length");
-  const key = await derive(password, salt, APP_ITERATIONS);
-  const cipher = createCipheriv2("aes-256-gcm", key, iv, { authTagLength: TAG_BYTES });
-  const ct = Buffer.concat([cipher.update(payloadText(keys), "utf8"), cipher.final()]);
-  return { secret: Buffer.concat([ct, cipher.getAuthTag()]).toString("base64"), iv: iv.toString("base64"), salt: salt.toString("base64") };
-}
-var B64 = /^[A-Za-z0-9+/]+={0,2}$/;
-function decodeField(value, name, min, max) {
-  if (typeof value !== "string" || !B64.test(value) || value.length % 4 !== 0) throw new UpError("BAD_ARGS", `the backup's ${name} is not valid Base64`);
-  const b = Buffer.from(value, "base64");
-  if (b.length < min || b.length > max) throw new UpError("BAD_ARGS", `the backup's ${name} has an unexpected length`);
-  return b;
-}
-function openKey(rawKey, index, claimed) {
-  const privateKey = typeof rawKey === "string" ? normalizePrivateKey(rawKey) : void 0;
-  if (!privateKey || !isValidPrivateKey(privateKey)) throw new UpError("BAD_ARGS", `key number ${index} in the backup is not a valid private key`);
-  registerSecret(privateKey);
-  const address = addressOf(privateKey);
-  const claimedAddress = typeof claimed === "string" && claimed.toLowerCase() !== address.toLowerCase() ? "different" : void 0;
-  return { index, address, privateKey, ...claimedAddress ? { claimedAddress } : {} };
-}
-var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-function readPayload(plain) {
-  const unsupported3 = () => new UpError("BAD_ARGS", "the decrypted backup has an unsupported payload (expected the app's key list)");
-  let v;
-  let shape = "object";
-  try {
-    v = JSON.parse(plain);
-    if (typeof v === "string") {
-      v = JSON.parse(v);
-      shape = "app";
-    }
-  } catch {
-    throw unsupported3();
-  }
-  const keys = [];
-  let seedPhraseEntries = 0;
-  if (Array.isArray(v)) {
-    shape = "array";
-    v.forEach((e, position) => {
-      if (!isObj(e)) throw unsupported3();
-      if (e.type === "seedPhrase") {
-        seedPhraseEntries++;
-        return;
-      }
-      const index = Number.isInteger(e.index) && e.index >= 0 ? e.index : position;
-      keys.push(openKey(e.secret ?? e.privateKey, index, e.address));
-    });
-  } else if (isObj(v) && Array.isArray(v.privateKeys)) {
-    v.privateKeys.forEach((e, position) => {
-      if (!isObj(e)) throw unsupported3();
-      keys.push(openKey(e.privateKey, position, e.address));
-    });
-    if (Array.isArray(v.seedPhrases)) seedPhraseEntries = v.seedPhrases.length;
-  } else throw unsupported3();
-  return { keys, seedPhraseEntries, shape };
-}
-function passwordForms(password) {
-  const forms2 = [{ form: "as-typed", text: password }];
-  if (/[^\x00-\x7f]/.test(password)) {
-    for (const [form, norm] of [["nfc", "NFC"], ["nfkc", "NFKC"]]) {
-      const text = password.normalize(norm);
-      if (!forms2.some((f) => f.text === text)) forms2.push({ form, text });
-    }
-  }
-  return forms2;
-}
-async function decryptSecrets(data, password) {
-  const salt = decodeField(data.salt, "salt", 8, 128);
-  const iv = decodeField(data.iv, "iv", 12, 16);
-  const sealed = decodeField(data.secret, "secret", TAG_BYTES + 1, 5 * 1024 * 1024);
-  const ct = sealed.subarray(0, sealed.length - TAG_BYTES);
-  const tag = sealed.subarray(sealed.length - TAG_BYTES);
-  for (const iterations of [APP_ITERATIONS, SPEC_ITERATIONS]) {
-    for (const { form, text } of passwordForms(password)) {
-      const key = await derive(text, salt, iterations);
-      let plain;
-      try {
-        const d = createDecipheriv2("aes-256-gcm", key, iv, { authTagLength: TAG_BYTES });
-        d.setAuthTag(tag);
-        plain = Buffer.concat([d.update(ct), d.final()]);
-      } catch {
-        continue;
-      }
-      return { ...readPayload(plain.toString("utf8")), iterations, passwordForm: form };
-    }
-  }
-  throw new UpError("BAD_ARGS", WRONG_PASSWORD, { hint: "check the password; if it is right, the file is damaged or was not made by the Universal Profile app or this skill", details: { reason: "wrong-password-or-damaged-file" } });
-}
-
-// src/backup/lsp30-format.ts
-var BACKUP_VERSION = 2;
-var MAX_BACKUP_BYTES = 5 * 1024 * 1024;
-function backupDate(now = /* @__PURE__ */ new Date()) {
-  return now.toISOString().replace(/\.\d{3}Z$/, "Z");
-}
-function serializeBackup(f) {
-  const out = {
-    version: BACKUP_VERSION,
-    backupDate: f.backupDate,
-    accounts: f.accounts.map((a) => ({
-      type: a.type ?? "LSP0-ERC725Account",
-      name: a.name ?? "",
-      address: getAddress18(a.address),
-      networks: a.networks.map((n) => ({
-        chainID: n.chainID,
-        name: n.name,
-        controllers: n.controllers.map((c) => ({ address: getAddress18(c.address), type: c.type, privateKeyIndex: c.privateKeyIndex, name: c.name }))
-      }))
-    })),
-    LSP23CrossChainDeployment: f.LSP23CrossChainDeployment.map((i) => ({
-      profileAddress: getAddress18(i.profileAddress),
-      initialChainID: i.initialChainID,
-      factoryAddress: getAddress18(i.factoryAddress),
-      deploymentCalldata: i.deploymentCalldata,
-      salt: i.salt,
-      initialControllers: i.initialControllers.map((c) => ({
-        address: getAddress18(c.address),
-        privateKeyIndex: c.privateKeyIndex,
-        addressPermissions: {
-          permissions: c.addressPermissions.permissions,
-          decodedPermissions: c.addressPermissions.decodedPermissions,
-          allowedCalls: c.addressPermissions.allowedCalls,
-          allowedERC725YDataKeys: c.addressPermissions.allowedERC725YDataKeys
-        }
-      }))
-    })),
-    secrets: f.secrets.encrypted ? { encrypted: true, passwordHint: f.secrets.passwordHint || void 0, encryptionType: f.secrets.encryptionType, data: { secret: f.secrets.data.secret, iv: f.secrets.data.iv, salt: f.secrets.data.salt } } : { encrypted: false, data: f.secrets.data.map((e) => ({ type: e.type, index: e.index, address: getAddress18(e.address), secret: e.secret })) }
-  };
-  return JSON.stringify(out, void 0, 2);
-}
-function appIncompatibilities(f) {
-  const out = [];
-  f.LSP23CrossChainDeployment.forEach((item, i) => {
-    if (!item.initialControllers.some((c) => c.privateKeyIndex !== void 0)) out.push(`LSP23CrossChainDeployment[${i}] has no initial controller with a key in this file; the app rejects such a file`);
-  });
-  return out;
-}
-var isObj2 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-var HEX_BYTES = /^0x([0-9a-fA-F]{2})*$/;
-var isNonNegInt = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
-function backupText(bytes) {
-  const bad2 = (message) => new UpError("BAD_ARGS", message, { hint: "pass a backup file made by the Universal Profile app or by this skill (up backup export)" });
-  if (bytes.length > MAX_BACKUP_BYTES) throw bad2(`the backup file is larger than ${MAX_BACKUP_BYTES / 1024 / 1024} MiB`);
-  try {
-    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes).replace(/^\uFEFF/, "");
-  } catch {
-    throw bad2("the backup file is not valid UTF-8 text");
-  }
-}
-function parseBackup(text) {
-  const issues = [];
-  const error = (code, message) => issues.push({ level: "error", code, message });
-  const warn = (code, message) => issues.push({ level: "warn", code, message });
-  const fail = () => ({ issues });
-  if (text.length > MAX_BACKUP_BYTES) {
-    error("too-large", "the backup file is too large");
-    return fail();
-  }
-  let root;
-  try {
-    root = JSON.parse(text);
-  } catch {
-    error("not-json", "the file is not valid JSON");
-    return fail();
-  }
-  if (!isObj2(root)) {
-    error("not-object", "the file does not hold a JSON object");
-    return fail();
-  }
-  if (root.version !== BACKUP_VERSION) {
-    error("bad-version", `unsupported version (only version ${BACKUP_VERSION} is supported)`);
-    return fail();
-  }
-  if (typeof root.backupDate !== "string" || Number.isNaN(Date.parse(root.backupDate))) warn("bad-date", "backupDate is missing or not a valid date");
-  const address = (v, where) => {
-    if (typeof v !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(v)) {
-      error("bad-address", `${where} is not a 20-byte hex address`);
-      return void 0;
-    }
-    const cs = getAddress18(v);
-    if (v !== cs && v !== v.toLowerCase() && v !== `0x${v.slice(2).toUpperCase()}`) warn("bad-checksum", `${where} has an invalid EIP-55 checksum`);
-    return cs;
-  };
-  const hex2 = (v, where) => {
-    if (typeof v !== "string" || !HEX_BYTES.test(v)) {
-      error("bad-hex", `${where} is not 0x hex`);
-      return void 0;
-    }
-    return v;
-  };
-  const keyIndex = (v, where) => {
-    if (v === void 0) return void 0;
-    if (!isNonNegInt(v)) {
-      error("bad-key-index", `${where} is not a non-negative integer`);
-      return void 0;
-    }
-    return v;
-  };
-  const list = (v, where) => {
-    if (!Array.isArray(v)) {
-      error("bad-shape", `${where} is not a list`);
-      return [];
-    }
-    return v;
-  };
-  const accounts = list(root.accounts, "accounts").flatMap((a, i) => {
-    const at = `accounts[${i}]`;
-    if (!isObj2(a)) return error("bad-shape", `${at} is not an object`), [];
-    const addr2 = address(a.address, `${at}.address`);
-    if (a.type !== void 0 && a.type !== "LSP0-ERC725Account") warn("account-type", `${at}.type is not LSP0-ERC725Account`);
-    const networks = list(a.networks, `${at}.networks`).flatMap((n, j) => {
-      const nat = `${at}.networks[${j}]`;
-      if (!isObj2(n)) return error("bad-shape", `${nat} is not an object`), [];
-      if (!isNonNegInt(n.chainID) || n.chainID === 0) error("bad-chain", `${nat}.chainID is not a positive integer`);
-      const controllers = list(n.controllers, `${nat}.controllers`).flatMap((c, k) => {
-        const cat = `${nat}.controllers[${k}]`;
-        if (!isObj2(c)) return error("bad-shape", `${cat} is not an object`), [];
-        const ca = address(c.address, `${cat}.address`);
-        const idx = keyIndex(c.privateKeyIndex, `${cat}.privateKeyIndex`);
-        if (!ca) return [];
-        return [{ address: ca, ...typeof c.type === "string" ? { type: c.type } : {}, ...idx !== void 0 ? { privateKeyIndex: idx } : {}, ...typeof c.name === "string" ? { name: c.name } : {} }];
-      });
-      return [{ chainID: n.chainID, name: typeof n.name === "string" ? n.name : "", controllers }];
-    });
-    return addr2 ? [{ ...typeof a.type === "string" ? { type: a.type } : {}, ...typeof a.name === "string" ? { name: a.name } : {}, address: addr2, networks }] : [];
-  });
-  const lsp23 = list(root.LSP23CrossChainDeployment, "LSP23CrossChainDeployment").flatMap((it, i) => {
-    const at = `LSP23CrossChainDeployment[${i}]`;
-    if (!isObj2(it)) return error("bad-shape", `${at} is not an object`), [];
-    const profile = address(it.profileAddress, `${at}.profileAddress`);
-    const factory = address(it.factoryAddress, `${at}.factoryAddress`);
-    const calldata = hex2(it.deploymentCalldata, `${at}.deploymentCalldata`);
-    if (!isNonNegInt(it.initialChainID) || it.initialChainID === 0) error("bad-chain", `${at}.initialChainID is not a positive integer`);
-    const salt = it.salt === void 0 ? void 0 : hex2(it.salt, `${at}.salt`);
-    const initialControllers = list(it.initialControllers, `${at}.initialControllers`).flatMap((c, k) => {
-      const cat = `${at}.initialControllers[${k}]`;
-      if (!isObj2(c)) return error("bad-shape", `${cat} is not an object`), [];
-      const ca = address(c.address, `${cat}.address`);
-      const idx = keyIndex(c.privateKeyIndex, `${cat}.privateKeyIndex`);
-      const p = isObj2(c.addressPermissions) ? c.addressPermissions : (error("bad-shape", `${cat}.addressPermissions is not an object`), {});
-      const permissions = hex2(p.permissions, `${cat}.addressPermissions.permissions`);
-      const allowedCalls = hex2(p.allowedCalls ?? "0x", `${cat}.addressPermissions.allowedCalls`);
-      const allowedKeys = hex2(p.allowedERC725YDataKeys ?? "0x", `${cat}.addressPermissions.allowedERC725YDataKeys`);
-      if (!ca || !permissions || !allowedCalls || !allowedKeys) return [];
-      const decoded = isObj2(p.decodedPermissions) ? p.decodedPermissions : void 0;
-      return [{ address: ca, ...idx !== void 0 ? { privateKeyIndex: idx } : {}, addressPermissions: { permissions, ...decoded ? { decodedPermissions: decoded } : {}, allowedCalls, allowedERC725YDataKeys: allowedKeys } }];
-    });
-    if (!profile || !factory || !calldata) return [];
-    return [{ profileAddress: profile, initialChainID: it.initialChainID, factoryAddress: factory, deploymentCalldata: calldata, ...salt ? { salt } : {}, initialControllers }];
-  });
-  let secrets2 = { kind: "public" };
-  const s = root.secrets;
-  if (!isObj2(s) || typeof s.encrypted !== "boolean") error("bad-secrets", "secrets is missing or has no true/false 'encrypted'");
-  else if (s.encrypted) {
-    const d = s.data;
-    try {
-      if (!isObj2(d)) throw new Error("data");
-      decodeField(d.salt, "salt", 8, 128);
-      decodeField(d.iv, "iv", 12, 16);
-      decodeField(d.secret, "secret", 17, MAX_BACKUP_BYTES);
-      secrets2 = { kind: "encrypted", ...typeof s.passwordHint === "string" && s.passwordHint ? { hint: s.passwordHint } : {}, ...typeof s.encryptionType === "string" ? { encryptionType: s.encryptionType } : {}, data: { secret: d.secret, iv: d.iv, salt: d.salt } };
-      if (s.encryptionType !== ENCRYPTION_TYPE) warn("encryption-type", "encryptionType is not the one this skill and the app write; decryption is tried with the app's parameters");
-    } catch (e) {
-      error("bad-secrets", e instanceof UpError ? e.message : "secrets.data needs Base64 secret, iv and salt");
-    }
-  } else {
-    const entries = [];
-    let skipped = 0;
-    list(s.data, "secrets.data").forEach((e, i) => {
-      const at = `secrets.data[${i}]`;
-      if (!isObj2(e)) return error("bad-shape", `${at} is not an object`);
-      if (e.type === "seedPhrase") {
-        skipped++;
-        return warn("seed-phrase", `${at} is a seed phrase; seed phrases are not supported and are skipped`);
-      }
-      if (e.type !== "privateKey") return error("bad-secret-type", `${at}.type is not privateKey`);
-      if (!isNonNegInt(e.index)) return error("bad-key-index", `${at}.index is not a non-negative integer`);
-      if (entries.some((x) => x.index === e.index)) return error("duplicate-key-index", `${at}.index is used twice`);
-      const a = e.address === void 0 ? void 0 : address(e.address, `${at}.address`);
-      entries.push({ index: e.index, ...a ? { address: a } : {}, secret: e.secret });
-    });
-    if (entries.length) warn("plain-secrets", "this file holds private keys in plain text: anyone who has a copy controls those keys");
-    secrets2 = entries.length || skipped ? { kind: "plain", entries, skippedSeedEntries: skipped } : { kind: "public" };
-  }
-  if (issues.some((i) => i.level === "error")) return fail();
-  return { backup: { backupDate: typeof root.backupDate === "string" ? root.backupDate : "", accounts, lsp23, secrets: secrets2 }, issues };
-}
-
-// src/backup/lsp23-decode.ts
-init_registry();
-init_abis();
-init_constants();
-init_lsp23();
-init_permissions();
-import { decodeAbiParameters as decodeAbiParameters2, decodeFunctionData as decodeFunctionData2, getAddress as getAddress19, isAddress as isAddress12 } from "./vendor-viem.mjs";
-var DEPLOY_ERC1167_PROXIES = "0x6a66a753";
-var DEPLOY_CONTRACTS = "0x17ad46a8";
-var unsupported = (reason) => ({ supported: false, reason, rederives: false, canonicalFactory: false, initialControllers: [] });
-var sameAddress2 = (a, b) => a.toLowerCase() === b.toLowerCase();
-function addressFromKey(key, prefix) {
-  return key.toLowerCase().startsWith(prefix.toLowerCase()) && key.length === 66 ? getAddress19(`0x${key.slice(26)}`) : void 0;
-}
-function decodeDeployment(item) {
-  const selector = item.deploymentCalldata.slice(0, 10).toLowerCase();
-  if (selector === DEPLOY_CONTRACTS) return unsupported("deployContracts calldata cannot be verified; only deployERC1167Proxies is supported");
-  if (selector !== DEPLOY_ERC1167_PROXIES) return unsupported("the calldata is not a deployERC1167Proxies call");
-  let primary, secondary, module, moduleData;
-  try {
-    const d = decodeFunctionData2({ abi: LSP23_ABI, data: item.deploymentCalldata });
-    if (d.functionName !== "deployERC1167Proxies") return unsupported("the calldata is not a deployERC1167Proxies call");
-    [primary, secondary, module, moduleData] = d.args;
-  } catch {
-    return unsupported("the calldata could not be decoded");
-  }
-  const derived = computeERC1167Addresses(item.factoryAddress, primary, secondary, module, moduleData);
-  const perms = /* @__PURE__ */ new Map();
-  const calls = /* @__PURE__ */ new Map();
-  const dataKeys = /* @__PURE__ */ new Map();
-  let dataKeyList, dataValueList;
-  try {
-    [dataKeyList, dataValueList] = decodeAbiParameters2([{ type: "bytes32[]" }, { type: "bytes[]" }], moduleData);
-  } catch {
-    return unsupported("the post-deployment data could not be decoded");
-  }
-  let urd;
-  let lsp3;
-  dataKeyList.forEach((key, i) => {
-    const value = dataValueList[i];
-    const p = addressFromKey(key, DATA_KEYS.AddressPermissionsPermissionsPrefix);
-    const c = addressFromKey(key, DATA_KEYS.AddressPermissionsAllowedCallsPrefix);
-    const k = addressFromKey(key, DATA_KEYS.AddressPermissionsAllowedERC725YDataKeysPrefix);
-    if (p) perms.set(p, { address: p, permissions: value, allowedCalls: "0x", allowedERC725YDataKeys: "0x", isUrd: false });
-    else if (c) calls.set(c, value);
-    else if (k) dataKeys.set(k, value);
-    else if (key.toLowerCase() === DATA_KEYS.LSP1UniversalReceiverDelegate.toLowerCase() && value.length === 42 && isAddress12(value, { strict: false })) urd = getAddress19(value);
-    else if (key.toLowerCase() === DATA_KEYS.LSP3Profile.toLowerCase()) lsp3 = value;
-  });
-  const initialControllers = [...perms.values()].map((c) => ({ ...c, allowedCalls: calls.get(c.address) ?? "0x", allowedERC725YDataKeys: dataKeys.get(c.address) ?? "0x", isUrd: urd !== void 0 && sameAddress2(c.address, urd) }));
-  const versionOf = (table, a) => Object.entries(table).find(([, x]) => sameAddress2(x, a))?.[0] ?? "imported";
-  const plan = urd ? {
-    factory: getAddress19(item.factoryAddress),
-    postDeploymentModule: getAddress19(module),
-    implementations: {
-      universalProfileInit: { version: versionOf(LSP.UP_INIT, primary.implementationContract), address: getAddress19(primary.implementationContract) },
-      keyManagerInit: { version: versionOf(LSP.KM_INIT, secondary.implementationContract), address: getAddress19(secondary.implementationContract) },
-      universalReceiverDelegate: { version: versionOf(LSP.URD, urd), address: urd }
-    },
-    dataKeys: dataKeyList,
-    dataValues: dataValueList,
-    primaryContractDeploymentInit: { salt: primary.salt.toLowerCase(), fundingAmount: primary.fundingAmount.toString(), implementationContract: getAddress19(primary.implementationContract), initializationCalldata: primary.initializationCalldata },
-    secondaryContractDeploymentInit: {
-      fundingAmount: secondary.fundingAmount.toString(),
-      implementationContract: getAddress19(secondary.implementationContract),
-      initializationCalldata: secondary.initializationCalldata,
-      addPrimaryContractAddress: secondary.addPrimaryContractAddress,
-      extraInitializationParams: secondary.extraInitializationParams
-    },
-    postDeploymentModuleCalldata: moduleData,
-    generatedSalt: derived.generatedSalt,
-    profile: derived.profile,
-    keyManager: derived.keyManager
-  } : void 0;
-  return {
-    supported: true,
-    derivedProfile: derived.profile,
-    derivedKeyManager: derived.keyManager,
-    rederives: sameAddress2(derived.profile, item.profileAddress),
-    canonicalFactory: sameAddress2(item.factoryAddress, LSP.LSP23_FACTORY),
-    initialControllers,
-    ...urd ? { urd } : {},
-    ...lsp3 ? { lsp3 } : {},
-    ...plan ? { plan } : {}
-  };
-}
-function initialControllersFor(dec, keyIndexOf) {
-  return dec.initialControllers.map((c) => {
-    const idx = c.isUrd ? void 0 : keyIndexOf(c.address);
-    const names = decodePermissions(c.permissions).names;
-    return {
-      address: c.address,
-      ...idx !== void 0 ? { privateKeyIndex: idx } : {},
-      addressPermissions: { permissions: c.permissions, decodedPermissions: Object.fromEntries(names.map((n) => [n, true])), allowedCalls: c.allowedCalls, allowedERC725YDataKeys: c.allowedERC725YDataKeys }
-    };
-  });
-}
-function permissionMismatch(c) {
-  if (!c.decodedPermissions) return [];
-  const real = new Set(decodePermissions(c.permissions).names);
-  const listed = new Set(Object.entries(c.decodedPermissions).filter(([, v]) => v === true).map(([k]) => k));
-  return [.../* @__PURE__ */ new Set([...real, ...listed])].filter((n) => real.has(n) !== listed.has(n));
-}
-function manifestFromBackup(item, dec, heldKeys) {
-  if (!dec.supported || !dec.plan) return { reason: dec.reason ?? "the deployment data has no Universal Receiver Delegate" };
-  if (!dec.rederives) return { reason: "the calldata does not derive the profile address stated in the file" };
-  const controllers = dec.initialControllers.filter((c) => !c.isUrd);
-  if (!controllers.length) return { reason: "the calldata has no controller" };
-  const chosen = controllers.find((c) => heldKeys.has(c.address.toLowerCase())) ?? controllers[0];
-  if (BigInt(chosen.permissions || "0x0") === 0n) return { reason: "the first controller has no permissions" };
-  if (dec.plan.primaryContractDeploymentInit.fundingAmount !== "0" || dec.plan.secondaryContractDeploymentInit.fundingAmount !== "0") return { reason: "the deployment sends value, which this skill does not replay" };
-  const plan = { ...dec.plan, deployCalldata: item.deploymentCalldata };
-  const manifest = manifestFromPlan(
-    {
-      salt: dec.plan.primaryContractDeploymentInit.salt,
-      controller: chosen.address,
-      permissions: chosen.permissions,
-      extraControllers: controllers.filter((c) => c !== chosen).map((c) => ({ address: c.address, permissions: c.permissions })),
-      ...dec.lsp3 ? { lsp3: dec.lsp3 } : {}
-    },
-    plan
-  );
-  const v = verifyManifest(manifest);
-  return v.ok ? { manifest } : { reason: "the rebuilt manifest does not re-derive (the calldata is not the canonical encoding)" };
-}
-
-// src/backup/store.ts
-init_errors();
-init_home();
-init_secret_guard();
-import { createHash } from "node:crypto";
-import { lstat as lstat3, readFile as readFile7, stat as stat5 } from "node:fs/promises";
-import { dirname as dirname4, isAbsolute as isAbsolute2, join as join10, resolve as resolve5 } from "node:path";
-var sha256Hex = (data) => createHash("sha256").update(data).digest("hex");
-function backupsDir(home) {
-  return paths.backups(home);
-}
-function indexFile(home) {
-  return join10(backupsDir(home), "index.jsonl");
-}
-async function appendIndex(home, entry) {
-  await ensureDir(backupsDir(home));
-  await appendLine(indexFile(home), JSON.stringify(entry));
-}
-async function readIndex(home) {
-  let text = "";
-  try {
-    text = await readFile7(indexFile(home), "utf8");
-  } catch (e) {
-    if (e.code === "ENOENT") return { backups: [], events: [] };
-    throw e;
-  }
-  const backups = [];
-  const events = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const v = JSON.parse(line);
-      if (v && typeof v.event === "string") events.push(v);
-      else if (v && typeof v.file === "string" && typeof v.sha256 === "string") backups.push(v);
-    } catch {
-    }
-  }
-  return { backups, events };
-}
-async function defaultBackupPath(home, now = /* @__PURE__ */ new Date()) {
-  const day = now.toISOString().slice(0, 10);
-  const dir = backupsDir(home);
-  for (let n = 1; n < 1e3; n++) {
-    const file2 = join10(dir, `universal-profiles-backup-${day}${n === 1 ? "" : `-${n}`}.json`);
-    if (!await lstat3(file2).then(() => true, () => false)) return file2;
-  }
-  throw new UpError("INTERNAL", "too many backups for today in the backups folder");
-}
-async function resolveDestination(home, given) {
-  if (!given?.trim()) {
-    await ensureDir(backupsDir(home));
-    return defaultBackupPath(home);
-  }
-  const file2 = isAbsolute2(given.trim()) ? given.trim() : resolve5(given.trim());
-  const parent = await stat5(dirname4(file2)).catch(() => null);
-  if (!parent?.isDirectory()) throw new UpError("BAD_ARGS", `the folder ${dirname4(file2)} does not exist`);
-  assertNotKeyMaterialPath(dirname4(file2), "backup destination", { allowBackups: true });
-  if (await lstat3(file2).then(() => true, () => false)) throw new UpError("BAD_ARGS", `${file2} already exists; a backup is never overwritten`, { hint: "pass another --path, or omit it" });
-  return file2;
-}
-async function writeBackup(file2, content) {
-  await writeNewFileExclusive(file2, content);
-  return { sha256: sha256Hex(content), size: Buffer.byteLength(content) };
-}
-async function readBackupFile(given) {
-  if (!given?.trim()) throw new UpError("BAD_ARGS", "give the path of a backup file");
-  const file2 = resolve5(given.trim());
-  assertNotKeyMaterialPath(file2, "backup file", { allowBackups: true });
-  const st = await stat5(file2).catch(() => null);
-  if (!st?.isFile()) throw new UpError("BAD_ARGS", `no backup file at ${file2}`, { hint: "pass the path the file was saved to (a chat attachment is saved by the host; use that path)" });
-  if (st.size > MAX_BACKUP_BYTES) throw new UpError("BAD_ARGS", `the backup file is larger than ${MAX_BACKUP_BYTES / 1024 / 1024} MiB`);
-  const bytes = await readFile7(file2);
-  return { file: file2, text: backupText(bytes), sha256: sha256Hex(bytes), size: bytes.length };
-}
-
-// src/backup/build.ts
-var sameAddress3 = (a, b) => a.toLowerCase() === b.toLowerCase();
-var REFRESH_TIMEOUT_MS = 8e3;
-function withTimeout(p, ms) {
-  return new Promise((resolve8, reject) => {
-    const t = setTimeout(() => reject(new Error("timed out")), ms);
-    p.then((v) => (clearTimeout(t), resolve8(v)), (e) => (clearTimeout(t), reject(e)));
-  });
-}
-async function collectHeldKeys(ctx, cfg, warnings) {
-  const listed = [];
-  const add2 = (address, backend, kind) => {
-    if (isAddress13(address, { strict: false }) && !listed.some((k) => sameAddress3(k.address, address))) listed.push({ address: getAddress20(address), backend, kind });
-  };
-  if (cfg.controller) add2(cfg.controller.address, cfg.controller.backend, "default");
-  for (const k of chainControllerList(cfg)) add2(k.address, k.backend, "chain");
-  for (const k of await keptKeys(ctx.home, cfg)) add2(k.address, k.backend, k.kind);
-  const held = [];
-  for (const k of listed) {
-    let has = false;
-    try {
-      has = await internalBackend(k.backend).has(k.address);
-    } catch {
-    }
-    if (has) held.push(k);
-    else warnings.push(`the key ${k.address} is listed but is not in its key store (${k.backend}); it cannot be part of the backup`);
-  }
-  return held;
-}
-function deployedChains(m, record) {
-  const ids = /* @__PURE__ */ new Set();
-  for (const d of Object.values(m?.deployments ?? {})) if (d && (d.status === "deployed" || d.status === "already-deployed") && Number.isInteger(d.chainId)) ids.add(d.chainId);
-  for (const id of m?.chains ?? []) if (Number.isInteger(id)) ids.add(id);
-  for (const c of record.joined?.chains ?? []) if (c?.deployed === true && Number.isInteger(c.chainId)) ids.add(c.chainId);
-  for (const [id, c] of Object.entries(record.status?.chains ?? {})) if (c?.deployed === true && /^\d+$/.test(id)) ids.add(Number(id));
-  return [...ids];
-}
-async function collectProfiles(ctx, cfg, warnings, opts = {}) {
-  const dir = paths.profiles(ctx.home);
-  const names = (await readdir(dir).catch(() => [])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
-  const identities = /* @__PURE__ */ new Map();
-  for (const n of names) identities.set(n.slice(0, 42).toLowerCase(), getAddress20(n.slice(0, 42)));
-  if (cfg.defaultProfile) identities.set(cfg.defaultProfile.toLowerCase(), getAddress20(cfg.defaultProfile));
-  if (opts.only) {
-    for (const o of opts.only) if (!identities.has(o.toLowerCase())) throw new UpError("BAD_ARGS", `no profile ${o} is known on this machine`, { hint: "the profiles known here are listed by: up profile status" });
-  }
-  const out = [];
-  const aliasOf = (a) => Object.entries(cfg.aliases ?? {}).find(([, v]) => sameAddress3(v, a))?.[0] ?? "";
-  const ordered = [...identities.values()].sort((a, b) => cfg.defaultProfile && sameAddress3(a, cfg.defaultProfile) ? -1 : cfg.defaultProfile && sameAddress3(b, cfg.defaultProfile) ? 1 : a.localeCompare(b));
-  for (const id of ordered) {
-    if (opts.only && !opts.only.some((o) => sameAddress3(o, id))) continue;
-    const record = await readProfileRecord(ctx.home, id);
-    const linked = chainAddressesOf(record);
-    let manifest = record.deployment;
-    if (manifest && (manifest.kind !== "lsp23-erc1167-up" || !verifyManifest(manifest).ok)) {
-      warnings.push(`the deployment data of ${id} does not check out (it is left out of the backup)`);
-      manifest = void 0;
-    }
-    const linkedChains = new Set(Object.keys(linked).map(Number));
-    let chainIds = deployedChains(manifest, record).filter((c) => !linkedChains.has(c));
-    const onChain2 = {};
-    if (opts.refresh) {
-      for (const c of new Set([...chainIds, ...cfg.chains ?? []].filter((x) => !linkedChains.has(x)))) {
-        try {
-          if (!await withTimeout(hasCode(ctx, c, id), REFRESH_TIMEOUT_MS)) continue;
-          if (!chainIds.includes(c)) chainIds.push(c);
-          onChain2[c] = (await withTimeout(readControllers(ctx, c, id), REFRESH_TIMEOUT_MS)).controllers.map((x) => x.address);
-        } catch (e) {
-          warnings.push(`could not refresh ${id} on chain ${c}: ${e.message}`);
-        }
-      }
-    }
-    chainIds = [...new Set(chainIds)];
-    const deployed = manifest ? Object.values(manifest.deployments ?? {}).some((d) => d?.status === "deployed" || d?.status === "already-deployed") : false;
-    if (chainIds.length) out.push({ address: id, name: aliasOf(id), chainIds, ...manifest && deployed ? { manifest } : {}, onChain: onChain2 });
-    else if (!linkedChains.size) warnings.push(`the profile ${id} is not deployed or joined anywhere yet; nothing to back up for it`);
-    for (const [chain, address] of Object.entries(linked)) out.push({ address, name: aliasOf(address), chainIds: [Number(chain)], onChain: {} });
-  }
-  return out;
-}
-async function collectState(ctx, opts = {}) {
-  const cfg = await ctx.config();
-  const warnings = [];
-  const keys = await collectHeldKeys(ctx, cfg, warnings);
-  const profiles = await collectProfiles(ctx, cfg, warnings, opts);
-  return { keys, profiles, warnings };
-}
-function fingerprints(state) {
-  const addrs2 = (xs) => xs.map((x) => x.address.toLowerCase()).sort();
-  const profilePart = ["profiles", ...addrs2(state.profiles), "deployments", ...state.profiles.flatMap((p) => p.manifest ? [sha256Hex(p.manifest.deployCalldata.toLowerCase())] : []).sort()];
-  return { full: sha256Hex(["keys", ...addrs2(state.keys), ...profilePart].join("\n")), profiles: sha256Hex(profilePart.join("\n")) };
-}
-function chainName(ctx, id) {
-  try {
-    return ctx.registry.chain(id).name;
-  } catch {
-    return "Unknown chain";
-  }
-}
-function keyName(k, activeHere) {
-  if (activeHere) return "AI agent key";
-  if (k.kind === "previous") return "AI agent key (previous)";
-  if (k.kind === "additional" || k.kind === "recovered") return "AI agent key (not yet used)";
-  return "AI agent key (other network)";
-}
-function buildBackup(ctx, cfg, state, mode, now = /* @__PURE__ */ new Date()) {
-  const withKeys = mode !== "public";
-  const indexOf = (a) => {
-    const i = state.keys.findIndex((k) => sameAddress3(k.address, a));
-    return withKeys && i >= 0 ? i : void 0;
-  };
-  const accounts = [];
-  const lsp23 = [];
-  for (const p of state.profiles) {
-    const dec = p.manifest ? decodeDeployment({ profileAddress: p.manifest.profile, factoryAddress: p.manifest.plan.factory, deploymentCalldata: p.manifest.deployCalldata }) : void 0;
-    const networks = [...p.chainIds].sort((a, b) => a === 42 ? -1 : b === 42 ? 1 : a - b).map((chainID) => {
-      const active = controllerFor(cfg, chainID)?.address;
-      const controllers = [];
-      const push = (c) => {
-        if (!controllers.some((x) => sameAddress3(x.address, c.address))) controllers.push(c);
-      };
-      for (const k of state.keys) push({ address: k.address, type: "App", ...indexOf(k.address) !== void 0 ? { privateKeyIndex: indexOf(k.address) } : {}, name: keyName(k, !!active && sameAddress3(active, k.address)) });
-      for (const c of dec?.initialControllers ?? []) {
-        if (c.isUrd) push({ address: c.address, type: "UniversalReceiver", name: "Universal Receiver" });
-        else push({ address: c.address, type: "Device", name: "Co-owner (key not held by the agent)" });
-      }
-      for (const a of p.onChain[chainID] ?? []) push({ address: a, type: "Device", name: "Controller (found on chain)" });
-      return { chainID, name: chainName(ctx, chainID), controllers };
-    });
-    accounts.push({ type: "LSP0-ERC725Account", name: p.name, address: p.address, networks });
-    if (p.manifest && dec) {
-      const first = Object.values(p.manifest.deployments).filter((d) => d.status === "deployed" || d.status === "already-deployed").sort((a, b) => a.deployedAt.localeCompare(b.deployedAt))[0];
-      if (!first) continue;
-      lsp23.push({
-        profileAddress: p.manifest.profile,
-        initialChainID: first.chainId,
-        factoryAddress: p.manifest.plan.factory,
-        deploymentCalldata: p.manifest.deployCalldata,
-        salt: p.manifest.salt,
-        initialControllers: initialControllersFor(dec, indexOf)
-      });
-    }
-  }
-  const file2 = { version: 2, backupDate: backupDate(now), accounts, LSP23CrossChainDeployment: lsp23 };
-  const appIncompatible = appIncompatibilities({ ...file2, secrets: { encrypted: false, data: [] } });
-  return { file: file2, keys: withKeys ? state.keys : [], chains: [...new Set(accounts.flatMap((a) => a.networks.map((n) => n.chainID)))].sort((a, b) => a - b), appIncompatible };
-}
 
 // src/backup/password.ts
 init_errors();
-import { randomInt } from "node:crypto";
-var PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-var MIN_PASSWORD_LENGTH = 12;
-var RECOMMENDED_PASSWORD_LENGTH = 16;
-var MAX_STDIN_BYTES = 4096;
-function generatePassword() {
-  const groups = [];
-  for (let g = 0; g < 4; g++) {
-    let part = "";
-    for (let i = 0; i < 5; i++) part += PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)];
-    groups.push(part);
-  }
-  return groups.join("-");
-}
 var PASSWORD_PARAMS = [
   { name: "password", type: "string", description: "The backup password the human chose and told you in chat (at least 12 characters, 16 or more is better). Omit to have one generated." },
   { name: "password-env", type: "string", description: "Name of an environment variable that holds the backup password (read once, then removed from this process)." },
   { name: "password-stdin", type: "boolean", description: "Read the backup password from standard input (CLI only; not available over MCP)." }
 ];
-async function readStdin() {
-  if (process.env.UP_MCP_SERVER === "1") throw new UpError("BAD_ARGS", "--password-stdin is not available over MCP (standard input carries the protocol)", { hint: "pass --password or --password-env" });
-  const chunks = [];
-  let size4 = 0;
-  for await (const c of process.stdin) {
-    size4 += c.length;
-    if (size4 > MAX_STDIN_BYTES) throw new UpError("BAD_ARGS", "the password on standard input is too long");
-    chunks.push(Buffer.from(c));
-  }
-  return Buffer.concat(chunks).toString("utf8").replace(/\r?\n$/, "");
-}
-async function choosePassword(args, forExport) {
-  const given = [args.password !== void 0, args["password-env"] !== void 0, args["password-stdin"] === true, args["generate-password"] === true].filter(Boolean).length;
-  if (given > 1) throw new UpError("BAD_ARGS", "give only one of --password, --password-env, --password-stdin, --generate-password");
-  if (args["generate-password"] === true && !forExport) throw new UpError("BAD_ARGS", "--generate-password only applies when making a backup");
-  let password;
-  let source;
-  if (args.password !== void 0) {
-    password = args.password;
-    source = "argument";
-  } else if (args["password-env"] !== void 0) {
-    const name = args["password-env"];
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new UpError("BAD_ARGS", "--password-env must be the name of an environment variable");
-    const v = process.env[name];
-    if (!v) throw new UpError("BAD_ARGS", `the environment variable ${name} is not set or empty`);
-    delete process.env[name];
-    password = v;
-    source = "env";
-  } else if (args["password-stdin"] === true) {
-    password = await readStdin();
-    source = "stdin";
-  } else if (forExport) {
-    return { password: generatePassword(), source: "generated", generated: true, warnings: [] };
-  } else return void 0;
-  if (!password) throw new UpError("BAD_ARGS", "the password is empty");
-  const warnings = [];
-  if (forExport) {
-    const length = [...password].length;
-    if (length < MIN_PASSWORD_LENGTH) throw new UpError("BAD_ARGS", `the backup password must have at least ${MIN_PASSWORD_LENGTH} characters`, { hint: "ask the human for a longer one, or omit the password to have a strong one generated" });
-    if (length < RECOMMENDED_PASSWORD_LENGTH) warnings.push(`the backup password has only ${length} characters; a backup file can be guessed at offline, so 16 or more is much safer`);
-  }
-  return { password, source, generated: false, warnings };
-}
-function checkHint(hint, password) {
-  const h = hint?.trim();
-  if (!h) return void 0;
-  if ([...h].length > 255) throw new UpError("BAD_ARGS", "the password hint is longer than 255 characters");
-  if (h.includes(password) || h.replace(/[-\s]/g, "").includes(password.replace(/[-\s]/g, ""))) throw new UpError("BAD_ARGS", "the password hint contains the password; the hint is stored unencrypted in the file");
-  return h;
-}
-
-// src/backup/restore.ts
-init_errors();
-init_profile_record();
-init_lsp23();
-init_profile();
-init_read2();
-init_signer();
-import { basename as basename2 } from "node:path";
-import { getAddress as getAddress21 } from "./vendor-viem.mjs";
-init_select();
-function issueSummary(issues) {
-  return issues.filter((i) => i.level === "error").map((i) => `${i.code}: ${i.message}`).join("; ");
-}
-async function openBackup(text, password) {
-  const { backup, issues } = parseBackup(text);
-  if (!backup) throw new UpError("BAD_ARGS", `the backup file is not valid: ${issueSummary(issues) || "unreadable"}`, { details: { issues }, hint: "check it with: up backup inspect <file>" });
-  const s = backup.secrets;
-  let keys = [];
-  let seedPhraseEntries = 0;
-  let decryption;
-  if (s.kind === "encrypted") {
-    if (!password) throw new UpError("BAD_ARGS", "this backup is password protected: its password is needed", { hint: "ask the human for the password and pass it with --password (or --password-env / --password-stdin)", details: { passwordHint: s.hint ?? null } });
-    const opened = await decryptSecrets(s.data, password);
-    keys = opened.keys;
-    seedPhraseEntries = opened.seedPhraseEntries;
-    decryption = { iterations: opened.iterations, passwordForm: opened.passwordForm, shape: opened.shape };
-  } else if (s.kind === "plain") {
-    keys = s.entries.map((e) => openKey(e.secret, e.index, e.address));
-    seedPhraseEntries = s.skippedSeedEntries;
-  }
-  const byIndex = new Map(keys.map((k) => [k.index, k]));
-  const all = [...issues];
-  const referenced = /* @__PURE__ */ new Set();
-  for (const a of backup.accounts) for (const n of a.networks) for (const c of n.controllers) if (c.privateKeyIndex !== void 0) referenced.add(c.privateKeyIndex);
-  for (const l of backup.lsp23) for (const c of l.initialControllers) if (c.privateKeyIndex !== void 0) referenced.add(c.privateKeyIndex);
-  for (const i of referenced) if (!byIndex.has(i)) all.push({ level: "warn", code: "unresolved-key-index", message: `a controller points at key number ${i}, which the file does not hold` });
-  for (const k of keys) if (k.claimedAddress) all.push({ level: "warn", code: "address-mismatch", message: `key number ${k.index} is stored with an address that is not its own; the real address is used` });
-  if (seedPhraseEntries) all.push({ level: "warn", code: "seed-phrase", message: `${seedPhraseEntries} seed phrase entr${seedPhraseEntries === 1 ? "y" : "ies"} found; seed phrases are not supported and were skipped` });
-  return { parsed: backup, issues: all, keys, seedPhraseEntries, decryption };
-}
-var sameAddress4 = (a, b) => a.toLowerCase() === b.toLowerCase();
-function analyseAccounts(opened, localKeys) {
-  const fileByAddress = new Map(opened.keys.map((k) => [k.address.toLowerCase(), k]));
-  const held = /* @__PURE__ */ new Set([...fileByAddress.keys(), ...localKeys]);
-  return opened.parsed.accounts.map((account) => {
-    const items = opened.parsed.lsp23.filter((l) => sameAddress4(l.profileAddress, account.address)).map((item) => {
-      const decoded = decodeDeployment(item);
-      const { manifest, reason } = manifestFromBackup(item, decoded, held);
-      return { item, decoded, manifest, reason, permissionNotes: item.initialControllers.flatMap((c) => permissionMismatch(c.addressPermissions).map((n) => `${n} for ${c.address}`)) };
-    });
-    const listed = /* @__PURE__ */ new Set();
-    const indices = /* @__PURE__ */ new Set();
-    for (const n of account.networks) for (const c of n.controllers) listed.add(c.address.toLowerCase()), c.privateKeyIndex !== void 0 && indices.add(c.privateKeyIndex);
-    for (const it of items) for (const c of it.item.initialControllers) listed.add(c.address.toLowerCase()), c.privateKeyIndex !== void 0 && indices.add(c.privateKeyIndex);
-    const heldControllers = [...listed].filter((a) => held.has(a)).map((a) => getAddress21(a));
-    const fileKeys = opened.keys.filter((k) => indices.has(k.index) || listed.has(k.address.toLowerCase()));
-    const proof = items.some((it) => it.decoded.rederives && it.decoded.initialControllers.some((c) => !c.isUrd && held.has(c.address.toLowerCase())));
-    const chains = [.../* @__PURE__ */ new Set([...account.networks.map((n) => n.chainID), ...account.networks.length ? [] : items.map((i) => i.item.initialChainID)])];
-    return { account, chains, items, heldControllers, fileKeys, proof };
-  });
-}
-async function decideChain(ctx, a, chainId) {
-  try {
-    ctx.registry.chain(chainId);
-  } catch {
-    return { chainId, status: "unverified", note: "this network is not in the registry" };
-  }
-  try {
-    if (!await hasCode(ctx, chainId, a.account.address)) return { chainId, status: "not-deployed" };
-  } catch {
-    return { chainId, status: "unverified", note: "the network could not be reached" };
-  }
-  let inconclusive = false;
-  for (const key of a.heldControllers) {
-    try {
-      const info = await readControllerPermissions(ctx, chainId, a.account.address, key);
-      if (info.permissions.value !== 0n) return { chainId, status: "controls" };
-    } catch {
-      inconclusive = true;
-    }
-  }
-  if (inconclusive) return { chainId, status: "unverified", note: "the permissions could not be read" };
-  if (a.proof) return { chainId, status: "restorable-with-warning", note: "controller-permissions-revoked: the key no longer has permissions on this network, but the file proves it created the profile" };
-  return { chainId, status: a.heldControllers.length ? "impersonation-blocked" : "no-controlling-key" };
-}
-async function decideProfile(ctx, a, online) {
-  const address = a.account.address;
-  if (!online) {
-    const forged = a.items.some((i) => !i.decoded.rederives && i.decoded.supported);
-    const verdict2 = !a.heldControllers.length ? "no-controlling-key" : forged && !a.proof ? "impersonation-blocked" : "unverified";
-    return { address, verdict: verdict2, restorable: verdict2 === "unverified", chains: a.chains.map((chainId) => ({ chainId, status: "unverified", note: "not checked on the network" })) };
-  }
-  const chains = [];
-  for (const c of a.chains) chains.push(await decideChain(ctx, a, c));
-  const has = (s) => chains.some((c) => c.status === s);
-  const verdict = has("controls") ? "restorable" : has("restorable-with-warning") ? "restorable-with-warning" : has("unverified") ? "unverified" : has("impersonation-blocked") ? "impersonation-blocked" : has("no-controlling-key") ? "no-controlling-key" : "not-deployed";
-  return { address, verdict, restorable: verdict === "restorable" || verdict === "restorable-with-warning" || verdict === "unverified", chains };
-}
-async function localKeyStores(ctx, cfg) {
-  const known = [];
-  if (cfg.controller) known.push(cfg.controller);
-  known.push(...chainControllerList(cfg), ...cfg.previousControllers ?? [], ...await readCandidates(ctx.home), ...await readInventory(ctx.home));
-  const out = /* @__PURE__ */ new Map();
-  for (const k of known) {
-    const id = k.address.toLowerCase();
-    if (out.has(id)) continue;
-    try {
-      if (await internalBackend(k.backend).has(k.address)) out.set(id, k.backend);
-    } catch {
-    }
-  }
-  return out;
-}
-async function existingStore(address, known, target) {
-  const hit = known.get(address.toLowerCase());
-  if (hit || !target) return hit;
-  try {
-    return await target.has(address) ? target.id : void 0;
-  } catch {
-    return void 0;
-  }
-}
-async function restoreKeys(ctx, keys, backend, backupDate2, known, activeAddress) {
-  const results = [];
-  await withKeyLock(ctx.home, async () => {
-    for (const k of keys) {
-      const where = await existingStore(k.address, known, backend);
-      if (where) {
-        results.push({ address: k.address, status: "exists", backend: where });
-        continue;
-      }
-      try {
-        if (!backend) throw new UpError("INTERNAL", "no key store was chosen for the new keys");
-        await importRecorded(ctx.home, backend, k.privateKey, `restored from LSP-30 backup ${backupDate2}`);
-        results.push({ address: k.address, status: "restored", backend: backend.id });
-        if (!activeAddress || !sameAddress4(activeAddress, k.address)) await updateCandidates(ctx.home, (list) => [...list, { address: k.address, backend: backend.id, createdAt: (/* @__PURE__ */ new Date()).toISOString() }]);
-      } catch (e) {
-        results.push({ address: k.address, status: "failed", ...backend ? { backend: backend.id } : {} });
-        const err = e instanceof UpError ? e : new UpError("INTERNAL", e.message);
-        throw new UpError(err.code, `${err.message} (${results.filter((r) => r.status === "restored").length} key(s) were restored before this; they stay in the key store and are listed)`, { hint: err.hint, details: { keys: results } });
-      }
-    }
-  });
-  return results;
-}
-function cleanLabel(s) {
-  const t = s.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
-  return t.length > 80 ? `${t.slice(0, 80)}…` : t;
-}
-async function writeProfileRecords(ctx, profiles, info) {
-  const out = [];
-  for (const { analysis, manifest } of profiles) {
-    let status = "none";
-    await updateProfileRecord(ctx.home, analysis.account.address, (latest) => {
-      const patch = {
-        imported: {
-          file: basename2(info.file),
-          sha256: info.sha256,
-          backupDate: info.backupDate,
-          at: (/* @__PURE__ */ new Date()).toISOString(),
-          ...analysis.account.name ? { name: cleanLabel(analysis.account.name) } : {},
-          ...analysis.items[0] ? { initialChainID: analysis.items[0].item.initialChainID } : {},
-          restoredKeys: info.restoredKeys,
-          skippedKeys: info.skippedKeys
-        }
-      };
-      const cur = latest.deployment;
-      if (manifest && !cur) {
-        const v = verifyManifest(manifest);
-        if (v.ok) {
-          patch.deployment = manifest;
-          status = "restored";
-        }
-      } else if (manifest && cur) status = cur.deployCalldata?.toLowerCase() === manifest.deployCalldata.toLowerCase() ? "kept-existing" : "conflict";
-      return patch;
-    });
-    out.push({ address: analysis.account.address, manifest: status, chains: analysis.chains });
-  }
-  return out;
-}
-async function applyImportConfig(ctx, change) {
-  const known = [];
-  const unknownChains = [];
-  for (const c of change.chains) {
-    try {
-      ctx.registry.chain(c);
-      known.push(c);
-    } catch {
-      unknownChains.push(c);
-    }
-  }
-  const result = { chainsAdded: [], unknownChains, activeSet: false, defaultProfileSet: false };
-  await ctx.updateConfig((cur) => {
-    const next = { ...cur, version: 1 };
-    result.chainsAdded = known.filter((c) => !(cur.chains ?? []).includes(c));
-    if (result.chainsAdded.length) next.chains = [...cur.chains ?? [], ...result.chainsAdded];
-    if (!cur.defaultProfile && change.defaultProfile) {
-      next.defaultProfile = change.defaultProfile;
-      result.defaultProfileSet = true;
-    }
-    if (!cur.controller && change.active) {
-      next.controller = { address: change.active.address, backend: change.active.backend, createdAt: (/* @__PURE__ */ new Date()).toISOString() };
-      result.activeSet = true;
-    }
-    return next;
-  });
-  return result;
-}
 
 // src/backup/verbs.ts
 var MODES = ["encrypted", "public", "unencrypted"];
-var sameAddress5 = (a, b) => a.toLowerCase() === b.toLowerCase();
-var short2 = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-function safeText(s, max = 80) {
-  const t = String(s ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
-  return t.length > max ? `${t.slice(0, max)}…` : t;
-}
-function chainName2(ctx, id) {
-  try {
-    return ctx.registry.chain(id).name;
-  } catch {
-    return `chain ${id}`;
-  }
-}
-function plural(n, one, many) {
-  return `${n} ${n === 1 ? one : many}`;
-}
-function hasPasswordArgs(a) {
-  return a.password !== void 0 || a["password-env"] !== void 0 || a["password-stdin"] === true || a["generate-password"] === true;
-}
 var PASSWORD_HELP = [
   ...PASSWORD_PARAMS,
   { name: "generate-password", type: "boolean", description: "Generate a strong password (the default for export when no password is given); it is returned in data.password so you can tell the human." }
 ];
-var DELIVERY = "Attach the file at data.path to your reply with your chat's attachment mechanism (OpenClaw: the message tool, action send, media = that path). Never read, print, cat, open, copy or upload the file's contents yourself.";
 defineVerb({
   name: "backup export",
   group: "backup",
   summary: "Make a backup file of the agent's profiles and keys that the Universal Profile mobile app can import (LSP-30), encrypted with a password by default.",
-  description: "Covers every profile and every key the agent has (--profiles narrows the profiles). Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) or at --path. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.",
+  description: "Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) or at --path. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.",
   risk: "secret",
   params: [
     { name: "path", type: "string", positional: 0, description: "Where to write the file (must not exist; its folder must exist). Default: <UP_HOME>/backups/universal-profiles-backup-YYYY-MM-DD.json." },
@@ -9696,118 +8889,8 @@ defineVerb({
     { name: "refresh", type: "boolean", default: false, description: "Also read each profile's current controllers from the networks (best effort, 8 seconds per network)." }
   ],
   examples: [`up backup export --approval "<the human's words>"`, "up backup export --mode public", 'up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval "<their words>"'],
-  async run(ctx, a) {
-    const mode = a.mode;
-    if (mode !== "encrypted" && (hasPasswordArgs(a) || a.hint)) throw new UpError("BAD_ARGS", `a password or hint only applies to an encrypted backup (this one is ${mode})`);
-    if (mode === "unencrypted" && a["explicit-consent"] !== true) {
-      throw new UpError("BAD_ARGS", "an unencrypted backup needs --explicit-consent: it puts the keys in a file anyone can use", { hint: "recommend the encrypted backup; only if the human insists, add --explicit-consent and their --approval" });
-    }
-    const cfg = await ctx.config();
-    const only = a.profiles?.length ? await Promise.all(a.profiles.map((p) => ctx.resolveAddress(p))) : void 0;
-    const state = await collectState(ctx, { only, refresh: a.refresh === true });
-    if (!state.profiles.length && !state.keys.length) throw new UpError("BAD_ARGS", "there is nothing to back up yet: no profile and no key on this machine", { hint: "set up the profile first (up start)" });
-    if (mode !== "public" && !state.keys.length) throw new UpError("NO_SIGNER", "none of the agent's keys is in a key store here, so there are no keys to back up", { hint: "a backup without keys is --mode public" });
-    const built = buildBackup(ctx, cfg, state, mode);
-    const dest = await resolveDestination(ctx.home, a.path);
-    const profiles = state.profiles.map((p) => p.address);
-    const warnings = [...state.warnings];
-    if (!state.profiles.length) warnings.push("the agent has no deployed profile yet: the file holds only its keys");
-    if (mode !== "public" && built.appIncompatible.length) warnings.push(...built.appIncompatible.map((w) => `the app may reject this file: ${w}`));
-    if (mode === "public" && built.file.LSP23CrossChainDeployment.length) warnings.push("the Universal Profile app cannot import a public file that has deployment data (it needs a key)");
-    if (mode === "unencrypted") warnings.push("UNENCRYPTED: this file holds the private keys in plain text. Anyone with a copy controls those keys and what they control. Delete it after use; if it was ever sent through a chat or e-mail, treat the keys as exposed and move the funds");
-    if (mode !== "public") {
-      await ctx.consent({
-        verb: "backup export",
-        risk: "secret",
-        summary: {
-          effect: mode === "encrypted" ? "write a backup file with the agent's keys locked by a password" : "write a backup file with the agent's keys in PLAIN TEXT",
-          destination: dest,
-          profiles,
-          chains: built.chains.map((c) => `${chainName2(ctx, c)} (${c})`),
-          keyAddresses: built.keys.map((k) => k.address),
-          keyCount: built.keys.length,
-          format: mode === "encrypted" ? `LSP-30 version 2 (${KDF_DESCRIPTION})` : "LSP-30 version 2, keys not encrypted",
-          password: mode === "encrypted" ? hasPasswordArgs(a) && a["generate-password"] !== true ? "chosen by the human" : "generated (returned to the agent to tell the human)" : "none",
-          note: mode === "encrypted" ? "anyone with the file AND the password controls these keys" : "anyone with the file controls these keys",
-          warnings
-        }
-      });
-    }
-    if (ctx.flags.dryRun) {
-      return { data: { dryRun: true, mode, path: dest, profiles, keys: built.keys.map((k) => k.address), chains: built.chains, appCompatible: built.appIncompatible.length === 0 }, text: `Dry run: a ${mode} backup of ${plural(profiles.length, "profile", "profiles")} and ${plural(built.keys.length, "key", "keys")} would be written to ${dest}.`, warnings };
-    }
-    const choice = mode === "encrypted" ? await choosePassword(a, true) : void 0;
-    const hint = choice ? checkHint(a.hint, choice.password) : void 0;
-    warnings.push(...choice?.warnings ?? []);
-    const secretKeys = [];
-    for (const k of built.keys) {
-      const backend = internalBackend(k.backend);
-      if (!backend.exportPrivateKey) throw new UpError("NOT_SUPPORTED", `the ${k.backend} key store cannot export keys for a backup`);
-      secretKeys.push({ address: k.address, privateKey: await backend.exportPrivateKey(k.address) });
-    }
-    const secrets2 = mode === "encrypted" ? { encrypted: true, ...hint ? { passwordHint: hint } : {}, encryptionType: ENCRYPTION_TYPE, data: await encryptSecrets(secretKeys, choice.password) } : { encrypted: false, data: mode === "unencrypted" ? secretKeys.map((k, index) => ({ type: "privateKey", index, address: k.address, secret: k.privateKey })) : [] };
-    const file2 = { ...built.file, secrets: secrets2 };
-    const text = serializeBackup(file2);
-    await verifyRoundTrip(text, built, secretKeys, choice?.password);
-    const written = await writeBackup(dest, text);
-    ctx.log(`${mode} backup written: ${dest}`);
-    const fp = fingerprints(state);
-    await appendIndex(ctx.home, {
-      at: (/* @__PURE__ */ new Date()).toISOString(),
-      file: dest,
-      sha256: written.sha256,
-      mode,
-      encrypted: mode === "encrypted",
-      profiles,
-      keys: built.keys.map((k) => k.address),
-      chains: built.chains,
-      fingerprint: fp.full,
-      profilesFingerprint: fp.profiles,
-      hintPresent: Boolean(hint),
-      appCompatible: built.appIncompatible.length === 0
-    });
-    const what = profiles.length === 1 ? "my account" : profiles.length > 1 ? `my ${profiles.length} accounts` : "my keys";
-    const say = mode === "encrypted" && choice?.generated ? `Here is the backup of ${what}. Its password is: ${choice.password}
-Keep the file and the password in different safe places (a password manager is ideal). You can restore it in the Universal Profile app or with me.` : mode === "encrypted" ? `Here is the backup of ${what}. It is locked with the password you chose; without it the file cannot be opened. Keep the file and the password in different places. You can restore it in the Universal Profile app or with me.` : mode === "unencrypted" ? `Here is the backup of ${what}, WITHOUT a password. Anyone who gets this file controls my keys and what they control: treat it like a recovery phrase, don't forward it, and delete it after use.` : `Here is a copy of the details of ${what}: no keys and no password are in it, so nobody can take control with it. It helps me set ${what === "my keys" ? "up" : "it up"} again, but it cannot restore control on its own${built.appIncompatible.length ? " and the Universal Profile app can't open it" : ""}.`;
-    const data = {
-      mode,
-      path: dest,
-      sha256: written.sha256,
-      size: written.size,
-      encrypted: mode === "encrypted",
-      profiles,
-      keys: built.keys.map((k) => k.address),
-      keyCount: built.keys.length,
-      chains: built.chains,
-      appCompatible: built.appIncompatible.length === 0,
-      ...mode === "encrypted" ? { kdf: KDF_DESCRIPTION } : {},
-      hintPresent: Boolean(hint),
-      ...choice?.generated ? { password: choice.password, passwordGenerated: true } : {},
-      say,
-      next: [
-        DELIVERY,
-        mode === "encrypted" && choice?.generated ? "Tell the human data.say (it has the password) with the attachment, and do not repeat the password elsewhere." : "Tell the human data.say with the attachment.",
-        "Do not delete or read backup files. The human decides what to keep.",
-        ...mode === "unencrypted" ? ["Deliver the file only because the human explicitly asked, after hearing the warning in data.say."] : []
-      ]
-    };
-    if (choice?.generated) releaseKeys(data, "password");
-    return {
-      data,
-      text: [say, "", `File: ${dest}`, `sha256: ${written.sha256}`, `Contents: ${plural(profiles.length, "profile", "profiles")}, ${plural(built.keys.length, "key", "keys")}${mode === "encrypted" ? `; ${KDF_DESCRIPTION}` : ""}`].join("\n"),
-      warnings
-    };
-  }
+  run: (ctx, a) => import("./backup.mjs").then((m) => m.runExport(ctx, a))
 });
-async function verifyRoundTrip(text, built, keys, password) {
-  const fail = () => new UpError("INTERNAL", "backup verification failed: the file does not read back as intended; nothing was written");
-  const opened = await openBackup(text, password).catch(() => {
-    throw fail();
-  });
-  if (opened.keys.length !== keys.length || opened.keys.some((k, i) => k.index !== i || !sameAddress5(k.address, keys[i].address) || k.privateKey !== keys[i].privateKey.toLowerCase() || k.claimedAddress)) throw fail();
-  if (opened.parsed.accounts.length !== built.file.accounts.length || opened.parsed.lsp23.length !== built.file.LSP23CrossChainDeployment.length) throw fail();
-  if (opened.parsed.secrets.kind === "encrypted" && opened.decryption?.iterations !== 1e4) throw fail();
-}
 defineVerb({
   name: "backup list",
   group: "backup",
@@ -9815,45 +8898,7 @@ defineVerb({
   description: "Checks each backup in <UP_HOME>/backups/index.jsonl (still there, unchanged; no decryption) against the current keys and profiles. `data.ask` is null or a question for the human: ask it once in your own words, then run this with --mark-asked. Plain-text backups that still exist are flagged.",
   risk: "local",
   params: [{ name: "mark-asked", type: "boolean", default: false, description: "Record that the human has just been asked about a backup (no question is returned again until something changes)." }],
-  async run(ctx, a) {
-    const state = await collectState(ctx);
-    const fp = fingerprints(state);
-    const { backups, events } = await readIndex(ctx.home);
-    const rows = await Promise.all(
-      backups.map(async (b) => {
-        const st = await stat6(b.file).catch(() => null);
-        const exists = Boolean(st?.isFile());
-        let changed = false;
-        if (exists && st.size <= MAX_BACKUP_BYTES) changed = sha256Hex(await readFile8(b.file)) !== b.sha256;
-        return { file: b.file, at: b.at, mode: b.mode, encrypted: b.encrypted, profiles: b.profiles, keys: b.keys, chains: b.chains, appCompatible: b.appCompatible, exists, changed, covers: { keys: b.mode !== "public" && b.fingerprint === fp.full, profiles: b.profilesFingerprint === fp.profiles } };
-      })
-    );
-    const usable = (r) => r.exists && !r.changed;
-    const newestWithKeys = [...rows].reverse().find((r) => r.mode !== "public" && usable(r));
-    const current = Boolean(newestWithKeys?.covers.keys);
-    const publicCurrent = rows.some((r) => usable(r) && r.covers.profiles);
-    const anything = state.keys.length > 0 || state.profiles.length > 0;
-    const alreadyAsked = events.some((e) => e.event === "asked" && e.fingerprint === fp.full);
-    let ask = null;
-    if (anything && state.keys.length > 0 && !current && !alreadyAsked) {
-      const reason = newestWithKeys ? "changed" : "no-backup";
-      ask = {
-        reason,
-        kind: "keys",
-        say: newestWithKeys ? "My account or my keys have changed since the last backup. Do you want a fresh backup? I'd give you a file and a password; keep them in different safe places and you can restore it in the Universal Profile app, or with me." : "Do you want a backup of my account? I'd give you a file and a password; keep them in different safe places and you can restore it in the Universal Profile app, or with me."
-      };
-    }
-    if (a["mark-asked"] === true) await appendIndex(ctx.home, { at: (/* @__PURE__ */ new Date()).toISOString(), event: "asked", fingerprint: fp.full, kind: ask?.kind ?? "keys" });
-    const plaintext = rows.filter((r) => r.mode === "unencrypted" && r.exists).map((r) => r.file);
-    const warnings = [
-      ...state.warnings,
-      ...plaintext.map((f) => `a plain-text backup still exists at ${f}: it holds the keys unprotected. Tell the human to delete it once it is no longer needed (backups are never deleted by the skill)`),
-      ...rows.filter((r) => !r.exists).map((r) => `the backup ${r.file} no longer exists`),
-      ...rows.filter((r) => r.exists && r.changed).map((r) => `the backup ${r.file} was changed after it was made`)
-    ];
-    const text = rows.length ? [`${plural(rows.length, "backup", "backups")} made here. ${current ? "The newest backup with keys covers the current keys and profiles." : newestWithKeys ? "The keys or profiles changed since the newest backup with keys." : "No backup with keys yet."}`, ...rows.map((r) => `- ${r.at.slice(0, 10)} ${r.mode}${r.exists ? "" : " (file gone)"}: ${r.file}`)].join("\n") : "No backup has been made on this machine yet.";
-    return { data: { backups: rows, current, publicCurrent, keys: state.keys.map((k) => k.address), profiles: state.profiles.map((p) => p.address), plaintextBackups: plaintext, ask, ...ask ? { next: ['Ask the human once, in your own words, using data.ask.say. If they agree: up backup export --approval "<their words>". If they decline: run up backup list --mark-asked and do not ask again until this returns a new data.ask.'] } : {} }, text, warnings };
-  }
+  run: (ctx, a) => import("./backup.mjs").then((m) => m.runList(ctx, a))
 });
 defineVerb({
   name: "backup inspect",
@@ -9862,79 +8907,8 @@ defineVerb({
   description: "Safe on any backup file, also one the human sent: no password, public data only (addresses, names as quoted text, the password hint). Re-derives each profile address from the file's deployment data; a mismatch means the file may be forged. Never prints encrypted data or any key.",
   risk: "local",
   params: [{ name: "path", type: "string", positional: 0, required: true, description: "Path of the backup file (for a chat attachment, the path the host saved it to)." }],
-  async run(ctx, a) {
-    const f = await readBackupFile(a.path);
-    const { backup, issues } = parseBackup(f.text);
-    const base = { file: f.file, size: f.size, sha256: f.sha256 };
-    if (!backup) return { data: { ...base, valid: false, issues }, text: `This is not a usable backup file:
-${issues.map((i) => `- ${i.message}`).join("\n")}`, warnings: [] };
-    let opened;
-    if (backup.secrets.kind === "plain") {
-      try {
-        opened = await openBackup(f.text, void 0);
-      } catch (e) {
-        issues.push({ level: "error", code: "bad-key", message: e instanceof UpError ? e.message : "a key in the file is not valid" });
-      }
-    }
-    const keyedBy = (idx) => idx !== void 0;
-    const analyses = analyseAccounts(opened ?? { parsed: backup, issues, keys: [], seedPhraseEntries: 0 }, /* @__PURE__ */ new Set());
-    const lsp23 = analyses.flatMap((x) => x.items);
-    const allIssues = [...issues];
-    for (const it of backup.lsp23) if (!analyses.some((x) => x.items.some((i) => i.item === it))) allIssues.push({ level: "warn", code: "orphan-deployment", message: `the deployment data for ${it.profileAddress} belongs to no account in the file` });
-    for (const it of lsp23) {
-      if (!it.decoded.supported) allIssues.push({ level: "warn", code: "unsupported-deployment", message: `deployment data for ${it.item.profileAddress}: ${it.decoded.reason}` });
-      else {
-        if (!it.decoded.rederives) allIssues.push({ level: "error", code: "profile-mismatch", message: `the deployment data for ${it.item.profileAddress} derives a different profile address (${it.decoded.derivedProfile}): the file may be forged` });
-        if (!it.decoded.canonicalFactory) allIssues.push({ level: "warn", code: "non-canonical-factory", message: `deployment data for ${it.item.profileAddress} uses a factory that is not the canonical LSP23 factory` });
-      }
-      for (const n of it.permissionNotes) allIssues.push({ level: "warn", code: "decoded-permissions", message: `decodedPermissions disagrees with the permissions value: ${n}` });
-    }
-    const s = backup.secrets;
-    const keyMaterial = s.kind === "encrypted" ? { kind: "encrypted", encryptionType: s.encryptionType ?? null, hintPresent: Boolean(s.hint), ...s.hint ? { hint: safeText(s.hint, 255) } : {}, sizes: { secretBytes: Buffer.from(s.data.secret, "base64").length, ivBytes: Buffer.from(s.data.iv, "base64").length, saltBytes: Buffer.from(s.data.salt, "base64").length } } : s.kind === "plain" ? { kind: "plain-text keys", keyCount: opened?.keys.length ?? 0, keyAddresses: opened?.keys.map((k) => k.address) ?? [] } : { kind: "public (no keys)" };
-    const warnings = [];
-    if (s.kind === "plain") warnings.push("this file holds private keys in plain text: if it was ever sent through a chat, e-mail or any tool an AI can read, treat those keys as exposed and move the funds to new keys");
-    const accounts = backup.accounts.map((acc) => ({
-      address: acc.address,
-      name: safeText(acc.name),
-      networks: acc.networks.map((n) => ({ chainId: n.chainID, network: chainName2(ctx, n.chainID), controllers: n.controllers.map((c) => ({ address: c.address, name: safeText(c.name), type: safeText(c.type, 40), hasKey: keyedBy(c.privateKeyIndex) })) }))
-    }));
-    const deployments = lsp23.map((it) => ({
-      profile: it.item.profileAddress,
-      initialChainId: it.item.initialChainID,
-      factory: it.item.factoryAddress,
-      supported: it.decoded.supported,
-      ...it.decoded.reason ? { reason: it.decoded.reason } : {},
-      rederivesProfile: it.decoded.rederives,
-      canonicalFactory: it.decoded.canonicalFactory,
-      initialControllers: it.decoded.initialControllers.map((c) => ({ address: c.address, isUniversalReceiver: c.isUrd, permissions: c.permissions, hasKey: it.item.initialControllers.some((x) => sameAddress5(x.address, c.address) && keyedBy(x.privateKeyIndex)) })),
-      canRebuildLocalManifest: Boolean(it.manifest)
-    }));
-    const text = [
-      `Backup of ${plural(accounts.length, "profile", "profiles")} (version 2, made ${backup.backupDate || "at an unknown time"}); ${keyMaterial.kind === "encrypted" ? "keys are password protected" : keyMaterial.kind === "plain-text keys" ? "KEYS ARE IN PLAIN TEXT" : "no keys in it"}.`,
-      ...accounts.map((x) => `- ${x.address}${x.name ? ` "${x.name}"` : ""}: ${x.networks.map((n) => n.network).join(", ") || "no networks"}`),
-      ...allIssues.map((i) => `${i.level === "error" ? "Problem" : "Note"}: ${i.message}`)
-    ].join("\n");
-    return { data: { ...base, valid: !allIssues.some((i) => i.level === "error"), version: 2, backupDate: backup.backupDate, keyMaterial, accounts, deployments, issues: allIssues }, text, warnings };
-  }
+  run: (ctx, a) => import("./backup.mjs").then((m) => m.runInspect(ctx, a))
 });
-var VERDICT_TEXT = {
-  restorable: "a key from the backup still controls it",
-  "restorable-with-warning": "the file proves a key created it, but that key no longer has permissions on the network",
-  unverified: "not confirmed on the network",
-  "not-deployed": "it is not deployed on any network I could check",
-  "no-controlling-key": "the backup has no key that controls it",
-  "impersonation-blocked": "none of the backup's keys controls it on the network, and the file does not prove it created it: not restored"
-};
-function decisionData(d, x) {
-  return {
-    address: d.address,
-    verdict: d.verdict,
-    restorable: d.restorable,
-    why: VERDICT_TEXT[d.verdict],
-    chains: d.chains,
-    deployment: x.items.map((i) => ({ rederivesProfile: i.decoded.rederives, canRebuildLocalManifest: Boolean(i.manifest), ...i.reason ? { reason: i.reason } : {} }))
-  };
-}
 defineVerb({
   name: "backup verify",
   group: "backup",
@@ -9946,37 +8920,7 @@ defineVerb({
     ...PASSWORD_PARAMS,
     { name: "online", type: "boolean", default: false, description: "Also check each profile on its networks (needs network access)." }
   ],
-  async run(ctx, a) {
-    const f = await readBackupFile(a.path);
-    const pw = await choosePassword(a, false);
-    const opened = await openBackup(f.text, pw?.password);
-    const cfg = await ctx.config();
-    const known = await localKeyStores(ctx, cfg);
-    const analyses = analyseAccounts(opened, new Set(known.keys()));
-    const keys = opened.keys.map((k) => ({ index: k.index, address: k.address, status: known.has(k.address.toLowerCase()) ? "exists" : "new" }));
-    const profiles = [];
-    for (const x of analyses) {
-      const d = a.online === true ? await decideProfile(ctx, x, true) : void 0;
-      profiles.push({
-        address: x.account.address,
-        chains: x.chains,
-        keys: x.fileKeys.map((k) => k.address),
-        deployment: x.items.map((i) => ({ rederivesProfile: i.decoded.rederives, canRebuildLocalManifest: Boolean(i.manifest), ...i.reason ? { reason: i.reason } : {} })),
-        proofFromFile: x.proof,
-        ...d ? { decision: decisionData(d, x) } : {}
-      });
-    }
-    const bad2 = opened.issues.filter((i) => i.level === "error");
-    return {
-      data: { file: f.file, sha256: f.sha256, valid: bad2.length === 0, keys, profiles, decryption: opened.decryption ?? null, issues: opened.issues, online: a.online === true },
-      text: [
-        `The backup opens${opened.decryption ? " with that password" : ""}: ${plural(keys.length, "key", "keys")} (${keys.filter((k) => k.status === "new").length} not on this machine yet), ${plural(profiles.length, "profile", "profiles")}.`,
-        ...profiles.map((p) => `- ${p.address}: ${p.decision ? `${p.decision.verdict} (${p.decision.why})` : "not checked on the network (add --online)"}`),
-        ...opened.issues.map((i) => `${i.level === "error" ? "Problem" : "Note"}: ${i.message}`)
-      ].join("\n"),
-      warnings: opened.issues.filter((i) => i.level === "warn").map((i) => i.message)
-    };
-  }
+  run: (ctx, a) => import("./backup.mjs").then((m) => m.runVerify(ctx, a))
 });
 defineVerb({
   name: "backup import",
@@ -9993,112 +8937,11 @@ defineVerb({
     { name: "offline", type: "boolean", default: false, description: "Skip the check on the networks. Only when the human's approval says 'offline' in their words." }
   ],
   examples: [`up backup import /path/to/universal-profiles-backup-2026-10-10.json --password-env BACKUP_PASSWORD --approval "<the human's words>"`],
-  async run(ctx, a) {
-    const offline = a.offline === true;
-    if (offline && !/offline/i.test(ctx.flags.approval ?? "")) throw new UpError("BAD_ARGS", "--offline skips the check that the profile really belongs to the backup's keys; it needs the human's approval to say so", { hint: "ask the human, and pass their words containing 'offline' as --approval" });
-    const f = await readBackupFile(a.path);
-    const pw = await choosePassword(a, false);
-    const opened = await openBackup(f.text, pw?.password);
-    const cfg = await ctx.config();
-    const known = await localKeyStores(ctx, cfg);
-    let analyses = analyseAccounts(opened, new Set(known.keys()));
-    if (a.profiles?.length) {
-      const wanted2 = await Promise.all(a.profiles.map((p) => ctx.resolveAddress(p)));
-      for (const w of wanted2) if (!analyses.some((x) => sameAddress5(x.account.address, w))) throw new UpError("BAD_ARGS", `the backup has no profile ${w}`, { hint: "list them with: up backup inspect <file>" });
-      analyses = analyses.filter((x) => wanted2.some((w) => sameAddress5(w, x.account.address)));
-    }
-    const decisions = [];
-    for (const x of analyses) decisions.push(await decideProfile(ctx, x, !offline));
-    const chosen = analyses.filter((_, i) => decisions[i].restorable);
-    const skipped = analyses.map((x, i) => ({ x, d: decisions[i] })).filter((p) => !p.d.restorable);
-    const wanted = /* @__PURE__ */ new Map();
-    for (const k of opened.keys) if (a["all-keys"] === true || chosen.some((x) => x.fileKeys.some((y) => sameAddress5(y.address, k.address)))) wanted.set(k.address.toLowerCase(), k);
-    const keysToRestore = [...wanted.values()];
-    const needStore = keysToRestore.some((k) => !known.has(k.address.toLowerCase()));
-    const backend = needStore ? await chooseBackend(a.backend) : void 0;
-    const keyPlan = await Promise.all(keysToRestore.map(async (k) => ({ address: k.address, status: known.has(k.address.toLowerCase()) || backend && await backend.has(k.address).catch(() => false) ? "exists" : "new" })));
-    let activeAddress;
-    if (!cfg.controller && keysToRestore.length) {
-      const fromManifest = chosen.flatMap((x) => x.items).find((i) => i.manifest && wanted.has(i.manifest.controller.toLowerCase()))?.manifest?.controller;
-      activeAddress = fromManifest ?? keysToRestore[0].address;
-    }
-    const profileRows = analyses.map((x, i) => decisionData(decisions[i], x));
-    const plan = {
-      file: basename3(f.file),
-      sha256: f.sha256,
-      backupDate: opened.parsed.backupDate,
-      profiles: profileRows.map((p) => ({ address: p.address, verdict: p.verdict, restoring: p.restorable, why: p.why })),
-      keys: keyPlan,
-      keyStore: backend?.id ?? null,
-      activeKey: activeAddress ?? null,
-      checkedOnNetwork: !offline
-    };
-    if (!chosen.length && a["all-keys"] !== true) {
-      const why = skipped.map((p) => `${short2(p.x.account.address)}: ${VERDICT_TEXT[p.d.verdict]}`).join("; ");
-      return {
-        data: { ...plan, restored: false, say: `I could not restore anything from this backup${why ? ` (${why})` : ""}.`, next: ["Tell the human what data.say says. Nothing was changed."] },
-        text: `Nothing was restored${why ? `: ${why}` : ""}.`,
-        warnings: opened.issues.filter((i) => i.level === "warn").map((i) => i.message)
-      };
-    }
-    await ctx.consent({
-      verb: "backup import",
-      risk: "secret",
-      summary: {
-        effect: "restore profiles and keys from a backup file into this agent's key store and records",
-        ...plan,
-        keyStoreNote: "keys are only ever added; none is overwritten or deleted. A key already here is skipped",
-        ...offline ? { warning: "the check on the networks is skipped: whether the backup's keys control the profiles is not confirmed" } : {}
-      }
-    });
-    if (ctx.flags.dryRun) return { data: { dryRun: true, ...plan }, text: `Dry run: ${plural(chosen.length, "profile", "profiles")} and ${plural(keysToRestore.length, "key", "keys")} would be restored from ${basename3(f.file)}.` };
-    const keyResults = keysToRestore.length ? await restoreKeys(ctx, keysToRestore, backend, opened.parsed.backupDate, known, activeAddress) : [];
-    const restoredKeys = keyResults.filter((r) => r.status === "restored").map((r) => r.address);
-    const notRestored = opened.keys.filter((k) => !keyResults.some((r) => sameAddress5(r.address, k.address))).map((k) => k.address);
-    const manifests = chosen.map((x) => ({ analysis: x, manifest: x.items.find((i) => i.manifest)?.manifest }));
-    const records = await writeProfileRecords(ctx, manifests, { file: f.file, sha256: f.sha256, backupDate: opened.parsed.backupDate, restoredKeys, skippedKeys: notRestored });
-    const activeResult = activeAddress ? keyResults.find((r) => sameAddress5(r.address, activeAddress)) : void 0;
-    const configResult = await applyImportConfig(ctx, {
-      defaultProfile: chosen[0]?.account.address,
-      chains: [...new Set(chosen.flatMap((x) => x.chains))],
-      ...activeResult && activeResult.backend ? { active: { address: activeResult.address, backend: activeResult.backend } } : {}
-    });
-    await appendIndex(ctx.home, { at: (/* @__PURE__ */ new Date()).toISOString(), event: "import", file: f.file, sha256: f.sha256, profiles: chosen.map((x) => x.account.address), keys: keyResults.map((r) => r.address) });
-    ctx.log(`backup imported: ${chosen.length} profile(s), ${restoredKeys.length} key(s)`);
-    const warnings = [
-      ...opened.issues.filter((i) => i.level === "warn").map((i) => i.message),
-      ...decisions.filter((d) => d.verdict === "restorable-with-warning" || d.verdict === "unverified").map((d) => `${d.address}: ${VERDICT_TEXT[d.verdict]}`),
-      ...skipped.map((p) => `${p.x.account.address} was not restored: ${VERDICT_TEXT[p.d.verdict]}`),
-      ...records.filter((r) => r.manifest === "conflict").map((r) => `${r.address}: this machine already has deployment data for the profile that differs from the backup's; it was kept`),
-      ...configResult.unknownChains.map((c) => `chain ${c} is not in the registry and was not added (up chains add ${c})`)
-    ];
-    const notDeployed = chosen.flatMap((x) => x.chains.map((c) => ({ x, c })));
-    const say = `I restored ${plural(chosen.length, "account", "accounts")} and ${plural(restoredKeys.length, "key", "keys")} from your backup${keyResults.length > restoredKeys.length ? ` (${keyResults.length - restoredKeys.length} ${keyResults.length - restoredKeys.length === 1 ? "was" : "were"} already here)` : ""}.` + (skipped.length ? ` ${plural(skipped.length, "account", "accounts")} in the file could not be restored, because nothing shows the backup's keys control ${skipped.length === 1 ? "it" : "them"}.` : "") + (restoredKeys.length && !configResult.activeSet ? " The restored keys are kept safe but I keep signing with my current key until you tell me to switch." : "");
-    const data = {
-      ...plan,
-      restored: true,
-      keysResult: keyResults,
-      profilesResult: records.map((r) => ({ address: r.address, status: "imported", manifest: r.manifest, chains: r.chains })),
-      skippedProfiles: skipped.map((p) => ({ address: p.x.account.address, verdict: p.d.verdict })),
-      config: configResult,
-      say,
-      next: [
-        "Tell the human data.say.",
-        "Check where each restored profile stands: up profile status",
-        ...notDeployed.length ? ["For a network where the profile is not deployed yet: up account deploy --chain <id> (replays the restored deployment at the same address)"] : [],
-        ...restoredKeys.length && !configResult.activeSet ? ["To sign with a restored key: up key address lists them; up key activate <address> (needs the human's approval)"] : []
-      ]
-    };
-    return {
-      data,
-      text: [say, ...keyResults.map((r) => `key ${r.address}: ${r.status}`), ...records.map((r) => `profile ${r.address}: imported${r.manifest === "restored" ? " (deployment data restored)" : ""}`)].join("\n"),
-      warnings
-    };
-  }
+  run: (ctx, a) => import("./backup.mjs").then((m) => m.runImport(ctx, a))
 });
 
 // src/exec/verbs.ts
-import { decodeFunctionResult as decodeFunctionResult4, encodeFunctionData as encodeFunctionData12, getAddress as getAddress28, isAddress as isAddress16 } from "./vendor-viem.mjs";
+import { decodeFunctionResult as decodeFunctionResult4, encodeFunctionData as encodeFunctionData11, getAddress as getAddress22, isAddress as isAddress14 } from "./vendor-viem.mjs";
 
 // src/exec/index.ts
 init_transport();
@@ -10107,7 +8950,7 @@ init_transport();
 init_tx();
 init_abis();
 init_profile();
-import { encodeFunctionData as encodeFunctionData8 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData7 } from "./vendor-viem.mjs";
 
 // src/exec/common.ts
 init_assets();
@@ -10116,10 +8959,10 @@ init_policy();
 init_abis();
 import {
   decodeEventLog as decodeEventLog2,
-  decodeFunctionData as decodeFunctionData3,
-  encodeFunctionData as encodeFunctionData7,
-  formatEther as formatEther4,
-  getAddress as getAddress24,
+  decodeFunctionData as decodeFunctionData2,
+  encodeFunctionData as encodeFunctionData6,
+  formatEther as formatEther2,
+  getAddress as getAddress18,
   parseAbiItem,
   zeroAddress as zeroAddress2
 } from "./vendor-viem.mjs";
@@ -10238,7 +9081,7 @@ function decodeCalldata2(data, abi2) {
   if (!data || data === "0x") return { source: "value-transfer" };
   if (abi2) {
     try {
-      const d = decodeFunctionData3({ abi: abi2, data });
+      const d = decodeFunctionData2({ abi: abi2, data });
       return { function: d.functionName, args: d.args ? [...d.args] : [], source: "abi" };
     } catch {
     }
@@ -10247,7 +9090,7 @@ function decodeCalldata2(data, abi2) {
   for (const sig of SELECTORS[sel] ?? []) {
     try {
       const item = parseAbiItem(`function ${sig}`);
-      const d = decodeFunctionData3({ abi: [item], data });
+      const d = decodeFunctionData2({ abi: [item], data });
       return { function: sig.replace(/\s+(payable|view|pure|nonpayable)?\s*(returns.*)?$/, ""), args: d.args ? [...d.args] : [], source: "bundled-selector" };
     } catch {
     }
@@ -10255,10 +9098,10 @@ function decodeCalldata2(data, abi2) {
   return { function: `unknown selector ${sel}`, source: "unknown" };
 }
 function encodeUpExecute(c) {
-  return encodeFunctionData7({ abi: UP_ABI, functionName: "execute", args: [BigInt(c.operation), c.to, c.value, c.data] });
+  return encodeFunctionData6({ abi: UP_ABI, functionName: "execute", args: [BigInt(c.operation), c.to, c.value, c.data] });
 }
 function encodeUpExecuteBatch(calls) {
-  return encodeFunctionData7({ abi: UP_ABI, functionName: "executeBatch", args: [calls.map((c) => BigInt(c.operation)), calls.map((c) => c.to), calls.map((c) => c.value), calls.map((c) => c.data)] });
+  return encodeFunctionData6({ abi: UP_ABI, functionName: "executeBatch", args: [calls.map((c) => BigInt(c.operation)), calls.map((c) => c.to), calls.map((c) => c.value), calls.map((c) => c.data)] });
 }
 function upPayload(req) {
   if (req.payload && req.calls?.length) throw new UpError("BAD_ARGS", "pass either calls or a raw payload, not both");
@@ -10272,20 +9115,20 @@ function decodeProfilePayload(payload) {
   const unknown = { kind: "unknown", totalValue: 0n, targets: [], innerSelectors: [], risk: "admin", selector };
   let d;
   try {
-    d = decodeFunctionData3({ abi: UP_ABI, data: payload });
+    d = decodeFunctionData2({ abi: UP_ABI, data: payload });
   } catch {
     return unknown;
   }
   const a = d.args ?? [];
   switch (d.functionName) {
     case "execute": {
-      const call3 = { operation: Number(a[0]), to: getAddress24(a[1]), value: BigInt(a[2]), data: a[3] };
+      const call3 = { operation: Number(a[0]), to: getAddress18(a[1]), value: BigInt(a[2]), data: a[3] };
       return { kind: "execute", totalValue: call3.value, targets: [call3.to], innerSelectors: [innerSel(call3.data)], calls: [call3], risk: "write", selector };
     }
     case "executeBatch": {
       const [ops, tos, values, datas] = a;
       if (ops.length !== tos.length || tos.length !== values.length || values.length !== datas.length) return unknown;
-      const calls = ops.map((op, i) => ({ operation: Number(op), to: getAddress24(tos[i]), value: BigInt(values[i]), data: datas[i] }));
+      const calls = ops.map((op, i) => ({ operation: Number(op), to: getAddress18(tos[i]), value: BigInt(values[i]), data: datas[i] }));
       return { kind: "executeBatch", totalValue: calls.reduce((t, c) => t + c.value, 0n), targets: [...new Set(calls.map((c) => c.to))], innerSelectors: calls.map((c) => innerSel(c.data)), calls, risk: "write", selector };
     }
     case "setData":
@@ -10295,7 +9138,7 @@ function decodeProfilePayload(payload) {
       return { kind: "setDataBatch", totalValue: 0n, targets: [], innerSelectors: [], dataKeys: keys, risk: keys.some((k) => classifyDataKey(k).admin) ? "admin" : "write", selector };
     }
     case "transferOwnership":
-      return { kind: "ownership", ownership: "transferOwnership", totalValue: 0n, targets: [getAddress24(a[0])], innerSelectors: [], risk: "admin", selector };
+      return { kind: "ownership", ownership: "transferOwnership", totalValue: 0n, targets: [getAddress18(a[0])], innerSelectors: [], risk: "admin", selector };
     case "acceptOwnership":
     case "renounceOwnership":
       return { kind: "ownership", ownership: d.functionName, totalValue: 0n, targets: [], innerSelectors: [], risk: "admin", selector };
@@ -10321,10 +9164,10 @@ function validateRequest(req, keyManager) {
       throw new UpError("BAD_ARGS", "CREATE/CREATE2 require the zero address as target (ERC725X_CreateOperationsRequireEmptyRecipientAddress)");
     }
     if (c.operation === OPERATION.STATICCALL && c.value !== 0n) throw new UpError("BAD_ARGS", "STATICCALL cannot carry value (ERC725X_MsgValueDisallowedInStaticCall)");
-    if (keyManager && getAddress24(c.to) === getAddress24(keyManager)) {
+    if (keyManager && getAddress18(c.to) === getAddress18(keyManager)) {
       throw new UpError("NOT_SUPPORTED", "the profile cannot call its own Key Manager through execute (CallingKeyManagerNotAllowed)", { hint: "send the payload to the Key Manager directly (the transports do this for you)" });
     }
-    if (getAddress24(c.to) === getAddress24(req.profile) && c.data !== "0x") warnings.push("the profile calls itself: the inner call is checked against the profile's own (empty) permissions and will normally revert");
+    if (getAddress18(c.to) === getAddress18(req.profile) && c.data !== "0x") warnings.push("the profile calls itself: the inner call is checked against the profile's own (empty) permissions and will normally revert");
   }
   return warnings;
 }
@@ -10335,7 +9178,7 @@ function callViews(req, nativeSymbol3) {
       operation: OPERATION_NAMES[c.operation] ?? String(c.operation),
       to: c.to,
       value: c.value.toString(),
-      valueFormatted: `${formatEther4(c.value)} ${nativeSymbol3}`,
+      valueFormatted: `${formatEther2(c.value)} ${nativeSymbol3}`,
       function: d.function,
       args: d.args,
       decodedBy: d.source,
@@ -10350,7 +9193,7 @@ function nativeSymbol(ctx, chainId) {
     return "native";
   }
 }
-function chainName3(ctx, chainId) {
+function chainName(ctx, chainId) {
   try {
     return ctx.registry.chain(chainId).name;
   } catch {
@@ -10374,7 +9217,7 @@ function confirmationBlock(ctx, req, x) {
   return {
     actor: req.profile,
     chainId: req.chainId,
-    chain: chainName3(ctx, req.chainId),
+    chain: chainName(ctx, req.chainId),
     keyManager: x.keyManager,
     path: x.path,
     entryPath: PATH_LABEL[x.path],
@@ -10382,8 +9225,8 @@ function confirmationBlock(ctx, req, x) {
     gasPayer: x.gasPayer,
     description: req.description,
     totalValue: tv.toString(),
-    totalValueFormatted: `${formatEther4(tv)} ${sym}`,
-    valueSource: x.entry.value > 0n ? `controller EOA ${x.signer} sends ${formatEther4(x.entry.value)} ${sym} with the transaction` : tv > 0n ? "profile balance (ERC725X value field)" : "none",
+    totalValueFormatted: `${formatEther2(tv)} ${sym}`,
+    valueSource: x.entry.value > 0n ? `controller EOA ${x.signer} sends ${formatEther2(x.entry.value)} ${sym} with the transaction` : tv > 0n ? "profile balance (ERC725X value field)" : "none",
     calls: req.calls?.length ? callViews(req, sym) : raw?.calls?.length ? callViews({ ...req, calls: raw.calls }, sym) : void 0,
     payloadKind: raw?.kind,
     payloadDataKeys: raw?.dataKeys,
@@ -10431,7 +9274,7 @@ function decodeReceiptEvents(receipt) {
     for (const abi2 of EVENT_ABIS) {
       try {
         const d = decodeEventLog2({ abi: abi2, data: log.data, topics: log.topics, strict: false });
-        out.push({ address: getAddress24(log.address), event: String(d.eventName), args: d.args ?? {} });
+        out.push({ address: getAddress18(log.address), event: String(d.eventName), args: d.args ?? {} });
         break;
       } catch {
       }
@@ -10453,14 +9296,14 @@ function buildKmEntry(req, fundFromController) {
   if (calls.length > 1) {
     const values = calls.map((c) => fundFromController ? c.value : 0n);
     return {
-      data: encodeFunctionData8({ abi: KM_ABI, functionName: "executeBatch", args: [values, calls.map((c) => encodeUpExecute(c))] }),
+      data: encodeFunctionData7({ abi: KM_ABI, functionName: "executeBatch", args: [values, calls.map((c) => encodeUpExecute(c))] }),
       value: values.reduce((a, b) => a + b, 0n),
       function: "executeBatch(uint256[],bytes[])"
     };
   }
   const payload = upPayload(req);
   const value = fundFromController ? totalValue(req) : 0n;
-  return { data: encodeFunctionData8({ abi: KM_ABI, functionName: "execute", args: [payload] }), value, function: "execute(bytes)" };
+  return { data: encodeFunctionData7({ abi: KM_ABI, functionName: "execute", args: [payload] }), value, function: "execute(bytes)" };
 }
 var kmTransport = {
   path: "km",
@@ -10558,24 +9401,24 @@ init_abis();
 init_profile();
 init_permissions();
 init_read2();
-import { getAddress as getAddress26, keccak256 as keccak25613, toBytes as toBytes3, zeroAddress as zeroAddress3 } from "./vendor-viem.mjs";
-import { encodeFunctionData as encodeFunctionData10 } from "./vendor-viem.mjs";
+import { getAddress as getAddress20, keccak256 as keccak25611, toBytes as toBytes3, zeroAddress as zeroAddress3 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData9 } from "./vendor-viem.mjs";
 
 // src/lsp/lsp25.ts
 init_errors();
 init_constants();
 init_abis();
 init_read2();
-import { concat as concat3, encodeFunctionData as encodeFunctionData9, encodePacked as encodePacked3, getAddress as getAddress25, keccak256 as keccak25612, recoverAddress, toBytes as toBytes2 } from "./vendor-viem.mjs";
+import { concat as concat2, encodeFunctionData as encodeFunctionData8, encodePacked as encodePacked2, getAddress as getAddress19, keccak256 as keccak25610, recoverAddress, toBytes as toBytes2 } from "./vendor-viem.mjs";
 var U128 = (1n << 128n) - 1n;
 function encodeLsp25Message(m) {
-  return encodePacked3(["uint256", "uint256", "uint256", "uint256", "uint256", "bytes"], [LSP25_VERSION, BigInt(m.chainId), m.nonce, m.validityTimestamps, m.value, m.payload]);
+  return encodePacked2(["uint256", "uint256", "uint256", "uint256", "uint256", "bytes"], [LSP25_VERSION, BigInt(m.chainId), m.nonce, m.validityTimestamps, m.value, m.payload]);
 }
 function lsp25Digest(m) {
-  return keccak25612(concat3(["0x19", "0x00", getAddress25(m.keyManager), encodeLsp25Message(m)]));
+  return keccak25610(concat2(["0x19", "0x00", getAddress19(m.keyManager), encodeLsp25Message(m)]));
 }
 async function signLsp25(signer, m) {
-  return signer.signIntendedValidator(getAddress25(m.keyManager), encodeLsp25Message(m));
+  return signer.signIntendedValidator(getAddress19(m.keyManager), encodeLsp25Message(m));
 }
 async function recoverLsp25Signer(m, signature) {
   return recoverAddress({ hash: lsp25Digest(m), signature });
@@ -10584,7 +9427,7 @@ function splitNonce(nonce) {
   return { channelId: nonce >> 128n, sequence: nonce & U128 };
 }
 function defaultChannel(relayerName, chainId) {
-  const h = BigInt(keccak25612(toBytes2(`${relayerName.toLowerCase()}:${chainId}`)));
+  const h = BigInt(keccak25610(toBytes2(`${relayerName.toLowerCase()}:${chainId}`)));
   const c = h >> 128n;
   return c === 0n ? 1n : c;
 }
@@ -10614,7 +9457,7 @@ function checkValidity(v, nowSec) {
   return "ok";
 }
 function encodeExecuteRelayCall(signature, nonce, validityTimestamps, payload) {
-  return encodeFunctionData9({ abi: KM_ABI, functionName: "executeRelayCall", args: [signature, nonce, validityTimestamps, payload] });
+  return encodeFunctionData8({ abi: KM_ABI, functionName: "executeRelayCall", args: [signature, nonce, validityTimestamps, payload] });
 }
 
 // src/exec/relay.ts
@@ -10667,7 +9510,7 @@ var relayTransport = {
     if (!hasPermission(perms.permissions.value, "EXECUTE_RELAY_CALL")) {
       throw new UpError("NOT_AUTHORISED", `controller ${signer.address} lacks EXECUTE_RELAY_CALL on chain ${chainId}`, { hint: "ask the human to add EXECUTE_RELAY_CALL (up controller edit <controller> --add EXECUTE_RELAY_CALL) or use --via km" });
     }
-    await simulate(ctx, { chainId, from: signer.address, to: keyManager, data: encodeFunctionData10({ abi: KM_ABI, functionName: "execute", args: [payload] }) });
+    await simulate(ctx, { chainId, from: signer.address, to: keyManager, data: encodeFunctionData9({ abi: KM_ABI, functionName: "execute", args: [payload] }) });
     const channel = opts.channel ?? (relayer.profile === "lukso-live" ? 0n : defaultChannel(relayer.name, chainId));
     const nonce = await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
     const now = (await latestBlock(ctx, chainId)).timestamp || BigInt(Math.floor(Date.now() / 1e3));
@@ -10705,11 +9548,11 @@ var relayTransport = {
     const msg = { keyManager, chainId, nonce, validityTimestamps, value: 0n, payload };
     const signature = await signLsp25(signer, msg);
     const recovered = await recoverLsp25Signer(msg, signature);
-    if (getAddress26(recovered) !== getAddress26(signer.address)) throw new UpError("INTERNAL", "LSP25 signature does not recover to the controller", { hint: "signer backend problem; run up doctor" });
+    if (getAddress20(recovered) !== getAddress20(signer.address)) throw new UpError("INTERNAL", "LSP25 signature does not recover to the controller", { hint: "signer backend problem; run up doctor" });
     const entryCalldata = encodeExecuteRelayCall(signature, nonce, validityTimestamps, payload);
     await simulate(ctx, { chainId, from: zeroAddress3, to: keyManager, data: entryCalldata });
     const kmNow = await requireKeyManager(ctx, chainId, req.profile);
-    if (getAddress26(kmNow) !== getAddress26(keyManager) || msg.chainId !== req.chainId) {
+    if (getAddress20(kmNow) !== getAddress20(keyManager) || msg.chainId !== req.chainId) {
       throw new UpError("RELAYER_ERROR", "chain binding check failed: the signed chainId/Key Manager no longer match the selected chain", { details: { signedKeyManager: keyManager, currentKeyManager: kmNow, signedChainId: msg.chainId } });
     }
     const pending = { ctx, chainId, keyManager, signer: signer.address, nonce, channel, validityTimestamps, relayer: relayer.name, fromBlock: (await latestBlock(ctx, chainId)).number };
@@ -10735,7 +9578,7 @@ var relayTransport = {
       return settleAmbiguous(pending, base, confirmation, `relayer ${relayer.name} returned transaction ${hash}, but no receipt appeared on chain ${chainId}`, e, res.taskId);
     }
     const events = decodeReceiptEvents(receipt);
-    const ours = events.some((e) => e.event === "PermissionsVerified" && getAddress26(e.address) === getAddress26(keyManager) && String(e.args.signer).toLowerCase() === signer.address.toLowerCase());
+    const ours = events.some((e) => e.event === "PermissionsVerified" && getAddress20(e.address) === getAddress20(keyManager) && String(e.args.signer).toLowerCase() === signer.address.toLowerCase());
     const nonceAfter = await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
     if (receipt.status !== "success" || !ours || nonceAfter <= nonce) {
       const why = receipt.status !== "success" ? `relayed transaction ${hash} reverted on chain ${chainId}` : `relayer ${relayer.name} returned transaction ${hash}, but it did not execute this signed call (no PermissionsVerified for the controller from the Key Manager or nonce not consumed)`;
@@ -10788,7 +9631,7 @@ async function settleAmbiguous(p, base, confirmation, why, cause, taskId) {
     reason: why
   };
   if (current > p.nonce) {
-    const topic = keccak25613(toBytes3("PermissionsVerified(address,uint256,bytes4)"));
+    const topic = keccak25611(toBytes3("PermissionsVerified(address,uint256,bytes4)"));
     const signerTopic = "0x" + p.signer.slice(2).toLowerCase().padStart(64, "0");
     const logs = await p.ctx.rpc.request(p.chainId, "eth_getLogs", [{ address: p.keyManager, fromBlock: "0x" + p.fromBlock.toString(16), toBlock: "latest", topics: [topic, signerTopic] }]).catch(() => []);
     const hash = logs.length ? logs[logs.length - 1].transactionHash : void 0;
@@ -10837,8 +9680,8 @@ init_assets();
 init_transport();
 init_secret_guard();
 import { readFileSync as readFileSync9, existsSync as existsSync15 } from "node:fs";
-import { join as join11 } from "node:path";
-import { encodeFunctionData as encodeFunctionData11, getAddress as getAddress27, isAddress as isAddress15, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
+import { join as join10 } from "node:path";
+import { encodeFunctionData as encodeFunctionData10, getAddress as getAddress21, isAddress as isAddress13, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
 function parseValue(v) {
   if (v === void 0 || v === null || v === "") return 0n;
   if (typeof v === "bigint") return v;
@@ -10883,7 +9726,7 @@ function loadAbi(spec) {
   }
   const base = s.replace(/\.json$/i, "");
   for (const dir of ["lsp", "reference", "deployed"]) {
-    const f = join11(assetsDir(), "abis", dir, `${base}.json`);
+    const f = join10(assetsDir(), "abis", dir, `${base}.json`);
     if (existsSync15(f)) {
       const j = JSON.parse(readFileSync9(f, "utf8"));
       return { abi: Array.isArray(j) ? j : j.abi, source: `bundled:${dir}/${base}` };
@@ -10930,15 +9773,15 @@ function coerceArg(param, v) {
   }
   if (t === "bool") return v === true || v === "true" || v === 1 || v === "1";
   if (t === "address") {
-    if (typeof v !== "string" || !isAddress15(v, { strict: false })) throw new UpError("BAD_ARGS", `argument ${param.name ?? ""} must be an address, got ${JSON.stringify(v)}`);
-    return getAddress27(v);
+    if (typeof v !== "string" || !isAddress13(v, { strict: false })) throw new UpError("BAD_ARGS", `argument ${param.name ?? ""} must be an address, got ${JSON.stringify(v)}`);
+    return getAddress21(v);
   }
   return v;
 }
 function encodeCall2(fn, args) {
   const list = args === void 0 || args === null || args === "" ? [] : Array.isArray(args) ? args : [args];
   if (list.length !== fn.inputs.length) throw new UpError("BAD_ARGS", `${fn.name} expects ${fn.inputs.length} argument(s), got ${list.length}`, { details: fn.inputs.map((i) => `${i.type} ${i.name ?? ""}`) });
-  return encodeFunctionData11({ abi: [fn], functionName: fn.name, args: fn.inputs.map((p, i) => coerceArg(p, list[i])) });
+  return encodeFunctionData10({ abi: [fn], functionName: fn.name, args: fn.inputs.map((p, i) => coerceArg(p, list[i])) });
 }
 function buildCall(input) {
   const operation = parseOperation(input.operation);
@@ -10946,8 +9789,8 @@ function buildCall(input) {
   let to;
   if (isCreate) to = zeroAddress4;
   else {
-    if (!input.to || !isAddress15(input.to, { strict: false })) throw new UpError("BAD_ARGS", "--to must be an address");
-    to = getAddress27(input.to);
+    if (!input.to || !isAddress13(input.to, { strict: false })) throw new UpError("BAD_ARGS", "--to must be an address");
+    to = getAddress21(input.to);
   }
   const value = parseValue(input.value);
   let data = "0x";
@@ -11117,7 +9960,7 @@ defineVerb({
     } else {
       const km = await resolveKeyManager(ctx, chainId, profile);
       from = km.owner;
-      const outer = await ethCall2(ctx, chainId, { from, to: profile, data: encodeFunctionData12({ abi: UP_ABI, functionName: "execute", args: [3n, b.call.to, 0n, b.call.data] }), block });
+      const outer = await ethCall2(ctx, chainId, { from, to: profile, data: encodeFunctionData11({ abi: UP_ABI, functionName: "execute", args: [3n, b.call.to, 0n, b.call.data] }), block });
       raw = decodeFunctionResult4({ abi: UP_ABI, functionName: "execute", data: outer });
     }
     let decoded;
@@ -11161,8 +10004,8 @@ defineVerb({
       chainId,
       hash: a.hash,
       status,
-      from: tx?.from ? getAddress28(tx.from) : void 0,
-      to: r.to ? getAddress28(r.to) : void 0,
+      from: tx?.from ? getAddress22(tx.from) : void 0,
+      to: r.to ? getAddress22(r.to) : void 0,
       blockNumber: blockNumber.toString(),
       confirmations: (latest - blockNumber + 1n).toString(),
       gasUsed: BigInt(r.gasUsed).toString(),
@@ -11190,7 +10033,7 @@ async function controllerAddress(ctx, chainId) {
 }
 async function defaultControllerAddress(ctx) {
   const cfg = await ctx.config();
-  if (cfg.controller?.address) return getAddress28(cfg.controller.address);
+  if (cfg.controller?.address) return getAddress22(cfg.controller.address);
   return (await ctx.signer()).address;
 }
 defineVerb({
@@ -11204,8 +10047,8 @@ defineVerb({
   ],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    if (a.controller && !isAddress16(a.controller, { strict: false })) throw new UpError("BAD_ARGS", "--controller must be an address");
-    const controller = a.controller ? getAddress28(a.controller) : await controllerAddress(ctx, chainId);
+    if (a.controller && !isAddress14(a.controller, { strict: false })) throw new UpError("BAD_ARGS", "--controller must be an address");
+    const controller = a.controller ? getAddress22(a.controller) : await controllerAddress(ctx, chainId);
     const km = await resolveKeyManager(ctx, chainId, profile);
     if (!km.keyManager) throw new UpError("NOT_SUPPORTED", `profile owner ${km.owner} is not a Key Manager`);
     const channels = [{ channel: 0n, label: "channel 0 (ordered)" }];
@@ -11226,9 +10069,9 @@ defineVerb({
 });
 
 // src/lsp/verbs-account.ts
-import { randomBytes as randomBytes9 } from "node:crypto";
-import { isAbsolute as isAbsolute4, resolve as resolve7 } from "node:path";
-import { getAddress as getAddress31, isAddress as isAddress17 } from "./vendor-viem.mjs";
+import { randomBytes as randomBytes8 } from "node:crypto";
+import { isAbsolute as isAbsolute3, resolve as resolve6 } from "node:path";
+import { getAddress as getAddress26, isAddress as isAddress15 } from "./vendor-viem.mjs";
 init_verbs();
 init_errors();
 init_home();
@@ -11248,9 +10091,9 @@ init_multichain();
 init_errors();
 init_json();
 init_safe_fetch();
-import { readFile as readFile9, stat as stat7 } from "node:fs/promises";
-import { basename as basename4, isAbsolute as isAbsolute3, resolve as resolve6 } from "node:path";
-import { getAddress as getAddress30 } from "./vendor-viem.mjs";
+import { readFile as readFile7, stat as stat5 } from "node:fs/promises";
+import { basename as basename2, isAbsolute as isAbsolute2, resolve as resolve5 } from "node:path";
+import { getAddress as getAddress25 } from "./vendor-viem.mjs";
 
 // src/display/image-info.ts
 var ImageFormatError = class extends Error {
@@ -11626,7 +10469,7 @@ init_read2();
 
 // src/lsp/profile-url.ts
 init_http();
-import { getAddress as getAddress29 } from "./vendor-viem.mjs";
+import { getAddress as getAddress24 } from "./vendor-viem.mjs";
 var LUKSO_MAINNET = 42;
 var LUKSO_TESTNET = 4201;
 function luksoNetwork(chainId, aliases = {}) {
@@ -11634,7 +10477,7 @@ function luksoNetwork(chainId, aliases = {}) {
   return chainId === LUKSO_MAINNET ? "mainnet" : chainId === LUKSO_TESTNET ? "testnet" : void 0;
 }
 function universalEverythingUrl(address, network = "mainnet") {
-  return `https://universaleverything.io/${getAddress29(address)}?network=${network}`;
+  return `https://universaleverything.io/${getAddress24(address)}?network=${network}`;
 }
 function profileLinkHost(network) {
   return network === "mainnet" ? "profile.link" : "t.profile.link";
@@ -11655,12 +10498,12 @@ function acceptProfileLink(link3, network) {
 function explorerAddressUrl(registry2, chainId, address) {
   try {
     const e = registry2?.chain(chainId).explorers[0];
-    return e ? `${e.url.replace(/\/+$/, "")}/address/${getAddress29(address)}` : void 0;
+    return e ? `${e.url.replace(/\/+$/, "")}/address/${getAddress24(address)}` : void 0;
   } catch {
     return void 0;
   }
 }
-function chainName4(registry2, chainId) {
+function chainName2(registry2, chainId) {
   try {
     return `${registry2?.chain(chainId).name ?? "chain"} (${chainId})`;
   } catch {
@@ -11668,7 +10511,7 @@ function chainName4(registry2, chainId) {
   }
 }
 async function resolveProfileUrl(chainId, address, opts = {}) {
-  const checksummed2 = getAddress29(address);
+  const checksummed2 = getAddress24(address);
   const network = luksoNetwork(chainId, opts.luksoAliases);
   if (!network) {
     const explorer = explorerAddressUrl(opts.registry, chainId, checksummed2);
@@ -11680,7 +10523,7 @@ async function resolveProfileUrl(chainId, address, opts = {}) {
       universalEverything: universalEverythingUrl(checksummed2),
       explorer,
       showsLuksoData: true,
-      note: `universaleverything.io and profile.link show your profile's LUKSO data, not what is stored on ${chainName4(opts.registry, chainId)}${explorer ? "; the block explorer page shows the profile on that chain" : "; no block explorer is known for that chain"}`
+      note: `universaleverything.io and profile.link show your profile's LUKSO data, not what is stored on ${chainName2(opts.registry, chainId)}${explorer ? "; the block explorer page shows the profile on that chain" : "; no block explorer is known for that chain"}`
     };
   }
   const fallback = universalEverythingUrl(checksummed2, network);
@@ -11743,7 +10586,7 @@ function downloadReason(msg) {
 }
 async function readSource(input, what, opts) {
   const s = input.trim();
-  const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(s) && !isAbsolute3(s);
+  const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(s) && !isAbsolute2(s);
   const label = isUrl ? `the URL given for the ${what}` : s;
   const tooBig = (n) => new UpError("BAD_ARGS", `${label.slice(0, 120)} is ${formatBytes(n)}; the limit is ${formatBytes(MAX_FILE_BYTES)}`, { hint: "resize or compress the image (e.g. at most 2000 pixels per side as JPEG or WebP) and try again" });
   if (/^ipfs:\/\//i.test(s)) {
@@ -11767,10 +10610,10 @@ async function readSource(input, what, opts) {
     }
   }
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s) || /^data:/i.test(s)) throw new UpError("BAD_ARGS", `unsupported image source ${/^data:/i.test(s) ? "data: URI" : label}`, { hint: "pass a local file path, an https:// URL or an ipfs:// URL" });
-  const file2 = isAbsolute3(s) ? s : resolve6(process.cwd(), s);
+  const file2 = isAbsolute2(s) ? s : resolve5(process.cwd(), s);
   let st;
   try {
-    st = await stat7(file2);
+    st = await stat5(file2);
   } catch {
     throw new UpError("BAD_ARGS", `file not found: ${s}`, { hint: "pass the path of the saved image file (e.g. the chat attachment saved to disk)" });
   }
@@ -11778,7 +10621,7 @@ async function readSource(input, what, opts) {
   assertNotKeyMaterialPath(file2, "a picture");
   if (st.size > MAX_FILE_BYTES) throw tooBig(st.size);
   if (st.size === 0) throw new UpError("BAD_ARGS", `${s} is empty`);
-  return { bytes: new Uint8Array(await readFile9(file2)), source: "file", display: basename4(file2) };
+  return { bytes: new Uint8Array(await readFile7(file2)), source: "file", display: basename2(file2) };
 }
 async function loadFile(input, field, opts) {
   const r = await readSource(input, FIELD_LABEL[field], opts);
@@ -11832,7 +10675,7 @@ function lsp3PermissionError(ctx, chainId, profile, controller, check, currentKe
   });
 }
 async function readCurrentMetadata(ctx, chainId, profile, opts) {
-  const out = { chainId, profile: getAddress30(profile), deployed: false, raw: "0x", set: false };
+  const out = { chainId, profile: getAddress25(profile), deployed: false, raw: "0x", set: false };
   if (!await hasCode(ctx, chainId, profile)) return out;
   out.deployed = true;
   out.raw = await getData(ctx, chainId, profile, DATA_KEYS.LSP3Profile);
@@ -11884,8 +10727,8 @@ async function metadataPresence(ctx, identity) {
 // src/lsp/verbs-account.ts
 init_select();
 function addressArg2(v, name) {
-  if (typeof v !== "string" || !isAddress17(v, { strict: false })) throw new UpError("BAD_ARGS", `--${name} must be an address`);
-  return getAddress31(v);
+  if (typeof v !== "string" || !isAddress15(v, { strict: false })) throw new UpError("BAD_ARGS", `--${name} must be an address`);
+  return getAddress26(v);
 }
 function permissionValueFrom(a, required = true) {
   if (a.bits !== void 0) {
@@ -11944,7 +10787,7 @@ defineVerb({
   async run(ctx, a) {
     const cfg = await ctx.config();
     const controller = a.controller ? addressArg2(a.controller, "controller") : await defaultControllerAddress(ctx);
-    const seed = a.seed ?? "0x" + randomBytes9(32).toString("hex");
+    const seed = a.seed ?? "0x" + randomBytes8(32).toString("hex");
     const salts = a.salt ? [a.salt] : candidateSalts(seed, a.count);
     const candidates = salts.map((salt, index) => {
       const plan = planDeployment(lsp23InputsFrom(a, controller, salt));
@@ -12065,8 +10908,8 @@ defineVerb({
     const signer = await ctx.signer(chainId);
     const out = await deployFromManifest(ctx, signer, m, chainId);
     const warnings = [];
-    if (getAddress31(m.controller) !== signer.address && !(m.extraControllers ?? []).some((c) => getAddress31(c.address) === signer.address)) {
-      warnings.push(`on chain ${chainId} the agent signs with ${signer.address}, but the profile's initial controller there is ${getAddress31(m.controller)} (it is part of the address): the agent's key for this chain is not a controller until it is added (up controller add ${signer.address} --chain ${chainId}, signed by an admin controller), or switch this chain back to the initial key: up key activate ${getAddress31(m.controller)} --chain ${chainId}`);
+    if (getAddress26(m.controller) !== signer.address && !(m.extraControllers ?? []).some((c) => getAddress26(c.address) === signer.address)) {
+      warnings.push(`on chain ${chainId} the agent signs with ${signer.address}, but the profile's initial controller there is ${getAddress26(m.controller)} (it is part of the address): the agent's key for this chain is not a controller until it is added (up controller add ${signer.address} --chain ${chainId}, signed by an admin controller), or switch this chain back to the initial key: up key activate ${getAddress26(m.controller)} --chain ${chainId}`);
     }
     if (out.status !== "dry-run") {
       const cfg = { ...await ctx.config() };
@@ -12074,10 +10917,10 @@ defineVerb({
         cfg.defaultProfile = m.profile;
         await ctx.saveConfig(cfg);
       }
-      if (getAddress31(m.controller) === signer.address && !(m.extraControllers ?? []).length) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
+      if (getAddress26(m.controller) === signer.address && !(m.extraControllers ?? []).length) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
     }
     const metadataNext = out.status === "deployed" && chainId === metadataHooks().defaultChainId && !m.lsp3 ? ["ask the human whether they want a profile name, description, profile picture and background image (all optional, can be done later): up profile metadata set --dry-run, then with their approval"] : [];
-    const chainName8 = (() => {
+    const chainName6 = (() => {
       try {
         return ctx.registry.chain(chainId).name;
       } catch {
@@ -12089,13 +10932,13 @@ defineVerb({
     let say;
     let next;
     if (out.status === "dry-run" && g && g.enough) {
-      say = `Everything is ready to create my profile on ${chainName8}. I send and pay this myself from my gas address (it uses at most ${g.maxCost} ${g.symbol} of the ${g.balance} ${g.symbol} there), so you don't need to sign anything. Shall I create it now?`;
+      say = `Everything is ready to create my profile on ${chainName6}. I send and pay this myself from my gas address (it uses at most ${g.maxCost} ${g.symbol} of the ${g.balance} ${g.symbol} there), so you don't need to sign anything. Shall I create it now?`;
       next = ['When they agree: run the same command without --dry-run, with --approval "<their words>".', noWallet];
     } else if (out.status === "dry-run" && g) {
-      say = `To create my profile on ${chainName8} I need a little gas on my gas address first. You only send a small amount once; you don't sign or approve anything else.`;
+      say = `To create my profile on ${chainName6} I need a little gas on my gas address first. You only send a small amount once; you don't sign or approve anything else.`;
       next = [`Run up funding suggest --chain ${chainId} and send its text together with the one QR of your gas address ${g.payer} (references/onboarding-ux.md, step 4). At least ${g.suggestedFunding ?? g.missing} ${g.symbol} is needed for the deployment itself.`, "When the gas has arrived, run this dry run again, then ask whether to create the profile.", noWallet];
     } else if (out.status === "deployed") {
-      say = `Done! My profile now exists on ${chainName8}:
+      say = `Done! My profile now exists on ${chainName6}:
 ${m.profile}`;
       next = [
         "Send the profile address with its QR (up display address <profile> --chain <id>) and say where money for the profile goes: the profile address, never the gas address.",
@@ -12103,7 +10946,7 @@ ${m.profile}`;
         'Later, once, offer the human a backup of the account (a file plus a password they keep safe, restorable in the Universal Profile app): run up backup list; if data.ask is set, ask its question (references/onboarding.md, "Backup"). A new key or profile makes it ask again.'
       ];
     } else if (out.status === "already-deployed") {
-      say = `My profile already exists on ${chainName8}:
+      say = `My profile already exists on ${chainName6}:
 ${m.profile}`;
       next = metadataNext;
     }
@@ -12148,7 +10991,7 @@ defineVerb({
     const m = await loadManifest(ctx.home, profile);
     if (!m) throw new UpError("BAD_ARGS", `no deployment manifest stored for ${profile}`);
     if (a.out) {
-      const file2 = isAbsolute4(a.out) ? a.out : resolve7(process.cwd(), a.out);
+      const file2 = isAbsolute3(a.out) ? a.out : resolve6(process.cwd(), a.out);
       await writeFileAtomic(file2, toJson(m) + "\n");
       return { data: { file: file2, profile }, text: `manifest written to ${file2}` };
     }
@@ -12328,7 +11171,7 @@ defineVerb({
       }
     }
     const old = await getData(ctx, chainId, profile, DATA_KEYS.LSP1UniversalReceiverDelegate);
-    if (old && old.length === 42 && getAddress31(old) !== urd) warnings.push(`the previous URD ${getAddress31(old)} keeps its controller permissions; remove them with: up controller remove ${getAddress31(old)}`);
+    if (old && old.length === 42 && getAddress26(old) !== urd) warnings.push(`the previous URD ${getAddress26(old)} keeps its controller permissions; remove them with: up controller remove ${getAddress26(old)}`);
     const r = await sendPayload(ctx, a, "account urd set", keys, values, { universalReceiverDelegate: urd, grantedPermissions: a.grant ? "SUPER_SETDATA, REENTRANCY" : "none" });
     return { ...r, warnings: [...r.warnings ?? [], ...warnings] };
   }
@@ -12405,7 +11248,7 @@ defineVerb({
     const statuses = await Promise.all(chainIds.map((c) => joinStatus(ctx, c, profile, BigInt(rec.permissions.hex))));
     if (a["set-default"]) cfg.defaultProfile = profile;
     if (a.alias) {
-      if (isAddress17(a.alias, { strict: false })) throw new UpError("BAD_ARGS", "alias must not look like an address");
+      if (isAddress15(a.alias, { strict: false })) throw new UpError("BAD_ARGS", "alias must not look like an address");
       cfg.aliases = { ...cfg.aliases ?? {}, [a.alias]: profile };
     }
     await ctx.saveConfig(cfg);
@@ -12443,7 +11286,7 @@ defineVerb({
     const rec = recommend(me, profile, recommendationOptions(a));
     const cfg = await ctx.config();
     const others = a.controller ? [] : chainControllerList(cfg).filter((k) => k.address !== me).map((k) => `on ${onChain(chainLabel(ctx, k.chainId))} it uses ${k.address}`);
-    if (!a.controller && cfg.controller?.address && getAddress31(cfg.controller.address) !== me) others.push(`on chains without their own key it uses its default key ${getAddress31(cfg.controller.address)}`);
+    if (!a.controller && cfg.controller?.address && getAddress26(cfg.controller.address) !== me) others.push(`on chains without their own key it uses its default key ${getAddress26(cfg.controller.address)}`);
     const warnings = others.length ? [`this recommendation is for the agent's key ${me}; ${others.join("; ")} — run up permissions recommend --chain <id> for those chains`] : void 0;
     return { data: rec, text: rec.text, warnings };
   }
@@ -12459,7 +11302,7 @@ init_lsp23();
 init_multichain();
 init_profile();
 init_read2();
-import { getAddress as getAddress32 } from "./vendor-viem.mjs";
+import { getAddress as getAddress27 } from "./vendor-viem.mjs";
 async function chainsToCheck(ctx, a, identity) {
   if (a.chains?.length) return [...new Set(a.chains.map((c) => ctx.registry.chain(c).chainId))];
   if (a.chain !== void 0 && a.chain !== "") return [ctx.chainId(a.chain)];
@@ -12547,7 +11390,7 @@ defineVerb({
     }
     if (a.address === void 0) throw new UpError("BAD_ARGS", "pass the profile's address on that chain (or --unlink)");
     const address = addressArg2(a.address, "address");
-    if (address === getAddress32(identity)) throw new UpError("BAD_ARGS", `${address} is the profile's usual address; nothing to link`, { hint: previous ? `to use it on ${where} again: up profile link --unlink --chain ${l.arg}` : "a profile with the same address on every chain needs no link" });
+    if (address === getAddress27(identity)) throw new UpError("BAD_ARGS", `${address} is the profile's usual address; nothing to link`, { hint: previous ? `to use it on ${where} again: up profile link --unlink --chain ${l.arg}` : "a profile with the same address on every chain needs no link" });
     if (previous === address) return { data: { profile: identity, chainId, linked: address, changed: false }, text: `On ${where} your profile is already linked to ${address}.` };
     if (!await hasCode(ctx, chainId, address)) throw new UpError("NOT_DEPLOYED", `${address} has no code on ${where}`, { hint: `check the address and the chain; nothing was linked` });
     if (!await supportsInterface(ctx, chainId, address, INTERFACE_IDS2.LSP0ERC725Account)) throw new UpError("BAD_ARGS", `${address} on ${where} is not a Universal Profile (no LSP0 interface)`, { hint: "nothing was linked" });
@@ -12590,7 +11433,7 @@ init_auto();
 init_registry2();
 init_client();
 init_transport();
-import { getAddress as getAddress33 } from "./vendor-viem.mjs";
+import { getAddress as getAddress28 } from "./vendor-viem.mjs";
 init_gateway();
 init_providers();
 init_constants();
@@ -13031,7 +11874,7 @@ defineVerb({
     return {
       data: { ...out, pathPlan: plan, changed: final.changed, metadataUrl: jsonUrl, metadataHash: ser.hash, value, uploaded, stored, metadata: plainJson(final.json), profileUrl },
       text: [
-        `${done ? "Profile metadata updated" : `Profile metadata write ${out.status}`} on ${where} for your profile ${getAddress33(profile)}:`,
+        `${done ? "Profile metadata updated" : `Profile metadata write ${out.status}`} on ${where} for your profile ${getAddress28(profile)}:`,
         ...changeLines(changes),
         `metadata JSON: ${jsonUrl} (keccak256 ${ser.hash}, verified via the gateway)`,
         out.txHash ? `tx ${out.txHash}${out.explorerUrl ? ` (${out.explorerUrl})` : ""}` : out.relayTaskId ? `relay task ${out.relayTaskId}` : "",
@@ -13044,7 +11887,7 @@ defineVerb({
 });
 
 // src/lsp/verbs-permissions.ts
-import { encodeFunctionData as encodeFunctionData13, getAddress as getAddress34, keccak256 as keccak25615, toBytes as toBytes5, zeroAddress as zeroAddress5 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData13, getAddress as getAddress29, keccak256 as keccak25615, toBytes as toBytes5, zeroAddress as zeroAddress5 } from "./vendor-viem.mjs";
 init_verbs();
 init_errors();
 init_tx();
@@ -13341,7 +12184,7 @@ defineVerb({
     let kind = "eoa";
     if (await hasCode(ctx, chainId, newOwner)) {
       const t = await tryRead2(ctx, chainId, newOwner, KM_ABI, "target");
-      if (t && getAddress34(t) === profile) kind = "key-manager";
+      if (t && getAddress29(t) === profile) kind = "key-manager";
       else {
         kind = "contract";
         warnings.push(`${newOwner} is a contract but not a Key Manager linked to this profile (target() ${t ?? "missing"}): after acceptance the controllers' permissions would no longer apply`);
@@ -13360,7 +12203,7 @@ defineVerb({
   params: [],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const pending = getAddress34(await tryRead2(ctx, chainId, profile, UP_ABI, "pendingOwner") ?? zeroAddress5);
+    const pending = getAddress29(await tryRead2(ctx, chainId, profile, UP_ABI, "pendingOwner") ?? zeroAddress5);
     if (pending === zeroAddress5) throw new UpError("BAD_ARGS", `no pending ownership transfer on ${profile} (chain ${chainId})`);
     const signer = await ctx.signer(chainId);
     const accept = encodeFunctionData13({ abi: UP_ABI, functionName: "acceptOwnership" });
@@ -13373,7 +12216,7 @@ defineVerb({
       route = "controller EOA is the pending owner → UP.acceptOwnership()";
     } else {
       const t = await hasCode(ctx, chainId, pending) ? await tryRead2(ctx, chainId, pending, KM_ABI, "target") : void 0;
-      if (!t || getAddress34(t) !== profile) throw new UpError("NOT_SUPPORTED", `the pending owner ${pending} must accept itself (it is neither this agent's controller nor a Key Manager of this profile)`);
+      if (!t || getAddress29(t) !== profile) throw new UpError("NOT_SUPPORTED", `the pending owner ${pending} must accept itself (it is neither this agent's controller nor a Key Manager of this profile)`);
       to = pending;
       data = encodeFunctionData13({ abi: KM_ABI, functionName: "execute", args: [accept] });
       route = `new Key Manager ${pending}.execute(acceptOwnership()) — needs CHANGEOWNER for ${signer.address}`;
@@ -13382,7 +12225,7 @@ defineVerb({
     await simulate(ctx, { chainId, from: signer.address, to, data });
     await ctx.consent({ verb: "ownership accept", risk: "admin", chainId, summary: confirmation, value: 0n, target: to, selector: data.slice(0, 10) });
     const tx = await sendTx(ctx, signer, { chainId, to, data });
-    const owner = tx.status === "success" ? getAddress34(await tryRead2(ctx, chainId, profile, UP_ABI, "owner") ?? zeroAddress5) : void 0;
+    const owner = tx.status === "success" ? getAddress29(await tryRead2(ctx, chainId, profile, UP_ABI, "owner") ?? zeroAddress5) : void 0;
     return { data: { status: tx.status, txHash: tx.hash, chainId, profile, newOwner: owner, confirmation }, text: tx.status === "dry-run" ? `DRY RUN: ${route}` : `ownership accepted: owner is now ${owner} (tx ${tx.hash})` };
   }
 });
@@ -13432,7 +12275,7 @@ init_permissions();
 init_profile();
 init_multichain();
 init_read2();
-import { getAddress as getAddress35, hashMessage, hashTypedData, isHex as isHex4 } from "./vendor-viem.mjs";
+import { getAddress as getAddress30, hashMessage, hashTypedData, isHex as isHex4 } from "./vendor-viem.mjs";
 async function isValidSignature1271(ctx, chainId, address, hash, signature) {
   try {
     const r = await read2(ctx, chainId, address, ERC1271_ABI, "isValidSignature", [hash, signature]);
@@ -13549,7 +12392,7 @@ async function signFlow(ctx, a, kind) {
     validation: as === "profile" ? `verifiers call isValidSignature(${hash}, signature) on ${profile} → Key Manager → controller needs SIGN` : "plain EOA signature of the controller key",
     warnings: warnings.length ? warnings : void 0
   };
-  const verifyingContract = td && td.domain?.verifyingContract ? getAddress35(td.domain.verifyingContract) : void 0;
+  const verifyingContract = td && td.domain?.verifyingContract ? getAddress30(td.domain.verifyingContract) : void 0;
   await ctx.consent({ verb: `sign ${kind}`, risk: blind || valueMoving ? "admin" : "write", chainId, summary: { ...summary, blindHash: blind || void 0, valueMoving: valueMoving || void 0 }, value: 0n, target: verifyingContract ?? profile ?? signer.address });
   if (ctx.flags.dryRun) return { data: { ...summary, dryRun: true }, text: `DRY RUN: would sign ${hash} as ${as}`, warnings };
   const signature = kind === "message" ? await signer.signMessage(message) : await signer.signTypedData(td);
@@ -13617,7 +12460,7 @@ defineVerb({
 });
 
 // src/relayer/verbs.ts
-import { getAddress as getAddress36 } from "./vendor-viem.mjs";
+import { getAddress as getAddress31 } from "./vendor-viem.mjs";
 init_verbs();
 init_errors();
 init_transport();
@@ -13657,8 +12500,8 @@ defineVerb({
     else throw new UpError("BAD_ARGS", "pass --chains: the relayer publishes no capability document");
     const warnings = [];
     if (caps.supportedChainIds) {
-      const unsupported3 = chainIds.filter((c) => !caps.supportedChainIds.includes(c));
-      if (unsupported3.length) throw new UpError("BAD_ARGS", `relayer capabilities do not list chain(s) ${unsupported3.join(", ")} (supported: ${caps.supportedChainIds.join(", ")})`);
+      const unsupported2 = chainIds.filter((c) => !caps.supportedChainIds.includes(c));
+      if (unsupported2.length) throw new UpError("BAD_ARGS", `relayer capabilities do not list chain(s) ${unsupported2.join(", ")} (supported: ${caps.supportedChainIds.join(", ")})`);
     }
     if (caps.legacy && chainIds.length > 1) warnings.push("legacy relayer (no capability document): one base URL normally serves exactly one chain");
     if (profile === "lukso-live") warnings.push("LUKSO's live relayer only serves registered profiles; quota checks need a LUKSO account (JWT), which this skill does not use");
@@ -13740,7 +12583,7 @@ defineVerb({
     let req;
     if (a.payload) {
       if (a.to || a.data || a.fn) throw new UpError("BAD_ARGS", "pass either --payload or --to/--data/--fn");
-      req = { chainId, profile: getAddress36(profile), payload: a.payload, verb: "relayer execute" };
+      req = { chainId, profile: getAddress31(profile), payload: a.payload, verb: "relayer execute" };
     } else {
       const b = buildCall({ to: a.to, value: a.value, data: a.data, fn: a.fn, args: a.args, abi: a.abi, operation: a.operation });
       req = { chainId, profile, calls: [b.call], abi: b.abi, verb: "relayer execute" };
@@ -13754,7 +12597,7 @@ defineVerb({
 init_verbs();
 init_errors();
 init_transport();
-import { encodeFunctionData as encodeFunctionData19, getAddress as getAddress43, isAddress as isAddress19, isHex as isHex6, parseAbiItem as parseAbiItem3, parseUnits as parseUnits2 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData19, getAddress as getAddress38, isAddress as isAddress17, isHex as isHex6, parseAbiItem as parseAbiItem3, parseUnits as parseUnits2 } from "./vendor-viem.mjs";
 
 // src/erc4337/constants.ts
 init_assets();
@@ -13829,21 +12672,21 @@ var CALL_TYPES = { VALUE: 1, CALL: 2, STATICCALL: 4, DELEGATECALL: 8 };
 // src/erc4337/entrypoint.ts
 init_errors();
 init_tx();
-import { concat as concat6, encodeFunctionData as encodeFunctionData15, getAddress as getAddress38, keccak256 as keccak25617, size, slice as slice2 } from "./vendor-viem.mjs";
+import { concat as concat6, encodeFunctionData as encodeFunctionData15, getAddress as getAddress33, keccak256 as keccak25617, size, slice as slice2 } from "./vendor-viem.mjs";
 
 // src/erc4337/bytecode.ts
 init_assets();
 init_errors();
-import { createHash as createHash2 } from "node:crypto";
-import { concat as concat5, encodeAbiParameters as encodeAbiParameters3, getAddress as getAddress37, getContractAddress as getContractAddress2, keccak256 as keccak25616 } from "./vendor-viem.mjs";
-function sha256Hex2(code) {
-  return createHash2("sha256").update(Buffer.from(code.slice(2), "hex")).digest("hex");
+import { createHash } from "node:crypto";
+import { concat as concat5, encodeAbiParameters as encodeAbiParameters3, getAddress as getAddress32, getContractAddress as getContractAddress2, keccak256 as keccak25616 } from "./vendor-viem.mjs";
+function sha256Hex(code) {
+  return createHash("sha256").update(Buffer.from(code.slice(2), "hex")).digest("hex");
 }
 function create2Address(factory, salt, initCode) {
   return getContractAddress2({ opcode: "CREATE2", from: factory, salt, bytecode: initCode });
 }
 function integrity(name, code, sha, kec) {
-  if (sha256Hex2(code) !== sha || keccak25616(code) !== kec) {
+  if (sha256Hex(code) !== sha || keccak25616(code) !== kec) {
     throw new UpError("INTERNAL", `bundled ${name} bytecode failed its integrity check (sha256/keccak256 mismatch); refusing to deploy`, {
       hint: "reinstall the skill package; never edit assets/bytecode by hand (regenerate with build/gen-4337-bytecode.mjs)"
     });
@@ -13855,7 +12698,7 @@ function entryPointAsset() {
   const a = assetJson("bytecode", "EntryPointV06.json");
   integrity("EntryPoint v0.6", a.creationCode, a.creationCodeSha256, a.creationCodeKeccak256);
   const addr2 = create2Address(a.deployment.factory, a.deployment.salt, a.creationCode);
-  if (addr2 !== getAddress37(a.deployment.address)) throw new UpError("INTERNAL", `bundled EntryPoint v0.6 bytecode does not produce ${a.deployment.address} (got ${addr2})`);
+  if (addr2 !== getAddress32(a.deployment.address)) throw new UpError("INTERNAL", `bundled EntryPoint v0.6 bytecode does not produce ${a.deployment.address} (got ${addr2})`);
   return epCache = a;
 }
 var extCache;
@@ -13865,7 +12708,7 @@ function extensionAsset() {
   integrity("Extension4337", a.creationCode, a.creationCodeSha256, a.creationCodeKeccak256);
   const c = a.deployment.canonical;
   const addr2 = create2Address(a.deployment.factory, a.deployment.salt, extensionInitCode(c.entryPoint, a));
-  if (addr2 !== getAddress37(c.address)) throw new UpError("INTERNAL", `bundled Extension4337 bytecode does not produce ${c.address} (got ${addr2})`);
+  if (addr2 !== getAddress32(c.address)) throw new UpError("INTERNAL", `bundled Extension4337 bytecode does not produce ${c.address} (got ${addr2})`);
   return extCache = a;
 }
 function extensionInitCode(entryPoint, a = extensionAsset()) {
@@ -13938,7 +12781,7 @@ async function entryPointStatus(ctx, chainId, address = ENTRYPOINT_V06) {
   const code = await getCode3(ctx, chainId, address);
   const deployed = code !== "0x";
   const codeHash2 = deployed ? keccak25617(code) : void 0;
-  return { address: getAddress38(address), deployed, codeHash: codeHash2, expectedCodeHash: asset.runtimeCodeHash, canonical: deployed && codeHash2 === asset.runtimeCodeHash };
+  return { address: getAddress33(address), deployed, codeHash: codeHash2, expectedCodeHash: asset.runtimeCodeHash, canonical: deployed && codeHash2 === asset.runtimeCodeHash };
 }
 async function deployViaNick(ctx, signer, p) {
   const expected = create2Address(NICK_FACTORY, p.salt, p.initCode);
@@ -13961,7 +12804,7 @@ async function deployViaNick(ctx, signer, p) {
       details: sim.revert
     });
   }
-  if (size(sim.data) >= 20 && getAddress38(slice2(sim.data, size(sim.data) - 20)) !== expected) {
+  if (size(sim.data) >= 20 && getAddress33(slice2(sim.data, size(sim.data) - 20)) !== expected) {
     throw new UpError("INTERNAL", `${p.name}: factory simulation returned ${sim.data}, expected ${expected}`);
   }
   const tx = await sendTx(ctx, signer, { chainId: p.chainId, to: NICK_FACTORY, data });
@@ -13977,7 +12820,7 @@ async function deployViaNick(ctx, signer, p) {
 async function deployEntryPoint(ctx, signer, chainId) {
   const a = entryPointAsset();
   const r = await deployViaNick(ctx, signer, { chainId, name: "EntryPoint v0.6", salt: a.deployment.salt, initCode: a.creationCode, expectedRuntimeHash: a.runtimeCodeHash });
-  if (r.address !== getAddress38(a.deployment.address)) throw new UpError("INTERNAL", `EntryPoint deployed at ${r.address}, expected ${a.deployment.address}`);
+  if (r.address !== getAddress33(a.deployment.address)) throw new UpError("INTERNAL", `EntryPoint deployed at ${r.address}, expected ${a.deployment.address}`);
   return r;
 }
 var depositToCalldata = (account) => encodeFunctionData15({ abi: entryPoint06Abi, functionName: "depositTo", args: [account] });
@@ -13997,11 +12840,11 @@ init_errors();
 init_policy();
 init_transport();
 init_tx();
-import { encodeFunctionData as encodeFunctionData17, getAddress as getAddress41, keccak256 as keccak25619, size as size3 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData17, getAddress as getAddress36, keccak256 as keccak25619, size as size3 } from "./vendor-viem.mjs";
 
 // src/erc4337/lsp6.ts
 init_errors();
-import { concat as concat7, getAddress as getAddress39, isAddress as isAddress18, isHex as isHex5, pad as pad3, size as size2, slice as slice3, toHex as toHex3 } from "./vendor-viem.mjs";
+import { concat as concat7, getAddress as getAddress34, isAddress as isAddress16, isHex as isHex5, pad as pad3, size as size2, slice as slice3, toHex as toHex3 } from "./vendor-viem.mjs";
 var permissionsKey2 = (a) => concat7([KEY_PREFIX_PERMISSIONS, a.toLowerCase()]);
 var allowedCallsKey2 = (a) => concat7([KEY_PREFIX_ALLOWED_CALLS, a.toLowerCase()]);
 var allowedDataKeysKey2 = (a) => concat7([KEY_PREFIX_ALLOWED_DATA_KEYS, a.toLowerCase()]);
@@ -14078,7 +12921,7 @@ function encodeAllowedCalls2(entries) {
     entries.map((e) => {
       const ct = parseCallTypes2(e.callTypes);
       if (ct === 0) throw new UpError("BAD_ARGS", "AllowedCalls entry needs at least one call type");
-      const addr2 = e.address === "*" ? WILD20 : isAddress18(e.address, { strict: false }) ? e.address.toLowerCase() : void 0;
+      const addr2 = e.address === "*" ? WILD20 : isAddress16(e.address, { strict: false }) ? e.address.toLowerCase() : void 0;
       if (!addr2) throw new UpError("BAD_ARGS", `AllowedCalls address must be an address or "*", got ${e.address}`);
       const std = four(e.standard, "standard");
       const fn = four(e.function, "function");
@@ -14098,7 +12941,7 @@ function decodeAllowedCalls2(v) {
     return {
       callTypes: ct,
       callTypeNames: Object.entries(CALL_TYPES).filter(([, b]) => bits & b).map(([n]) => n),
-      address: addr2 === WILD20 ? "*" : getAddress39(addr2),
+      address: addr2 === WILD20 ? "*" : getAddress34(addr2),
       standard: std === WILD4 ? "*" : std,
       function: fn === WILD4 ? "*" : fn
     };
@@ -14123,7 +12966,7 @@ async function getDataBatch2(ctx, chainId, up, keys) {
 }
 async function readController(ctx, chainId, up, a) {
   const [p, c, k] = await getDataBatch2(ctx, chainId, up, [permissionsKey2(a), allowedCallsKey2(a), allowedDataKeysKey2(a)]);
-  return { address: getAddress39(a), permissions: decodePermissions2(p), allowedCalls: c ?? "0x", allowedDataKeys: k ?? "0x" };
+  return { address: getAddress34(a), permissions: decodePermissions2(p), allowedCalls: c ?? "0x", allowedDataKeys: k ?? "0x" };
 }
 async function readControllerArray(ctx, chainId, up) {
   const [lenRaw] = await getDataBatch2(ctx, chainId, up, [arrayLengthKey]);
@@ -14131,7 +12974,7 @@ async function readControllerArray(ctx, chainId, up) {
   if (length > 10000n) throw new UpError("INTERNAL", `AddressPermissions[] length ${length} is implausible; refusing to scan`);
   const keys = Array.from({ length: Number(length) }, (_, i) => arrayIndexKey(i));
   const vals = await getDataBatch2(ctx, chainId, up, keys);
-  return { length, entries: vals.map((v) => v && size2(v) === 20 ? getAddress39(v) : void 0) };
+  return { length, entries: vals.map((v) => v && size2(v) === 20 ? getAddress34(v) : void 0) };
 }
 function indexOfController(arr, a) {
   return arr.entries.findIndex((e) => e?.toLowerCase() === a.toLowerCase());
@@ -14145,7 +12988,7 @@ import {
   decodeEventLog as decodeEventLog3,
   encodeAbiParameters as encodeAbiParameters4,
   encodeFunctionData as encodeFunctionData16,
-  getAddress as getAddress40,
+  getAddress as getAddress35,
   hexToBytes as hexToBytes3,
   keccak256 as keccak25618
 } from "./vendor-viem.mjs";
@@ -14444,7 +13287,7 @@ async function estimateKeyManagerGas(ctx, chainId, p, warnings) {
   }
 }
 async function prepareUserOperation(ctx, p) {
-  const entryPoint = getAddress40(p.entryPoint ?? ENTRYPOINT_V06);
+  const entryPoint = getAddress35(p.entryPoint ?? ENTRYPOINT_V06);
   const warnings = [];
   const g = p.gas ?? {};
   const nonce = p.nonce ?? await getNonce(ctx, p.chainId, p.profile, p.nonceKey ?? nonceKeyFor(p.signer), entryPoint);
@@ -14456,7 +13299,7 @@ async function prepareUserOperation(ctx, p) {
   if (fees2.maxPriorityFeePerGas > fees2.maxFeePerGas) throw new UpError("BAD_ARGS", `maxPriorityFeePerGas (${fees2.maxPriorityFeePerGas}) exceeds maxFeePerGas (${fees2.maxFeePerGas})`);
   const gasSource = { call: "override", verification: "override", preVerification: "override", fees: g.maxFeePerGas !== void 0 ? "override" : "chain" };
   const op = {
-    sender: getAddress40(p.profile),
+    sender: getAddress35(p.profile),
     nonce,
     initCode: "0x",
     callData: p.callData,
@@ -14505,11 +13348,11 @@ async function prepareUserOperation(ctx, p) {
   if (op.paymasterAndData === "0x" && deposit < prefund) {
     warnings.push(`EntryPoint deposit of the profile (${deposit} wei) is below the required prefund (${prefund} wei); Extension4337 never pays prefund, so the op would fail with AA21 — top up with: up account 4337 deposit --chain ${p.chainId} --amount <wei>`);
   }
-  return { chainId: p.chainId, entryPoint, op, userOpHash: getUserOpHashV06(op, entryPoint, p.chainId), signer: getAddress40(p.signer), requiredPrefund: prefund, deposit, gasSource, validation, warnings, signed: false };
+  return { chainId: p.chainId, entryPoint, op, userOpHash: getUserOpHashV06(op, entryPoint, p.chainId), signer: getAddress35(p.signer), requiredPrefund: prefund, deposit, gasSource, validation, warnings, signed: false };
 }
 async function signPreparedUserOp(ctx, signer, prep) {
   if (ctx.flags.dryRun) throw new UpError("INTERNAL", "refusing to sign a UserOperation in --dry-run");
-  if (getAddress40(signer.address) !== prep.signer) throw new UpError("INTERNAL", `UserOperation was prepared for ${prep.signer}, not ${signer.address}`);
+  if (getAddress35(signer.address) !== prep.signer) throw new UpError("INTERNAL", `UserOperation was prepared for ${prep.signer}, not ${signer.address}`);
   const { op, userOpHash } = await signUserOp(signer, prep.op, prep.entryPoint, prep.chainId);
   if (userOpHash !== prep.userOpHash) throw new UpError("INTERNAL", "userOpHash changed between preparation and signing");
   return { ...prep, op, signed: true };
@@ -14655,17 +13498,17 @@ async function resolveProfile(ctx, chainId, profile) {
   if (code === "0x") throw new UpError("NOT_DEPLOYED", `no Universal Profile at ${profile} on chain ${chainId}`, { hint: "check --profile/--chain; deploy the profile on this chain first" });
   let owner;
   try {
-    owner = getAddress41(await read3(ctx, chainId, profile, UP_ABI2, "owner"));
+    owner = getAddress36(await read3(ctx, chainId, profile, UP_ABI2, "owner"));
   } catch (e) {
     throw new UpError("NOT_SUPPORTED", `${profile} on chain ${chainId} does not look like a Universal Profile (owner() failed)`, { cause: e });
   }
   const target = await tryCall(ctx, chainId, { to: owner, data: encodeFunctionData17({ abi: KM_ABI2, functionName: "target" }) });
-  if (!target.ok || size3(target.data) < 32 || getAddress41(`0x${target.data.slice(-40)}`) !== getAddress41(profile)) {
+  if (!target.ok || size3(target.data) < 32 || getAddress36(`0x${target.data.slice(-40)}`) !== getAddress36(profile)) {
     throw new UpError("NOT_SUPPORTED", `the owner of ${profile} (${owner}) is not an LSP6 Key Manager for this profile; Extension4337 validates through the owner's lsp20VerifyCall`, {
       hint: "ERC-4337 via Extension4337 needs a profile owned by its LSP6 Key Manager"
     });
   }
-  return { profile: getAddress41(profile), owner, keyManager: owner };
+  return { profile: getAddress36(profile), owner, keyManager: owner };
 }
 async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = ENTRYPOINT_V06) {
   const prof = await resolveProfile(ctx, chainId, profile);
@@ -14678,7 +13521,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
     readController(ctx, chainId, prof.profile, entryPoint),
     readControllerArray(ctx, chainId, prof.profile)
   ]);
-  const linked = linkedRaw && size3(linkedRaw) >= 20 ? getAddress41(linkedRaw.slice(0, 42)) : null;
+  const linked = linkedRaw && size3(linkedRaw) >= 20 ? getAddress36(linkedRaw.slice(0, 42)) : null;
   let linkedHasCode = false;
   let linkedEntryPoint = null;
   let linkedIsBundled = false;
@@ -14687,7 +13530,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
     linkedHasCode = code !== "0x";
     if (linkedHasCode) {
       const r = await tryCall(ctx, chainId, { to: linked, data: encodeFunctionData17({ abi: extension4337Abi(), functionName: "entryPoint" }) });
-      if (r.ok && size3(r.data) >= 32) linkedEntryPoint = getAddress41(`0x${r.data.slice(-40)}`);
+      if (r.ok && size3(r.data) >= 32) linkedEntryPoint = getAddress36(`0x${r.data.slice(-40)}`);
       const want = extensionRuntimeHashFor(entryPoint);
       linkedIsBundled = want !== void 0 && keccak25619(code) === want;
     }
@@ -14715,7 +13558,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
     nickFactory: nick,
     extension: { expected, deployed: expectedCode !== "0x", linked, linkedHasCode, linkedEntryPoint, linkedMatches, linkedIsBundled },
     entryPointController: {
-      address: getAddress41(entryPoint),
+      address: getAddress36(entryPoint),
       permissions: encodePermissions2(epData.permissions),
       permissionNames: epNames,
       isController: epData.permissions !== 0n,
@@ -14725,7 +13568,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
       allowedDataKeys: safe(() => decodeCompactBytesArray(epData.allowedDataKeys), []),
       forbidden
     },
-    signer: { address: getAddress41(signerAddress2), permissions: encodePermissions2(signerData.permissions), permissionNames: permissionNames(signerData.permissions), has4337 },
+    signer: { address: getAddress36(signerAddress2), permissions: encodePermissions2(signerData.permissions), permissionNames: permissionNames(signerData.permissions), has4337 },
     deposit,
     enabled,
     missing,
@@ -15206,7 +14049,7 @@ import { encodeFunctionData as encodeFunctionData18 } from "./vendor-viem.mjs";
 // src/erc4337/payload.ts
 init_errors();
 init_transport();
-import { decodeFunctionData as decodeFunctionData4, getAddress as getAddress42, slice as slice4 } from "./vendor-viem.mjs";
+import { decodeFunctionData as decodeFunctionData3, getAddress as getAddress37, slice as slice4 } from "./vendor-viem.mjs";
 var SELECTORS2 = {
   execute: "0x44c028fe",
   executeBatch: "0x31858452",
@@ -15229,16 +14072,16 @@ var innerSelector = (data) => data.length >= 10 ? data.slice(0, 10).toLowerCase(
 function toCall(op, to, value, data) {
   if (op === BigInt(OPERATION.DELEGATECALL)) throw new UpError("NOT_SUPPORTED", "DELEGATECALL is always rejected by the Key Manager (DelegateCallDisallowedViaKeyManager)");
   if (op > 3n) throw new UpError("BAD_ARGS", `unknown ERC725X operation ${op}`);
-  return { operation: Number(op), to: getAddress42(to), value, data };
+  return { operation: Number(op), to: getAddress37(to), value, data };
 }
 function decodeProfilePayload2(payload, profile) {
   if (!/^0x([0-9a-fA-F]{2}){4,}$/.test(payload)) throw new UpError("BAD_ARGS", "payload must be hex calldata of at least 4 bytes");
   const selector = slice4(payload, 0, 4).toLowerCase();
-  const self = getAddress42(profile);
+  const self = getAddress37(profile);
   const base = { selector, calls: [], totalValue: 0n, targets: [self], innerSelectors: [] };
   let decoded;
   try {
-    decoded = decodeFunctionData4({ abi: UP_ABI2, data: payload });
+    decoded = decodeFunctionData3({ abi: UP_ABI2, data: payload });
   } catch {
     decoded = void 0;
   }
@@ -15293,7 +14136,7 @@ function describeCalls(calls) {
     selector: calls.length === 1 ? SELECTORS2.execute : SELECTORS2.executeBatch,
     calls,
     totalValue: calls.reduce((s, c) => s + c.value, 0n),
-    targets: [...new Set(calls.map((c) => getAddress42(c.to)))],
+    targets: [...new Set(calls.map((c) => getAddress37(c.to)))],
     innerSelectors: calls.map((c) => innerSelector(c.data)),
     risk: "write",
     reasons: []
@@ -15439,8 +14282,8 @@ function optBig(v, what) {
   return parseAmount2(v, what);
 }
 function addr(v, what) {
-  if (typeof v !== "string" || !isAddress19(v, { strict: false })) throw new UpError("BAD_ARGS", `${what} must be an address, got ${String(v)}`);
-  return getAddress43(v);
+  if (typeof v !== "string" || !isAddress17(v, { strict: false })) throw new UpError("BAD_ARGS", `${what} must be an address, got ${String(v)}`);
+  return getAddress38(v);
 }
 function hexArg(v, what) {
   if (v === void 0 || v === null || v === "") return "0x";
@@ -15796,7 +14639,7 @@ init_assets();
 init_home();
 init_bundled();
 init_read();
-import { getAddress as getAddress45 } from "./vendor-viem.mjs";
+import { getAddress as getAddress40 } from "./vendor-viem.mjs";
 
 // src/abi/codehashes.ts
 var KNOWN_RUNTIME_CODEHASHES = {
@@ -15824,7 +14667,7 @@ init_detect();
 // src/abi/proxy.ts
 init_read();
 init_detect();
-import { getAddress as getAddress44 } from "./vendor-viem.mjs";
+import { getAddress as getAddress39 } from "./vendor-viem.mjs";
 var EIP1967_SLOTS = {
   implementation: "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
   beacon: "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50",
@@ -15837,7 +14680,7 @@ function slotAddress(word) {
   if (h.length !== 64 || !/^0{24}/.test(h)) return void 0;
   const a = h.slice(24);
   if (/^0{40}$/.test(a)) return void 0;
-  return getAddress44(`0x${a}`);
+  return getAddress39(`0x${a}`);
 }
 var ERC1167_PREFIX = "363d3d373d3d3d363d";
 var ERC1167_SUFFIX = "5af43d82803e903d91";
@@ -15852,7 +14695,7 @@ function parseErc1167(code) {
   const rest = c.slice(20 + 2 * n);
   if (!rest.startsWith(ERC1167_SUFFIX)) return void 0;
   if (!/^60[0-9a-f]{2}/.test(rest.slice(ERC1167_SUFFIX.length)) || !rest.slice(ERC1167_SUFFIX.length + 4).startsWith(ERC1167_TAIL)) return void 0;
-  return getAddress44(`0x${addrHex.padStart(40, "0")}`);
+  return getAddress39(`0x${addrHex.padStart(40, "0")}`);
 }
 var BEACON_ABI = [{ type: "function", name: "implementation", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] }];
 async function resolveProxy(ctx, chainId, address, code) {
@@ -15883,7 +14726,7 @@ async function resolveProxy(ctx, chainId, address, code) {
     info.beacon = beaconAddr;
     info.evidence.push("EIP-1967 beacon slot is set");
     const r = await tryRead(ctx, chainId, { address: beaconAddr, abi: BEACON_ABI, functionName: "implementation" });
-    if (r.ok) info.implementation = getAddress44(r.value);
+    if (r.ok) info.implementation = getAddress39(r.value);
     else info.evidence.push(`beacon.implementation() failed: ${r.error}`);
   } else if (slotAddress(uups)) {
     info.isProxy = true;
@@ -15918,7 +14761,7 @@ async function lsp17Extensions(ctx, chainId, account, selectors) {
     if (v.length !== 40 && v.length !== 42) return;
     const addr2 = `0x${v.slice(0, 40)}`;
     if (/^0x0{40}$/.test(addr2)) return;
-    out.push({ selector, extension: getAddress44(addr2), forwardsValue: v.length === 42 && v.slice(40) === "01" });
+    out.push({ selector, extension: getAddress39(addr2), forwardsValue: v.length === 42 && v.slice(40) === "01" });
   });
   return out;
 }
@@ -16140,7 +14983,7 @@ function explorerPlan(chain, cfg, chainIdArg) {
 }
 function addrs(list, field) {
   if (!Array.isArray(list)) return [];
-  return list.map((x) => typeof x === "string" ? x : x?.[field]).filter((x) => typeof x === "string" && /^0x[0-9a-fA-F]{40}$/.test(x)).map((x) => getAddress45(x));
+  return list.map((x) => typeof x === "string" ? x : x?.[field]).filter((x) => typeof x === "string" && /^0x[0-9a-fA-F]{40}$/.test(x)).map((x) => getAddress40(x));
 }
 function parseAbiValue(v) {
   try {
@@ -16252,7 +15095,7 @@ function canonicalAbi(c) {
   return c.abiName ? bundledAbi(c.abiName) : void 0;
 }
 async function discoverAbi(ctx, chainId, address, opts = {}) {
-  return discover(ctx, chainId, getAddress45(address), opts, 0);
+  return discover(ctx, chainId, getAddress40(address), opts, 0);
 }
 async function discover(ctx, chainId, address, opts, depth) {
   const code = await getCode(ctx, chainId, address);
@@ -16505,7 +15348,7 @@ init_read();
 init_errors();
 init_transport();
 init_codec();
-import { decodeFunctionData as decodeFunctionData5 } from "./vendor-viem.mjs";
+import { decodeFunctionData as decodeFunctionData4 } from "./vendor-viem.mjs";
 init_read();
 init_signature();
 var VIA_VALUES = ["auto", "km", "lsp0", "relay", "userop"];
@@ -16553,7 +15396,7 @@ function valueMovingReason(fn, value, data) {
     if (!data) return `${fn.name}() keys could not be inspected`;
     let args;
     try {
-      args = decodeFunctionData5({ abi: [fn], data }).args ?? [];
+      args = decodeFunctionData4({ abi: [fn], data }).args ?? [];
     } catch {
       return `${fn.name}() calldata could not be inspected`;
     }
@@ -16664,13 +15507,13 @@ function enforceTrustPolicy(ctx, call3, value, raw) {
 init_assets();
 init_errors();
 init_read();
-import { getAddress as getAddress46 } from "./vendor-viem.mjs";
+import { getAddress as getAddress41 } from "./vendor-viem.mjs";
 function file() {
   return assetJson("registry", "protocols.json");
 }
 function collect(obj, path, addresses, urls) {
   if (typeof obj === "string") {
-    if (/^0x[0-9a-fA-F]{40}$/.test(obj)) addresses.push({ role: path, address: getAddress46(obj) });
+    if (/^0x[0-9a-fA-F]{40}$/.test(obj)) addresses.push({ role: path, address: getAddress41(obj) });
     else if (/^https:\/\//.test(obj)) urls[path] = obj;
     return;
   }
@@ -17291,7 +16134,7 @@ defineVerb({
 // src/tokens/verbs.ts
 init_verbs();
 init_errors();
-import { getAddress as getAddress49 } from "./vendor-viem.mjs";
+import { getAddress as getAddress44 } from "./vendor-viem.mjs";
 init_read();
 init_codec();
 init_assets2();
@@ -17299,7 +16142,7 @@ init_assets2();
 // src/tokens/plan.ts
 init_errors();
 init_detect();
-import { encodeFunctionData as encodeFunctionData20, getAddress as getAddress47, maxUint256, zeroAddress as zeroAddress6 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData20, getAddress as getAddress42, maxUint256, zeroAddress as zeroAddress6 } from "./vendor-viem.mjs";
 init_read();
 init_codec();
 init_assets2();
@@ -17335,7 +16178,7 @@ async function hasExtension(ctx, chainId, account, selector) {
   }
 }
 async function planTransfer(ctx, chainId, profile, asset, o) {
-  const to = getAddress47(o.to);
+  const to = getAddress42(o.to);
   if (to.toLowerCase() === profile.toLowerCase()) throw new UpError("BAD_ARGS", "recipient is the profile itself");
   if (to === zeroAddress6) throw new UpError("BAD_ARGS", "refusing to transfer to the zero address (that is a burn)");
   const data = o.data ?? "0x";
@@ -17420,7 +16263,7 @@ async function planTransfer(ctx, chainId, profile, asset, o) {
   }
 }
 async function planNativeTransfer(ctx, chainId, profile, nativeSymbol3, o) {
-  const to = getAddress47(o.to);
+  const to = getAddress42(o.to);
   if (to.toLowerCase() === profile.toLowerCase()) throw new UpError("BAD_ARGS", "recipient is the profile itself");
   const value = parseAmount(o.amount, 18, o.raw);
   if (value === 0n) throw new UpError("BAD_ARGS", "--amount must be greater than zero");
@@ -17438,13 +16281,13 @@ async function planNativeTransfer(ctx, chainId, profile, nativeSymbol3, o) {
   };
 }
 var APPROVE_MODES = ["authorize", "revoke", "increase", "decrease", "all", "revoke-all"];
-function unsupported2(asset, mode) {
+function unsupported(asset, mode) {
   return new UpError("BAD_ARGS", `mode "${mode}" is not available for ${asset.standard}`, {
     hint: asset.standard === "LSP7" ? "LSP7 modes: authorize, revoke, increase, decrease" : asset.standard === "LSP8" ? "LSP8 modes: authorize, revoke (per --token-id)" : asset.standard === "ERC20" ? "ERC-20 modes: authorize (approve), revoke (approve 0)" : asset.standard === "ERC721" ? "ERC-721 modes: authorize/revoke with --token-id, all/revoke-all for every token" : "ERC-1155 modes: all (setApprovalForAll true), revoke-all"
   });
 }
 async function planApprove(ctx, chainId, profile, asset, o) {
-  const op = getAddress47(o.operator);
+  const op = getAddress42(o.operator);
   if (op === zeroAddress6) throw new UpError("BAD_ARGS", "operator must not be the zero address");
   if (op.toLowerCase() === profile.toLowerCase()) throw new UpError("BAD_ARGS", "the profile cannot be its own operator");
   const data = o.data ?? "0x";
@@ -17481,7 +16324,7 @@ async function planApprove(ctx, chainId, profile, asset, o) {
         const amt = amountOf();
         return plan(call2(asset.address, LSP7_ABI(), "decreaseAllowance", [op, profile, amt, data]), `decrease ${op}'s allowance on ${label} by ${formatAmount(amt, asset.decimals)}`);
       }
-      throw unsupported2(asset, o.mode);
+      throw unsupported(asset, o.mode);
     }
     case "LSP8": {
       const tokenId = parseLsp8TokenId(o.tokenId, asset.tokenIdFormat);
@@ -17491,7 +16334,7 @@ async function planApprove(ctx, chainId, profile, asset, o) {
         return plan(call2(asset.address, LSP8_ABI(), "authorizeOperator", [op, tokenId, data]), `authorize ${op} as operator of ${label} token ${formatLsp8TokenId(tokenId, asset.tokenIdFormat)}`);
       }
       if (o.mode === "revoke") return plan(call2(asset.address, LSP8_ABI(), "revokeOperator", [op, tokenId, !!o.notify, data]), `revoke operator ${op} on ${label} token ${formatLsp8TokenId(tokenId, asset.tokenIdFormat)}`);
-      throw unsupported2(asset, o.mode);
+      throw unsupported(asset, o.mode);
     }
     case "ERC20": {
       if (o.mode === "authorize") {
@@ -17501,7 +16344,7 @@ async function planApprove(ctx, chainId, profile, asset, o) {
         return plan(call2(asset.address, ERC20_ABI, "approve", [op, amt]), `approve ${op} to spend ${amt === maxUint256 ? "UNLIMITED" : formatAmount(amt, asset.decimals)} ${label}`);
       }
       if (o.mode === "revoke") return plan(call2(asset.address, ERC20_ABI, "approve", [op, 0n]), `revoke ${op}'s allowance on ${label} (approve 0)`);
-      throw unsupported2(asset, o.mode);
+      throw unsupported(asset, o.mode);
     }
     case "ERC721": {
       if (o.mode === "authorize" || o.mode === "revoke") {
@@ -17515,7 +16358,7 @@ async function planApprove(ctx, chainId, profile, asset, o) {
         return plan(call2(asset.address, ERC721_ABI, "setApprovalForAll", [op, true]), `approve ${op} for ALL ${label} tokens`);
       }
       if (o.mode === "revoke-all") return plan(call2(asset.address, ERC721_ABI, "setApprovalForAll", [op, false]), `revoke ${op}'s approval for all ${label} tokens`);
-      throw unsupported2(asset, o.mode);
+      throw unsupported(asset, o.mode);
     }
     case "ERC1155": {
       if (o.mode === "all" || o.mode === "authorize") {
@@ -17523,7 +16366,7 @@ async function planApprove(ctx, chainId, profile, asset, o) {
         return plan(call2(asset.address, ERC1155_ABI, "setApprovalForAll", [op, true]), `approve ${op} for ALL ${label} token ids`);
       }
       if (o.mode === "revoke" || o.mode === "revoke-all") return plan(call2(asset.address, ERC1155_ABI, "setApprovalForAll", [op, false]), `revoke ${op}'s approval for all ${label} token ids`);
-      throw unsupported2(asset, o.mode);
+      throw unsupported(asset, o.mode);
     }
   }
 }
@@ -17538,7 +16381,7 @@ init_read();
 init_detect();
 init_signature();
 init_assets2();
-import { getAddress as getAddress48, pad as pad4 } from "./vendor-viem.mjs";
+import { getAddress as getAddress43, pad as pad4 } from "./vendor-viem.mjs";
 import { encodeArrayKey as encodeArrayKey3 } from "./vendor-erc725.mjs";
 var LSP5_ARRAY_KEY = "0x6460ee3c0aac563ccbf76d6e1d07bada78e3a9514e6382b736ed3f478ab7b90b";
 var LSP5_MAP_PREFIX = "0x812c4334633eb816c80d0000";
@@ -17561,7 +16404,7 @@ async function readLsp5(ctx, chainId, holder, max = 200) {
     chainId,
     Array.from({ length: n }, (_, i) => ({ address: holder, abi: ERC725Y_GETDATA_ABI, functionName: "getData", args: [encodeArrayKey3(LSP5_ARRAY_KEY, i)] }))
   );
-  const assets = items.map((r) => r.ok && typeof r.value === "string" && /^0x[0-9a-fA-F]{40}$/.test(r.value) ? getAddress48(r.value) : void 0).filter((x) => !!x);
+  const assets = items.map((r) => r.ok && typeof r.value === "string" && /^0x[0-9a-fA-F]{40}$/.test(r.value) ? getAddress43(r.value) : void 0).filter((x) => !!x);
   const maps = await readMany(
     ctx,
     chainId,
@@ -17613,7 +16456,7 @@ async function envioHoldings(endpoint, holder, opts = {}) {
       if (!assetId || !/^0x[0-9a-fA-F]{40}$/.test(assetId)) continue;
       const meta = h.baseAsset ?? h.asset ?? {};
       const key = assetId.toLowerCase();
-      const e = byAsset.get(key) ?? { asset: getAddress48(assetId), standard: envioStandard(meta.standard), name: meta.lsp4TokenName ?? void 0, symbol: meta.lsp4TokenSymbol ?? void 0, decimals: typeof meta.decimals === "number" ? meta.decimals : void 0 };
+      const e = byAsset.get(key) ?? { asset: getAddress43(assetId), standard: envioStandard(meta.standard), name: meta.lsp4TokenName ?? void 0, symbol: meta.lsp4TokenSymbol ?? void 0, decimals: typeof meta.decimals === "number" ? meta.decimals : void 0 };
       const tokenId = typeof h.token_id === "string" && h.token_id.includes("-") ? h.token_id.split("-")[1] : void 0;
       if (tokenId) (e.tokenIds ??= []).push(tokenId);
       else e.balance = String(h.balance);
@@ -17655,7 +16498,7 @@ async function blockscoutHoldings(base, holder, opts = {}) {
       if (typeof addr2 !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(addr2)) continue;
       const key = addr2.toLowerCase();
       const dec = it.token.decimals !== null && it.token.decimals !== void 0 && /^\d+$/.test(String(it.token.decimals)) ? Number(it.token.decimals) : void 0;
-      const e = byAsset.get(key) ?? { asset: getAddress48(addr2), standard: blockscoutStandard(it.token.type), name: it.token.name ?? void 0, symbol: it.token.symbol ?? void 0, decimals: dec };
+      const e = byAsset.get(key) ?? { asset: getAddress43(addr2), standard: blockscoutStandard(it.token.type), name: it.token.name ?? void 0, symbol: it.token.symbol ?? void 0, decimals: dec };
       if (it.token_id !== null && it.token_id !== void 0) (e.tokenIds ??= []).push(String(it.token_id));
       else if (it.value !== void 0 && it.value !== null) e.balance = String(it.value);
       byAsset.set(key, e);
@@ -17713,7 +16556,7 @@ async function logScanHoldings(ctx, chainId, holder, blocks) {
         const match = evs.find((e) => e.topic0 === l.topics[0]?.toLowerCase() && e.toTopic === q3.toTopic && e.topicCount === l.topics.length);
         if (!match || !/^0x[0-9a-fA-F]{40}$/.test(l.address)) continue;
         const key = l.address.toLowerCase();
-        if (!byAsset.has(key)) byAsset.set(key, { asset: getAddress48(l.address), standard: match.std });
+        if (!byAsset.has(key)) byAsset.set(key, { asset: getAddress43(l.address), standard: match.std });
       }
     }
   }
@@ -18000,7 +16843,7 @@ defineVerb({
         const amounts = await readMany(ctx, chainId, ops.map((op) => ({ address: asset.address, abi: LSP7_ABI(), functionName: "authorizedAmountFor", args: [op, holder] })));
         const list = ops.map((op, i) => {
           const v = amounts[i].ok ? BigInt(amounts[i].value) : void 0;
-          return { operator: getAddress49(op), allowance: v?.toString(), allowanceFormatted: v === void 0 ? void 0 : v >= 2n ** 255n ? "UNLIMITED" : formatAmount(v, asset.decimals) };
+          return { operator: getAddress44(op), allowance: v?.toString(), allowanceFormatted: v === void 0 ? void 0 : v >= 2n ** 255n ? "UNLIMITED" : formatAmount(v, asset.decimals) };
         });
         return { data: { ...base, operators: list }, text: list.length ? list.map((o) => `${o.operator}: ${o.allowanceFormatted ?? "?"} ${assetLabel(asset)}`).join("\n") : `no operators for ${holder} on ${assetLabel(asset)}` };
       }
@@ -18012,7 +16855,7 @@ defineVerb({
           return { data: { ...base, tokenId: id, operator, isOperator: ok }, text: `${operator} is ${ok ? "" : "NOT "}an operator of token ${formatLsp8TokenId(id, asset.tokenIdFormat)}` };
         }
         const ops = await readOk(ctx, chainId, asset.address, LSP8_ABI(), "getOperatorsOf", [id]);
-        return { data: { ...base, tokenId: id, operators: ops.map((x) => getAddress49(x)) }, text: ops.length ? `operators of token ${formatLsp8TokenId(id, asset.tokenIdFormat)}: ${ops.join(", ")}` : "no operators" };
+        return { data: { ...base, tokenId: id, operators: ops.map((x) => getAddress44(x)) }, text: ops.length ? `operators of token ${formatLsp8TokenId(id, asset.tokenIdFormat)}: ${ops.join(", ")}` : "no operators" };
       }
       case "ERC20": {
         if (!operator) throw new UpError("BAD_ARGS", "ERC-20 allowances cannot be enumerated on-chain: pass --operator <spender>");
@@ -18026,7 +16869,7 @@ defineVerb({
         if (a["token-id"] !== void 0) {
           const id = parseUintTokenId(a["token-id"]);
           const ap = await readOk(ctx, chainId, asset.address, ERC721_ABI, "getApproved", [id]);
-          Object.assign(out, { tokenId: id.toString(), approved: getAddress49(ap) });
+          Object.assign(out, { tokenId: id.toString(), approved: getAddress44(ap) });
           lines.push(`token #${id} approved: ${ap}`);
         }
         if (operator) {
@@ -18160,16 +17003,16 @@ init_assets();
 init_errors();
 init_bundled();
 init_read();
-import { encodeFunctionData as encodeFunctionData21, getAddress as getAddress50 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData21, getAddress as getAddress45 } from "./vendor-viem.mjs";
 init_read();
 var abi;
 var LSP26_ABI = () => abi ??= bundledAbi("LSP26FollowerSystem");
 function lsp26Registry() {
   const p = assetJson("registry", "protocols.json").protocols?.lsp26FollowerSystem;
   if (!p?.address) throw new UpError("INTERNAL", "protocols.json has no lsp26FollowerSystem entry");
-  return { address: getAddress50(p.address), chains: p.chains, absentOn: p.absentOn };
+  return { address: getAddress45(p.address), chains: p.chains, absentOn: p.absentOn };
 }
-function chainName5(ctx, id) {
+function chainName3(ctx, id) {
   try {
     return `${ctx.registry.chain(id).name} (${id})`;
   } catch {
@@ -18178,15 +17021,15 @@ function chainName5(ctx, id) {
 }
 async function locateLsp26(ctx, chainId) {
   const reg = lsp26Registry();
-  const where = () => (reg.chains ?? []).map((c) => chainName5(ctx, c)).join(", ");
+  const where = () => (reg.chains ?? []).map((c) => chainName3(ctx, c)).join(", ");
   if (reg.absentOn?.includes(chainId)) {
-    throw new UpError("NOT_SUPPORTED", `the LSP26 Follower System is not deployed on ${chainName5(ctx, chainId)}: no code at ${reg.address} (registry check)`, {
+    throw new UpError("NOT_SUPPORTED", `the LSP26 Follower System is not deployed on ${chainName3(ctx, chainId)}: no code at ${reg.address} (registry check)`, {
       hint: `follows are per chain; it is available on: ${where()}`
     });
   }
   const code = await getCode(ctx, chainId, reg.address);
   if (code === "0x") {
-    throw new UpError("NOT_SUPPORTED", `the LSP26 Follower System is not deployed on ${chainName5(ctx, chainId)}: eth_getCode(${reg.address}) is empty`, {
+    throw new UpError("NOT_SUPPORTED", `the LSP26 Follower System is not deployed on ${chainName3(ctx, chainId)}: eth_getCode(${reg.address}) is empty`, {
       hint: `follows are per chain; known deployments: ${where()}`
     });
   }
@@ -18195,7 +17038,7 @@ async function locateLsp26(ctx, chainId) {
   const hashOk = codeHashMatches(reg.address, codeHash(code));
   if (!listed) {
     if (hashOk !== true) {
-      throw new UpError("NOT_SUPPORTED", `contract code exists at ${reg.address} on ${chainName5(ctx, chainId)} but it is not the canonical LSP26 Follower System (runtime code hash ${codeHash(code)}) — refusing to use it`);
+      throw new UpError("NOT_SUPPORTED", `contract code exists at ${reg.address} on ${chainName3(ctx, chainId)} but it is not the canonical LSP26 Follower System (runtime code hash ${codeHash(code)}) — refusing to use it`);
     }
     warnings.push(`chain ${chainId} is not in the bundled LSP26 deployment list; presence verified live (code hash matches the canonical deployment)`);
   } else if (hashOk === false) {
@@ -18219,7 +17062,7 @@ async function page(ctx, chainId, lsp26, addr2, kind, total, start, limit) {
   if (s >= total) return [];
   const end = s + BigInt(limit) > total ? total : s + BigInt(limit);
   const list = await read(ctx, chainId, { address: lsp26, abi: LSP26_ABI(), functionName: kind === "followers" ? "getFollowersByIndex" : "getFollowsByIndex", args: [addr2, s, end] });
-  return list.map((x) => getAddress50(x));
+  return list.map((x) => getAddress45(x));
 }
 function encodeFollow(fn, arg) {
   return encodeFunctionData21({ abi: LSP26_ABI(), functionName: fn, args: [arg] });
@@ -18382,7 +17225,7 @@ init_blockies();
 // src/display/qr.ts
 init_png();
 import QRCode from "./vendor-qrcode.mjs";
-import { getAddress as getAddress51, isAddress as isAddress20 } from "./vendor-viem.mjs";
+import { getAddress as getAddress46, isAddress as isAddress18 } from "./vendor-viem.mjs";
 function qrMatrix(text, errorCorrectionLevel = "M") {
   if (!text) throw new Error("QR text is empty");
   const q3 = QRCode.create(text, { errorCorrectionLevel });
@@ -18421,8 +17264,8 @@ function qrText(m, opts = {}) {
   return lines.join("\n");
 }
 function checksummed(a, what) {
-  if (!isAddress20(a, { strict: false })) throw new Error(`invalid ${what} address: ${a}`);
-  return getAddress51(a);
+  if (!isAddress18(a, { strict: false })) throw new Error(`invalid ${what} address: ${a}`);
+  return getAddress46(a);
 }
 function nonNegative(v, what) {
   if (v < 0n) throw new Error(`${what} must not be negative`);
@@ -18638,7 +17481,7 @@ init_verbs();
 init_errors();
 init_assets();
 import { existsSync as existsSync16, readdirSync as readdirSync2, readFileSync as readFileSync10 } from "node:fs";
-import { join as join13 } from "node:path";
+import { join as join12 } from "node:path";
 
 // src/knowledge/standards.ts
 var LIPS = "https://github.com/lukso-network/LIPs/blob/main/LSPs";
@@ -18687,7 +17530,7 @@ function findStandards(filter) {
 
 // src/knowledge/verbs.ts
 function referencesDir() {
-  return join13(skillDir(), "references");
+  return join12(skillDir(), "references");
 }
 function describe(text) {
   const lines = text.split(/\r?\n/);
@@ -18707,7 +17550,7 @@ function listDocTopics() {
   const dir = referencesDir();
   if (!existsSync16(dir)) return [];
   return readdirSync2(dir, { withFileTypes: true }).filter((d) => d.isFile() && d.name.endsWith(".md")).map((d) => {
-    const text = readFileSync10(join13(dir, d.name), "utf8");
+    const text = readFileSync10(join12(dir, d.name), "utf8");
     return { topic: d.name.slice(0, -3), file: `references/${d.name}`, ...describe(text), lines: text.split(/\r?\n/).length };
   }).sort((a, b) => a.topic.localeCompare(b.topic));
 }
@@ -18728,7 +17571,7 @@ function readDoc(rawTopic) {
       details: { topics: topics.map((d) => d.topic) }
     });
   }
-  return { doc, content: readFileSync10(join13(skillDir(), doc.file), "utf8") };
+  return { doc, content: readFileSync10(join12(skillDir(), doc.file), "utf8") };
 }
 defineVerb({
   name: "docs",
@@ -18772,7 +17615,7 @@ defineVerb({
 init_verbs();
 var UNIVERSAL_RELAYER_WEBSITE = void 0;
 var UNIVERSAL_RELAYER_CHAINS = [42, 1, 8453, 56, 42161, 4663, 137, 43114];
-function chainName6(ctx, id) {
+function chainName4(ctx, id) {
   try {
     return ctx.registry.chain(id).name;
   } catch {
@@ -18783,7 +17626,7 @@ function listWords(items) {
   return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 function onboardingPaths(ctx, website = UNIVERSAL_RELAYER_WEBSITE) {
-  const networks = UNIVERSAL_RELAYER_CHAINS.map((chainId) => ({ chainId, name: chainName6(ctx, chainId) }));
+  const networks = UNIVERSAL_RELAYER_CHAINS.map((chainId) => ({ chainId, name: chainName4(ctx, chainId) }));
   return [
     {
       id: "self-funded",
@@ -18836,7 +17679,7 @@ defineVerb({
   examples: ["up onboarding options"],
   async run(ctx) {
     const paths2 = onboardingPaths(ctx);
-    const recommended = RECOMMENDED_CHAINS.map((chainId) => ({ chainId, name: chainName6(ctx, chainId) }));
+    const recommended = RECOMMENDED_CHAINS.map((chainId) => ({ chainId, name: chainName4(ctx, chainId) }));
     return { data: { paths: paths2, recommendedNetworks: recommended }, text: onboardingText(paths2, recommended.map((n) => n.name)) };
   }
 });
@@ -18845,7 +17688,7 @@ defineVerb({
 init_verbs();
 init_errors();
 var HOSTS = ["dots", "muse", "vm"];
-function chainName7(ctx, id) {
+function chainName5(ctx, id) {
   try {
     return ctx.registry.chain(id).name;
   } catch {
@@ -18857,7 +17700,7 @@ function listWords2(items) {
 }
 function welcomeMessage(ctx) {
   const [own, relayer, existing] = onboardingPaths(ctx);
-  const others = listWords2(RECOMMENDED_CHAINS.filter((id) => id !== 42).map((id) => chainName7(ctx, id)));
+  const others = listWords2(RECOMMENDED_CHAINS.filter((id) => id !== 42).map((id) => chainName5(ctx, id)));
   return [
     "I'm ready to set up my own Universal Profile: a smart account that I can act with, while you stay in control of what I'm allowed to do.",
     "",
@@ -18940,7 +17783,7 @@ defineVerb({
     const keyData = key.data;
     const cfg = await ctx.config();
     if (cfg.defaultProfile) {
-      const chains = (cfg.chains ?? []).map((id) => chainName7(ctx, id));
+      const chains = (cfg.chains ?? []).map((id) => chainName5(ctx, id));
       return {
         data: {
           stage: "ready",
@@ -19136,12 +17979,46 @@ async function runCli(argv) {
 init_verbs();
 import { createInterface } from "node:readline";
 import { readdirSync as readdirSync3, readFileSync as readFileSync11, existsSync as existsSync17 } from "node:fs";
-import { join as join14 } from "node:path";
+import { join as join13 } from "node:path";
 init_lock();
 init_errors();
 init_json();
 init_assets();
 init_secret_guard();
+
+// src/core/safe-text.ts
+var safe_text_exports = {};
+__export(safe_text_exports, {
+  KEY_WITHHELD: () => KEY_WITHHELD,
+  canonicalDateTime: () => canonicalDateTime,
+  looksLikeKey: () => looksLikeKey,
+  safeEcho: () => safeEcho,
+  safeFileText: () => safeFileText
+});
+var INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]/g;
+var SPREAD = /(?<=[0-9a-f])[\s_.,:;'"`|/\\-]+(?=[0-9a-f])/gi;
+var KEY_WITHHELD = "[withheld: looks like key material]";
+function looksLikeKey(text) {
+  const t = text.replace(INVISIBLE, "");
+  return /[0-9a-f]{64}/i.test(t) || /[0-9a-f]{64}/i.test(t.replace(SPREAD, ""));
+}
+function safeFileText(value, max = 80) {
+  const raw = typeof value === "string" ? value : value === void 0 || value === null ? "" : String(value);
+  if (looksLikeKey(raw)) return KEY_WITHHELD;
+  const t = raw.replace(INVISIBLE, " ").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+function safeEcho(value, max = 64) {
+  const raw = typeof value === "string" ? value : value === void 0 || value === null ? "" : typeof value === "object" ? "[object]" : String(value);
+  const t = raw.replace(INVISIBLE, " ").replace(/[0-9a-f]{32,}/gi, "<hidden>").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+var ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+function canonicalDateTime(value) {
+  return typeof value === "string" && ISO_DATE_TIME.test(value) && !Number.isNaN(Date.parse(value)) ? value : void 0;
+}
+
+// src/mcp/server.ts
 var PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 var writeQueue = Promise.resolve();
 function serialised(fn) {
@@ -19156,17 +18033,17 @@ function send(msg) {
   process.stdout.write((containsSecret(line) ? JSON.stringify({ jsonrpc: "2.0", id: id ?? null, error: { code: -32603, message: WITHHELD_MESSAGE } }) : line) + "\n");
 }
 function referenceFiles() {
-  const dir = join14(skillDir(), "references");
+  const dir = join13(skillDir(), "references");
   if (!existsSync17(dir)) return [];
   const out = [];
   const walk = (d, prefix) => {
     for (const n of readdirSync3(d, { withFileTypes: true })) {
-      if (n.isDirectory()) walk(join14(d, n.name), `${prefix}${n.name}/`);
-      else if (n.name.endsWith(".md")) out.push({ uri: `up://references/${prefix}${n.name}`, name: `${prefix}${n.name}`, path: join14(d, n.name) });
+      if (n.isDirectory()) walk(join13(d, n.name), `${prefix}${n.name}/`);
+      else if (n.name.endsWith(".md")) out.push({ uri: `up://references/${prefix}${n.name}`, name: `${prefix}${n.name}`, path: join13(d, n.name) });
     }
   };
   walk(dir, "");
-  const skill = join14(skillDir(), "SKILL.md");
+  const skill = join13(skillDir(), "SKILL.md");
   if (existsSync17(skill)) out.unshift({ uri: "up://SKILL.md", name: "SKILL.md", path: skill });
   return out;
 }
@@ -19208,7 +18085,7 @@ risk: ${v.risk}`,
         });
       case "tools/call": {
         const v = verbFromToolName(params?.name);
-        if (!v) return fail(-32602, `unknown tool ${params?.name}`);
+        if (!v) return fail(-32602, `unknown tool ${safeEcho(params?.name)}`);
         try {
           const args = coerceArgs(v, params?.arguments ?? {});
           const execute = async () => {
@@ -19237,14 +18114,14 @@ risk: ${v.risk}`,
         return ok({ resources: referenceFiles().map((r) => ({ uri: r.uri, name: r.name, mimeType: "text/markdown" })) });
       case "resources/read": {
         const r = referenceFiles().find((x) => x.uri === params?.uri);
-        if (!r) return fail(-32602, `unknown resource ${params?.uri}`);
+        if (!r) return fail(-32602, `unknown resource ${safeEcho(params?.uri)}`);
         return ok({ contents: [{ uri: r.uri, mimeType: "text/markdown", text: readFileSync11(r.path, "utf8") }] });
       }
       default:
-        return fail(-32601, `method not found: ${method}`);
+        return fail(-32601, `method not found: ${safeEcho(method)}`);
     }
   } catch (e) {
-    return fail(-32603, e.message);
+    return fail(-32603, safeEcho(e.message, 300));
   }
 }
 async function runMcpServer() {
@@ -19271,13 +18148,48 @@ async function runMcpServer() {
     pending.add(p);
     p.finally(() => pending.delete(p));
   });
-  await new Promise((resolve8) => rl.on("close", resolve8));
+  await new Promise((resolve7) => rl.on("close", resolve7));
   await Promise.allSettled([...pending]);
 }
 
 // src/app.ts
 init_verbs();
+
+// app.ts
+init_registry();
+init_errors();
+init_home();
+init_json();
+init_profile_record();
+init_secret_guard();
+init_abis();
+init_constants();
+init_lsp23();
+init_permissions();
+init_profile();
+init_read2();
+init_signer();
+init_local_signer();
+init_select();
 export {
+  registry_exports as $s0,
+  errors_exports as $s1,
+  permissions_exports as $s10,
+  profile_exports as $s11,
+  read_exports as $s12,
+  signer_exports as $s13,
+  inventory_exports as $s14,
+  local_signer_exports as $s15,
+  select_exports as $s16,
+  verbs_exports2 as $s17,
+  home_exports as $s2,
+  json_exports as $s3,
+  profile_record_exports as $s4,
+  safe_text_exports as $s5,
+  secret_guard_exports as $s6,
+  abis_exports as $s7,
+  constants_exports as $s8,
+  lsp23_exports as $s9,
   GLOBAL_PARAMS,
   allVerbs,
   handleMcpMessage,
