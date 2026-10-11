@@ -1,6 +1,6 @@
 // Universal Profile skill — backup verbs (loaded on demand by app.mjs)
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 5115054de027 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 536f274a98ac (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { $s0, $s1, $s2, $s3, $s4, $s5, $s6, $s7, $s8, $s9, $s10, $s11, $s12, $s13, $s14, $s15, $s16, $s17, $s18 } from "./app.mjs";
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
@@ -792,10 +792,24 @@ function buildBackup(ctx, cfg, state, mode, now = /* @__PURE__ */ new Date()) {
 import { randomInt } from "node:crypto";
 const { UpError: UpError5 } = $s1;
 var PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-var MIN_PASSWORD_LENGTH = 12;
-var RECOMMENDED_PASSWORD_LENGTH = 16;
+var MIN_PASSWORD_LENGTH = 6;
 var MAX_STDIN_BYTES = 4096;
+function passwordProblems(password) {
+  const missing = [];
+  if ([...password].length < MIN_PASSWORD_LENGTH) missing.push(`at least ${MIN_PASSWORD_LENGTH} characters`);
+  if (!new RegExp("\\p{Ll}", "u").test(password)) missing.push("a lowercase letter");
+  if (!new RegExp("\\p{Lu}", "u").test(password)) missing.push("an uppercase letter");
+  if (!new RegExp("\\p{Nd}", "u").test(password)) missing.push("a number");
+  if (!/[^\p{L}\p{N}\s]/u.test(password)) missing.push("a symbol (like ! ? # - _ .)");
+  return missing;
+}
 function generatePassword() {
+  for (; ; ) {
+    const pw = drawPassword();
+    if (!passwordProblems(pw).length) return pw;
+  }
+}
+function drawPassword() {
   const groups = [];
   for (let g = 0; g < 4; g++) {
     let part = "";
@@ -841,9 +855,12 @@ async function choosePassword(args, forExport) {
   if (!password) throw new UpError5("BAD_ARGS", "the password is empty");
   const warnings = [];
   if (forExport) {
-    const length = [...password].length;
-    if (length < MIN_PASSWORD_LENGTH) throw new UpError5("BAD_ARGS", `the backup password must have at least ${MIN_PASSWORD_LENGTH} characters`, { hint: "ask the human for a longer one, or omit the password to have a strong one generated" });
-    if (length < RECOMMENDED_PASSWORD_LENGTH) warnings.push(`the backup password has only ${length} characters; a backup file can be guessed at offline, so 16 or more is much safer`);
+    const missing = passwordProblems(password);
+    if (missing.length) {
+      throw new UpError5("BAD_ARGS", `the backup password needs ${missing.join(", ")}`, {
+        hint: `ask the human for a password they will remember, with at least ${MIN_PASSWORD_LENGTH} characters, a lowercase and an uppercase letter, a number and a symbol; or omit it to have one generated`
+      });
+    }
   }
   return { password, source, generated: false, warnings };
 }
@@ -1354,7 +1371,7 @@ async function runList(ctx, a) {
     ...rows.filter((r) => r.oversized).map((r) => `the backup ${r.file} is larger than ${MAX_BACKUP_BYTES / 1024 / 1024} MiB: it cannot be opened, so it does not count as a backup. Make a new one (up backup export)`)
   ];
   const text = rows.length ? [`${plural(rows.length, "backup", "backups")} made here. ${current ? "The newest backup with keys covers the current keys and profiles." : newestWithKeys ? "The keys or profiles changed since the newest backup with keys." : "No backup with keys yet."}`, ...rows.map((r) => `- ${r.at.slice(0, 10)} ${r.mode}${r.exists ? "" : " (file gone)"}: ${r.file}`)].join("\n") : "No backup has been made on this machine yet.";
-  return { data: { backups: rows, current, publicCurrent, keys: state.keys.map((k) => k.address), profiles: state.profiles.map((p) => p.address), plaintextBackups: plaintext, ask, ...ask ? { next: ['Ask the human once, in your own words, using data.ask.say. If they agree: up backup export --approval "<their words>". If they decline: run up backup list --mark-asked and do not ask again until this returns a new data.ask.'] } : {} }, text, warnings };
+  return { data: { backups: rows, current, publicCurrent, keys: state.keys.map((k) => k.address), profiles: state.profiles.map((p) => p.address), plaintextBackups: plaintext, ask, ...ask ? { next: ['Ask the human once, in your own words, using data.ask.say. If they agree: ask them for a password they will remember (at least 6 characters with a lowercase and an uppercase letter, a number and a symbol), or offer to make one up for them; then up backup export --password <theirs> --approval "<their words>" (without --password one is generated). If they decline: run up backup list --mark-asked and do not ask again until this returns a new data.ask.'] } : {} }, text, warnings };
 }
 async function runInspect(ctx, a) {
   const f = await readBackupFile(a.path);

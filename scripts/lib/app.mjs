@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 5115054de027 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 536f274a98ac (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -7495,7 +7495,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "5115054de027" : "source";
+var SOURCE = true ? "536f274a98ac" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -8893,7 +8893,7 @@ init_verbs();
 // src/backup/password.ts
 init_errors();
 var PASSWORD_PARAMS = [
-  { name: "password", type: "string", description: "The backup password the human chose and told you in chat (at least 12 characters, 16 or more is better). Omit to have one generated." },
+  { name: "password", type: "string", description: "The backup password the human chose and told you in chat (at least 6 characters with a lowercase and an uppercase letter, a number and a symbol; one they will remember). Omit to have one generated." },
   { name: "password-env", type: "string", description: "Name of an environment variable that holds the backup password (read once, then removed from this process)." },
   { name: "password-stdin", type: "boolean", description: "Read the backup password from standard input (CLI only; not available over MCP)." }
 ];
