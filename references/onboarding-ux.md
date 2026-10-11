@@ -45,7 +45,7 @@ Each step below has: **Goal** · **Message** (adapt the wording, keep the conten
   > Send your wallet's public address, or say "skip".
 - **Attach:** nothing.
 - **Expected reply:** a public address (0x… 42 characters) or "skip". Default: skip.
-- **On reply:** check it is a valid address, confirm it back as `0xAbCd…1234 will be a co-owner.` If they send anything that looks like a private key or seed words: tell them to never share it, and that you only need the public address.
+- **On reply:** check it is a valid address, confirm it back as `0xAbCd…1234 will be a co-owner.` If they send anything that looks like a private key or seed words (typed, spoken or in a screenshot): do not repeat it; tell them it has now been seen by the AI service, so they should move that wallet's funds to a new wallet, and that you only ever need the public address.
 - **Never:** ask for a private key or seed phrase; explain address derivation.
 
 ## J1 · Step 3: choose the profile address

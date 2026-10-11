@@ -9,11 +9,6 @@
       "bytes": 200071,
       "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/DEPLOYED_CHAINS.md"
     },
-    "README.md": {
-      "sha256": "c1dd39a617f6c9dc41458b5c33c9040bb4907ccfe46f2052256827c0dc371554",
-      "bytes": 37184,
-      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/README.md"
-    },
     "chains-mainnet.json": {
       "sha256": "1365b8f0c420248b73944ea6f48467cb8cfb96b425332bf5f18e6bffdda57143",
       "bytes": 34625,
@@ -84,6 +79,12 @@
       "sha256": "55b41ac582aca9ad8e87172db46bb413618561b12764c7a1f4aa10875c455bae",
       "bytes": 11837,
       "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/abi/ABI-UniversalProfilePostDeploymentModule.json"
+    }
+  },
+  "excluded": {
+    "README.md": {
+      "reason": "upstream operator deployment recipes that handle raw private keys (DEPLOYER_PK, --private-key); not shipped to agents",
+      "url": "https://raw.githubusercontent.com/lukso-network/lsp-smart-contracts/16ab2441a79c34da56386c30caa00c33379ce06f/deployments/README.md"
     }
   }
 }
