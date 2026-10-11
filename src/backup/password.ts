@@ -5,19 +5,42 @@
 // Private keys stay registered and never appear in any output.
 //
 // Sources, exactly one: --password <text>, --password-env <NAME>, --password-stdin, or (export
-// only, and the default) a generated password. The app's PBKDF2 uses only 10,000 iterations, so a
-// human-chosen password must be long: 12 characters minimum, a warning below 16.
+// only) a generated password. Owner decision (2026-10-10): people must be able to remember their
+// password, or the encryption is pointless, so a human-chosen password needs only 6 characters, but
+// with at least one lowercase letter, one uppercase letter, one digit and one symbol.
 import { randomInt } from "node:crypto";
 import { UpError } from "../core/errors.ts";
 
 /** 56 symbols without the look-alikes 0 O 1 l I: 20 symbols are about 116 bits. */
 export const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-export const MIN_PASSWORD_LENGTH = 12;
-export const RECOMMENDED_PASSWORD_LENGTH = 16;
+export const MIN_PASSWORD_LENGTH = 6;
 const MAX_STDIN_BYTES = 4096;
 
-/** 20 random symbols from PASSWORD_ALPHABET in groups of five: XXXXX-XXXXX-XXXXX-XXXXX (the dashes are part of the password). */
+/** What a human-chosen backup password still lacks, in plain words (empty: it is fine). */
+export function passwordProblems(password: string): string[] {
+  const missing: string[] = [];
+  if ([...password].length < MIN_PASSWORD_LENGTH) missing.push(`at least ${MIN_PASSWORD_LENGTH} characters`);
+  if (!/\p{Ll}/u.test(password)) missing.push("a lowercase letter");
+  if (!/\p{Lu}/u.test(password)) missing.push("an uppercase letter");
+  if (!/\p{Nd}/u.test(password)) missing.push("a number");
+  if (!/[^\p{L}\p{N}\s]/u.test(password)) missing.push("a symbol (like ! ? # - _ .)");
+  return missing;
+}
+
+/**
+ * 20 random symbols from PASSWORD_ALPHABET in groups of five: XXXXX-XXXXX-XXXXX-XXXXX (the dashes are
+ * part of the password and count as its symbol). Drawn again until it also has a lowercase letter,
+ * an uppercase letter and a number, so it meets the same rule as a chosen password.
+ */
 export function generatePassword(): string {
+  for (;;) {
+    const pw = drawPassword();
+    if (!passwordProblems(pw).length) return pw;
+  }
+}
+
+/** One uniform draw: XXXXX-XXXXX-XXXXX-XXXXX from PASSWORD_ALPHABET (exported for the uniformity test). */
+export function drawPassword(): string {
   const groups: string[] = [];
   for (let g = 0; g < 4; g++) {
     let part = "";
@@ -42,7 +65,7 @@ export interface PasswordChoice {
 }
 
 export const PASSWORD_PARAMS = [
-  { name: "password", type: "string" as const, description: "The backup password the human chose and told you in chat (at least 12 characters, 16 or more is better). Omit to have one generated." },
+  { name: "password", type: "string" as const, description: "The backup password the human chose and told you in chat (at least 6 characters with a lowercase and an uppercase letter, a number and a symbol; one they will remember). Omit to have one generated." },
   { name: "password-env", type: "string" as const, description: "Name of an environment variable that holds the backup password (read once, then removed from this process)." },
   { name: "password-stdin", type: "boolean" as const, description: "Read the backup password from standard input (CLI only; not available over MCP)." },
 ];
@@ -91,9 +114,12 @@ export async function choosePassword(args: PasswordArgs, forExport: boolean): Pr
   if (!password) throw new UpError("BAD_ARGS", "the password is empty");
   const warnings: string[] = [];
   if (forExport) {
-    const length = [...password].length;
-    if (length < MIN_PASSWORD_LENGTH) throw new UpError("BAD_ARGS", `the backup password must have at least ${MIN_PASSWORD_LENGTH} characters`, { hint: "ask the human for a longer one, or omit the password to have a strong one generated" });
-    if (length < RECOMMENDED_PASSWORD_LENGTH) warnings.push(`the backup password has only ${length} characters; a backup file can be guessed at offline, so 16 or more is much safer`);
+    const missing = passwordProblems(password);
+    if (missing.length) {
+      throw new UpError("BAD_ARGS", `the backup password needs ${missing.join(", ")}`, {
+        hint: `ask the human for a password they will remember, with at least ${MIN_PASSWORD_LENGTH} characters, a lowercase and an uppercase letter, a number and a symbol; or omit it to have one generated`,
+      });
+    }
   }
   return { password, source, generated: false, warnings };
 }

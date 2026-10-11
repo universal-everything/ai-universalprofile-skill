@@ -1,7 +1,7 @@
 // Where the backup password comes from (owner decision: it may travel through the chat).
 import { afterEach, describe, expect, it } from "vitest";
 import { Readable } from "node:stream";
-import { PASSWORD_ALPHABET, checkHint, choosePassword, generatePassword } from "../../../src/backup/password.ts";
+import { PASSWORD_ALPHABET, checkHint, choosePassword, drawPassword, generatePassword, passwordProblems } from "../../../src/backup/password.ts";
 import { UpError } from "../../../src/core/errors.ts";
 import { clearSecretsForTests, containsSecret } from "../../../src/core/secret-guard.ts";
 
@@ -20,12 +20,12 @@ describe("generated password", () => {
     expect(new Set(Array.from({ length: 200 }, generatePassword)).size).toBe(200);
   });
 
-  it("is uniform enough (chi-square smoke test over 56 symbols)", () => {
+  it("draws uniformly (chi-square smoke test over 56 symbols); generatePassword only redraws a whole password", () => {
     const counts = new Map<string, number>();
     const n = 20000;
     let total = 0;
     while (total < n * 20) {
-      for (const ch of generatePassword().replace(/-/g, "")) counts.set(ch, (counts.get(ch) ?? 0) + 1), total++;
+      for (const ch of drawPassword().replace(/-/g, "")) counts.set(ch, (counts.get(ch) ?? 0) + 1), total++;
     }
     const expected = total / 56;
     let chi = 0;
@@ -42,13 +42,22 @@ describe("generated password", () => {
 });
 
 describe("sources", () => {
-  it("--password: at least 12 characters, a warning below 16", async () => {
-    expect(((await err(choosePassword({ password: "short-pw" }, true))) as UpError).message).toMatch(/at least 12 characters/);
-    const c = (await choosePassword({ password: "twelve-chars" }, true))!;
+  it("--password: at least 6 characters with a lowercase and an uppercase letter, a number and a symbol (owner rule)", async () => {
+    const msg = async (pw: string) => ((await err(choosePassword({ password: pw }, true))) as UpError).message;
+    expect(await msg("Ab1!")).toMatch(/at least 6 characters/);
+    expect(await msg("abcde1!")).toMatch(/an uppercase letter/);
+    expect(await msg("ABCDE1!")).toMatch(/a lowercase letter/);
+    expect(await msg("Abcdef!")).toMatch(/a number/);
+    expect(await msg("Abcde12")).toMatch(/a symbol/);
+    expect(await msg("abc")).toMatch(/at least 6 characters, an uppercase letter, a number, a symbol/);
+    const c = (await choosePassword({ password: "Sun7y!" }, true))!;
     expect(c.source).toBe("argument");
-    expect(c.warnings[0]).toMatch(/only 12 characters/);
-    expect((await choosePassword({ password: "a-much-longer-password" }, true))!.warnings).toEqual([]);
+    expect(c.warnings).toEqual([]);
     expect((await choosePassword({ password: "Ünïcödé-pässwörd-1" }, true))!.password).toBe("Ünïcödé-pässwörd-1");
+  });
+
+  it("a generated password always meets the same rule", () => {
+    for (let i = 0; i < 200; i++) expect(passwordProblems(generatePassword())).toEqual([]);
   });
 
   it("opening a file has no minimum (the app lets people choose 1 to 30 characters) and never generates", async () => {
@@ -58,9 +67,9 @@ describe("sources", () => {
   });
 
   it("--password-env reads the variable once and removes it from the process", async () => {
-    process.env.BACKUP_PW_TEST = "from-the-environment-1";
+    process.env.BACKUP_PW_TEST = "From-the-environment-1";
     const c = (await choosePassword({ "password-env": "BACKUP_PW_TEST" }, true))!;
-    expect(c).toMatchObject({ source: "env", password: "from-the-environment-1" });
+    expect(c).toMatchObject({ source: "env", password: "From-the-environment-1" });
     expect(process.env.BACKUP_PW_TEST).toBeUndefined();
     expect(((await err(choosePassword({ "password-env": "BACKUP_PW_TEST" }, true))) as UpError).message).toMatch(/not set or empty/);
     expect(((await err(choosePassword({ "password-env": "bad name!" }, true))) as UpError).message).toMatch(/name of an environment variable/);
@@ -68,9 +77,9 @@ describe("sources", () => {
 
   it("--password-stdin reads standard input and strips one trailing newline; it is refused over MCP", async () => {
     const stdin = process.stdin;
-    Object.defineProperty(process, "stdin", { value: Readable.from([Buffer.from("typed-in-the-terminal-1\n")]), configurable: true });
+    Object.defineProperty(process, "stdin", { value: Readable.from([Buffer.from("Typed-in-the-terminal-1\n")]), configurable: true });
     try {
-      expect((await choosePassword({ "password-stdin": true }, true))!.password).toBe("typed-in-the-terminal-1");
+      expect((await choosePassword({ "password-stdin": true }, true))!.password).toBe("Typed-in-the-terminal-1");
       process.env.UP_MCP_SERVER = "1";
       expect(((await err(choosePassword({ "password-stdin": true }, true))) as UpError).message).toMatch(/not available over MCP/);
     } finally {

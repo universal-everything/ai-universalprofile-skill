@@ -100,7 +100,8 @@ Each step below has: **Goal** · **Message** (adapt the wording, keep the conten
   > Reply "yes" or "later".
 - **Attach:** nothing yet.
 - **Expected reply:** "yes" or "later". Default: later. A "yes" is the approval for `up backup export`. If they decline, record it (`up backup list --mark-asked`) and don't ask again until something changes.
-- **Message (the delivery):** `up backup export` → `data.say`, which contains the password:
+- **Message (the password):** "Please choose a password for it that you will remember: at least 6 characters with a lowercase and an uppercase letter, a number and a symbol, for example `Sunny-Day7!`. Or shall I make one up for you?" Expected reply: their password, or "make one". If the skill says something is missing, tell them exactly what, in one line.
+- **Message (the delivery):** `up backup export` → `data.say` (with a generated password it contains the password):
   > Here is the backup of my account. Its password is: XXXXX-XXXXX-XXXXX-XXXXX
   > Keep the file and the password in different safe places (the password in a password manager is ideal). You can restore it in the Universal Profile app or with me.
 - **Attach:** the **one** backup file (`data.path`), by path through the chat's attachment mechanism, in the same message as the text. Never paste, print or open its contents.

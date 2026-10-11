@@ -522,7 +522,7 @@ Covers every profile and every key the agent has (--profiles narrows the profile
 | `--path` | string |  | Where to write the file (must not exist; its folder must exist). Default: <UP_HOME>/backups/universal-profiles-backup-YYYY-MM-DD.json. |
 | `--mode` | string (encrypted\|public\|unencrypted) |  | encrypted (keys locked with a password, default), public (no keys at all) or unencrypted (keys in plain text; dangerous). Default: `"encrypted"`. |
 | `--profiles` | string[] |  | Only these profiles (addresses or aliases). Default: every profile on this machine. The keys are always all of the agent's keys. |
-| `--password` | string |  | The backup password the human chose and told you in chat (at least 12 characters, 16 or more is better). Omit to have one generated. |
+| `--password` | string |  | The backup password the human chose and told you in chat (at least 6 characters with a lowercase and an uppercase letter, a number and a symbol; one they will remember). Omit to have one generated. |
 | `--password-env` | string |  | Name of an environment variable that holds the backup password (read once, then removed from this process). |
 | `--password-stdin` | boolean |  | Read the backup password from standard input (CLI only; not available over MCP). |
 | `--generate-password` | boolean |  | Generate a strong password (the default for export when no password is given); it is returned in data.password so you can tell the human. |
@@ -550,7 +550,7 @@ The human sends the file as a chat attachment (the host saves it to a path) and 
 | option | type | required | description |
 | --- | --- | --- | --- |
 | `--path` | string | yes | Path of the backup file. |
-| `--password` | string |  | The backup password the human chose and told you in chat (at least 12 characters, 16 or more is better). Omit to have one generated. |
+| `--password` | string |  | The backup password the human chose and told you in chat (at least 6 characters with a lowercase and an uppercase letter, a number and a symbol; one they will remember). Omit to have one generated. |
 | `--password-env` | string |  | Name of an environment variable that holds the backup password (read once, then removed from this process). |
 | `--password-stdin` | boolean |  | Read the backup password from standard input (CLI only; not available over MCP). |
 | `--profiles` | string[] |  | Only these profiles of the file (addresses). Default: every profile that can be restored. |
@@ -602,7 +602,7 @@ The checks of backup import, changing nothing. Key addresses are derived from th
 | option | type | required | description |
 | --- | --- | --- | --- |
 | `--path` | string | yes | Path of the backup file. |
-| `--password` | string |  | The backup password the human chose and told you in chat (at least 12 characters, 16 or more is better). Omit to have one generated. |
+| `--password` | string |  | The backup password the human chose and told you in chat (at least 6 characters with a lowercase and an uppercase letter, a number and a symbol; one they will remember). Omit to have one generated. |
 | `--password-env` | string |  | Name of an environment variable that holds the backup password (read once, then removed from this process). |
 | `--password-stdin` | boolean |  | Read the backup password from standard input (CLI only; not available over MCP). |
 | `--online` | boolean |  | Also check each profile on its networks (needs network access). Default: `false`. |

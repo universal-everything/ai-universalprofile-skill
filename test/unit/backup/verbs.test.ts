@@ -160,21 +160,21 @@ describe("backup export (encrypted)", () => {
   });
 
   it("a password the human chose is used (and not echoed); too short is refused; a hint with the password is refused; nothing is written then", async () => {
-    const pw = "the-humans-own-password-1";
+    const pw = "The-humans-own-password-1";
     const r = await run("backup export", { password: pw }, { approval: APPROVAL });
     expect(r.data.password).toBeUndefined();
     expect(JSON.stringify(r)).not.toContain(pw);
     expect(r.data.say).toContain("locked with the password you chose");
     expect((await decryptSecrets(JSON.parse(fileOf(r)).secrets.data, pw)).keys).toHaveLength(3);
-    expect((await fail(run("backup export", { password: "short" }, { approval: APPROVAL }))).message).toMatch(/at least 12/);
+    expect((await fail(run("backup export", { password: "short" }, { approval: APPROVAL }))).message).toMatch(/at least 6 characters/);
     expect((await fail(run("backup export", { password: pw, hint: `it is ${pw}` }, { approval: APPROVAL }))).message).toMatch(/contains the password/);
     expect(backupFiles()).toHaveLength(1);
   });
 
   it("--password-env and --generate-password; two sources are refused", async () => {
-    process.env.TEST_BACKUP_PW = "from-an-env-variable-12";
+    process.env.TEST_BACKUP_PW = "From-an-env-variable-12";
     const r = await run("backup export", { "password-env": "TEST_BACKUP_PW" }, { approval: APPROVAL });
-    expect((await decryptSecrets(JSON.parse(fileOf(r)).secrets.data, "from-an-env-variable-12")).keys).toHaveLength(3);
+    expect((await decryptSecrets(JSON.parse(fileOf(r)).secrets.data, "From-an-env-variable-12")).keys).toHaveLength(3);
     expect(process.env.TEST_BACKUP_PW).toBeUndefined();
     expect((await run("backup export", { "generate-password": true }, { approval: APPROVAL })).data.passwordGenerated).toBe(true);
     expect((await fail(run("backup export", { password: "twelve-chars-x", "generate-password": true }, { approval: APPROVAL }))).message).toMatch(/only one of/);
