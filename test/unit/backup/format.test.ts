@@ -227,3 +227,40 @@ describe("validator", () => {
     expect(backupText(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("{}")]))).toBe("{}");
   });
 });
+
+describe("free text and the date in a file are untrusted (review finding 1)", () => {
+  const KEY = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // public Anvil key 0
+  const addr = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+  const file = (over: Record<string, unknown> = {}, secrets: unknown = { encrypted: false, data: [] }) => ({ version: 2, backupDate: "2026-10-10T12:00:00Z", accounts: [{ address: addr, name: "Alice", networks: [{ chainID: 42, name: "LUKSO", controllers: [{ address: addr, type: "Device", name: "Phone" }] }] }], LSP23CrossChainDeployment: [], secrets, ...over });
+
+  it("a date that is not an ISO date-time becomes unknown, with a note", () => {
+    for (const d of [KEY, `0x${KEY}`, "yesterday", "2026-10-10", 5, undefined]) {
+      const r = parseBackup(JSON.stringify(file({ backupDate: d })));
+      expect(r.backup!.backupDate, String(d)).toBe("unknown");
+      expect(r.issues).toContainEqual(expect.objectContaining({ level: "warn", code: "bad-date" }));
+      expect(JSON.stringify(r.issues)).not.toContain(KEY);
+    }
+    expect(parseBackup(JSON.stringify(file())).backup!.backupDate).toBe("2026-10-10T12:00:00Z");
+  });
+
+  it("names, types and the hint that look like a key are withheld, each with a note that names the place only", () => {
+    const f = file({ accounts: [{ address: addr, name: KEY, type: "LSP0-ERC725Account", networks: [{ chainID: 42, name: `0x${KEY}`, controllers: [{ address: addr, type: KEY.toUpperCase(), name: `k ${KEY}` }] }] }] }, { encrypted: true, passwordHint: KEY, encryptionType: ENCRYPTION_TYPE, data: { secret: Buffer.alloc(40, 1).toString("base64"), iv: Buffer.alloc(16, 2).toString("base64"), salt: Buffer.alloc(32, 3).toString("base64") } });
+    const { backup, issues } = parseBackup(JSON.stringify(f));
+    expect(backup!.accounts[0].name).toBe("[withheld: looks like key material]");
+    expect(backup!.accounts[0].networks[0].name).toBe("[withheld: looks like key material]");
+    expect(backup!.accounts[0].networks[0].controllers[0]).toMatchObject({ type: "[withheld: looks like key material]", name: "[withheld: looks like key material]" });
+    expect((backup!.secrets as any).hint).toBe("[withheld: looks like key material]");
+    expect(issues.filter((i) => i.code === "key-shaped-text").map((i) => i.message)).toEqual(expect.arrayContaining(["accounts[0].name looks like key material and is not shown", "secrets.passwordHint looks like key material and is not shown"]));
+    expect(JSON.stringify({ backup, issues }).toLowerCase()).not.toContain(KEY);
+  });
+
+  it("an encryptionType other than the known one is replaced by a fixed label", () => {
+    const secrets = (t: unknown) => ({ encrypted: true, encryptionType: t, data: { secret: Buffer.alloc(40, 1).toString("base64"), iv: Buffer.alloc(16, 2).toString("base64"), salt: Buffer.alloc(32, 3).toString("base64") } });
+    for (const t of [KEY, "AES with a long story", "x".repeat(500)]) {
+      const r = parseBackup(JSON.stringify(file({}, secrets(t))));
+      expect((r.backup!.secrets as any).encryptionType).toBe("unrecognized");
+      expect(r.issues).toContainEqual(expect.objectContaining({ code: "encryption-type" }));
+    }
+    expect((parseBackup(JSON.stringify(file({}, secrets(ENCRYPTION_TYPE)))).backup!.secrets as any).encryptionType).toBe(ENCRYPTION_TYPE);
+  });
+});

@@ -9,10 +9,13 @@
 // Its messages name the place of a problem ("accounts[0].address"), never the value found there.
 import { getAddress } from "viem";
 import { UpError } from "../core/errors.ts";
+import { canonicalDateTime, KEY_WITHHELD, safeFileText } from "../core/safe-text.ts";
 import type { Address, Hex } from "../core/types.ts";
 import { decodeField, ENCRYPTION_TYPE, type EncryptedData } from "./lsp30-crypto.ts";
 
 export const BACKUP_VERSION = 2;
+/** What an encryptionType other than the known one is shown as. */
+export const UNRECOGNIZED_ENCRYPTION_TYPE = "unrecognized";
 export const MAX_BACKUP_BYTES = 5 * 1024 * 1024;
 export type BackupMode = "encrypted" | "unencrypted" | "public";
 
@@ -192,7 +195,15 @@ export function parseBackup(text: string): { backup?: ParsedBackup; issues: Issu
     error("bad-version", `unsupported version (only version ${BACKUP_VERSION} is supported)`);
     return fail();
   }
-  if (typeof root.backupDate !== "string" || Number.isNaN(Date.parse(root.backupDate))) warn("bad-date", "backupDate is missing or not a valid date");
+  // the date is shown and stored: only an ISO date-time is kept, anything else (it could carry key material) is replaced
+  const date = canonicalDateTime(root.backupDate);
+  if (!date) warn("bad-date", "backupDate is missing or not an ISO date-time; it is shown as unknown");
+  /** Free text from the file, made safe (invisible characters out, key-shaped text withheld, capped). */
+  const free = (v: unknown, where: string, max = 80): string => {
+    const t = safeFileText(v, max);
+    if (t === KEY_WITHHELD) warn("key-shaped-text", `${where} looks like key material and is not shown`);
+    return t;
+  };
 
   /** A 20-byte hex address as checksummed text; wrong length is an error, a wrong checksum only a warning (Q14). */
   const address = (v: unknown, where: string): Address | undefined => {
@@ -242,11 +253,11 @@ export function parseBackup(text: string): { backup?: ParsedBackup; issues: Issu
         const ca = address(c.address, `${cat}.address`);
         const idx = keyIndex(c.privateKeyIndex, `${cat}.privateKeyIndex`);
         if (!ca) return [];
-        return [{ address: ca, ...(typeof c.type === "string" ? { type: c.type } : {}), ...(idx !== undefined ? { privateKeyIndex: idx } : {}), ...(typeof c.name === "string" ? { name: c.name } : {}) }];
+        return [{ address: ca, ...(typeof c.type === "string" ? { type: free(c.type, `${cat}.type`, 40) } : {}), ...(idx !== undefined ? { privateKeyIndex: idx } : {}), ...(typeof c.name === "string" ? { name: free(c.name, `${cat}.name`) } : {}) }];
       });
-      return [{ chainID: n.chainID as number, name: typeof n.name === "string" ? n.name : "", controllers }];
+      return [{ chainID: n.chainID as number, name: typeof n.name === "string" ? free(n.name, `${nat}.name`) : "", controllers }];
     });
-    return addr ? [{ ...(typeof a.type === "string" ? { type: a.type } : {}), ...(typeof a.name === "string" ? { name: a.name } : {}), address: addr, networks }] : [];
+    return addr ? [{ ...(typeof a.type === "string" ? { type: free(a.type, `${at}.type`, 40) } : {}), ...(typeof a.name === "string" ? { name: free(a.name, `${at}.name`) } : {}), address: addr, networks }] : [];
   });
 
   const lsp23: BackupLsp23Item[] = list(root.LSP23CrossChainDeployment, "LSP23CrossChainDeployment").flatMap((it, i): BackupLsp23Item[] => {
@@ -284,7 +295,8 @@ export function parseBackup(text: string): { backup?: ParsedBackup; issues: Issu
       decodeField(d.salt, "salt", 8, 128);
       decodeField(d.iv, "iv", 12, 16);
       decodeField(d.secret, "secret", 17, MAX_BACKUP_BYTES);
-      secrets = { kind: "encrypted", ...(typeof s.passwordHint === "string" && s.passwordHint ? { hint: s.passwordHint } : {}), ...(typeof s.encryptionType === "string" ? { encryptionType: s.encryptionType } : {}), data: { secret: d.secret as string, iv: d.iv as string, salt: d.salt as string } };
+      // only the one known label is passed on; any other value is replaced by a fixed one
+      secrets = { kind: "encrypted", ...(typeof s.passwordHint === "string" && s.passwordHint ? { hint: free(s.passwordHint, "secrets.passwordHint", 255) } : {}), ...(typeof s.encryptionType === "string" ? { encryptionType: s.encryptionType === ENCRYPTION_TYPE ? ENCRYPTION_TYPE : UNRECOGNIZED_ENCRYPTION_TYPE } : {}), data: { secret: d.secret as string, iv: d.iv as string, salt: d.salt as string } };
       if (s.encryptionType !== ENCRYPTION_TYPE) warn("encryption-type", "encryptionType is not the one this skill and the app write; decryption is tried with the app's parameters");
     } catch (e) {
       error("bad-secrets", e instanceof UpError ? e.message : "secrets.data needs Base64 secret, iv and salt");
@@ -311,5 +323,5 @@ export function parseBackup(text: string): { backup?: ParsedBackup; issues: Issu
 
   // a controller's key index must point at a key (checked here for plain files; after decryption for encrypted ones)
   if (issues.some((i) => i.level === "error")) return fail();
-  return { backup: { backupDate: typeof root.backupDate === "string" ? root.backupDate : "", accounts, lsp23, secrets }, issues };
+  return { backup: { backupDate: date ?? "unknown", accounts, lsp23, secrets }, issues };
 }

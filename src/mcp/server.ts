@@ -14,6 +14,7 @@ import { redact, replacer } from "../core/json.ts";
 import { skillDir } from "../core/assets.ts";
 import { VERSION } from "../version.ts";
 import { WITHHELD_MESSAGE, containsSecret } from "../core/secret-guard.ts";
+import { safeEcho } from "../core/safe-text.ts";
 
 const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
@@ -88,7 +89,7 @@ export async function handleMcpMessage(msg: any): Promise<unknown | undefined> {
         });
       case "tools/call": {
         const v = verbFromToolName(params?.name);
-        if (!v) return fail(-32602, `unknown tool ${params?.name}`);
+        if (!v) return fail(-32602, `unknown tool ${safeEcho(params?.name)}`);
         try {
           const args = coerceArgs(v, params?.arguments ?? {});
           const execute = async () => {
@@ -118,14 +119,14 @@ export async function handleMcpMessage(msg: any): Promise<unknown | undefined> {
         return ok({ resources: referenceFiles().map((r) => ({ uri: r.uri, name: r.name, mimeType: "text/markdown" })) });
       case "resources/read": {
         const r = referenceFiles().find((x) => x.uri === params?.uri);
-        if (!r) return fail(-32602, `unknown resource ${params?.uri}`);
+        if (!r) return fail(-32602, `unknown resource ${safeEcho(params?.uri)}`);
         return ok({ contents: [{ uri: r.uri, mimeType: "text/markdown", text: readFileSync(r.path, "utf8") }] });
       }
       default:
-        return fail(-32601, `method not found: ${method}`);
+        return fail(-32601, `method not found: ${safeEcho(method)}`);
     }
   } catch (e) {
-    return fail(-32603, (e as Error).message);
+    return fail(-32603, safeEcho((e as Error).message, 300));
   }
 }
 
