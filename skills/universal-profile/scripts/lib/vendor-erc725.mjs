@@ -1,6 +1,6 @@
 // Vendored @erc725/erc725.js (Apache-2.0) — https://github.com/ERC725Alliance/erc725.js
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 28558cd0bed8 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint b7b1f314b3e0 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -3700,6 +3700,17 @@ var ERC725 = class {
 var index_default = ERC725;
 export {
   ERC725,
+  LSP10Schema,
+  LSP12Schema,
+  LSP17Schema,
+  LSP1Schema,
+  LSP3Schema,
+  LSP4LegacySchema,
+  LSP4Schema,
+  LSP5Schema,
+  LSP6Schema,
+  LSP8Schema,
+  LSP9Schema,
   SUPPORTED_VERIFICATION_METHOD_STRINGS,
   checkPermissions,
   decodeData,
