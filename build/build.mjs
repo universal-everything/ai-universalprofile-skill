@@ -6,6 +6,7 @@
 //   scripts/up-mcp.mjs      stdio MCP server   (node scripts/up-mcp.mjs)
 //   scripts/up-doctor.mjs   environment check  (node scripts/up-doctor.mjs)
 //   scripts/lib/app.mjs     shared application code (chunk)
+//   scripts/lib/backup.mjs  the backup verbs' code, loaded on demand by app.mjs (see step 2)
 //   scripts/lib/vendor-viem.mjs, vendor-erc725.mjs, vendor-qrcode.mjs
 //
 // Third-party packages are bundled into separate vendor files so that every
@@ -14,7 +15,7 @@
 import { build } from "esbuild";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync, statSync, chmodSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -104,13 +105,62 @@ await build({
   banner: { js: banner("Vendored qrcode (MIT) — https://github.com/soldair/node-qrcode") },
 });
 
-// 2) Application: one shared chunk + three thin entry points.
+// 2) Application: one shared chunk + three thin entry points, and the code of the backup verbs as a
+//    second chunk that app.mjs loads on demand (dynamic import in src/backup/verbs.ts). Together they
+//    would pass the 1 MiB file limit, and they must share one copy of every app module (the registry
+//    of secrets, the error classes ...), so backup.mjs imports those from app.mjs instead of bundling them:
+//    a) bundle src/backup/run.ts with every module outside src/backup left as an import "shared:<path>",
+//    b) bundle app.mjs with a namespace export of each such module,
+//    c) rewrite the "shared:" imports of backup.mjs into reads from those namespaces.
+const srcDir = join(root, "src") + sep;
+const backupDir = join(root, "src", "backup") + sep;
+const shared = new Set();
+const defines = { __UP_VERSION__: JSON.stringify(pkg.version), __UP_SOURCE__: JSON.stringify(source) };
+const lazy = await build({
+  ...common,
+  entryPoints: [join(root, "src", "backup", "run.ts")],
+  outfile: join(libDir, "backup.mjs"),
+  write: false,
+  plugins: [
+    vendorRewrite(true),
+    {
+      name: "shared-with-app",
+      setup(b) {
+        b.onResolve({ filter: /^\.\.?\// }, async (args) => {
+          if (args.pluginData?.skip) return undefined;
+          const r = await b.resolve(args.path, { resolveDir: args.resolveDir, kind: args.kind, importer: args.importer, pluginData: { skip: true } });
+          if (r.errors.length || !r.path.startsWith(srcDir) || r.path.startsWith(backupDir)) return r;
+          const rel = relative(root, r.path).split(sep).join("/");
+          shared.add(rel);
+          return { path: `shared:${rel}`, external: true };
+        });
+      },
+    },
+  ],
+  define: defines,
+  banner: { js: banner("Universal Profile skill — backup verbs (loaded on demand by app.mjs)") },
+});
+const sharedList = [...shared].sort();
+const ns = (rel) => `$s${sharedList.indexOf(rel)}`;
+let lazyCode = lazy.outputFiles[0].text.replace(/^import\s*\{([^}]*)\}\s*from\s*"shared:([^"]+)";?$/gm, (_m, names, rel) => `const {${names.replace(/\s+as\s+/g, ": ")}} = ${ns(rel)};`);
+if (lazyCode.includes("shared:")) throw new Error("backup.mjs: an import of an app module was not bridged (only named imports are supported)");
+lazyCode = lazyCode.replace(/^(\/\/[^\n]*\n)+/, (header) => `${header}import { ${sharedList.map(ns).join(", ")} } from "./app.mjs";\n`);
+writeFileSync(join(libDir, "backup.mjs"), lazyCode);
+
 await build({
   ...common,
-  entryPoints: [join(root, "src", "app.ts")],
+  stdin: { contents: [`export * from "./src/app.ts";`, ...sharedList.map((rel) => `export * as ${ns(rel)} from "./${rel}";`)].join("\n"), resolveDir: root, sourcefile: "app.ts" },
   outfile: join(libDir, "app.mjs"),
-  plugins: [vendorRewrite(true)],
-  define: { __UP_VERSION__: JSON.stringify(pkg.version), __UP_SOURCE__: JSON.stringify(source) },
+  plugins: [
+    vendorRewrite(true),
+    {
+      name: "backup-on-demand",
+      setup(b) {
+        b.onResolve({ filter: /^\.\/run\.ts$/ }, (args) => (args.importer.endsWith(join("src", "backup", "verbs.ts")) ? { path: "./backup.mjs", external: true } : undefined));
+      },
+    },
+  ],
+  define: defines,
   banner: { js: banner("Universal Profile skill — application code") },
 });
 
