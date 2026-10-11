@@ -100,7 +100,7 @@ describe("backup export (encrypted)", () => {
     expect(r.data.path).toBe(join(paths.backups(home), `universal-profiles-backup-${new Date().toISOString().slice(0, 10)}.json`));
     if (process.platform !== "win32") {
       // POSIX modes; Windows has no such permission bits
-      if (process.platform !== "win32") expect(statSync(r.data.path).mode & 0o777).toBe(0o600);
+      expect(statSync(r.data.path).mode & 0o777).toBe(0o600);
       expect(statSync(paths.backups(home)).mode & 0o777).toBe(0o700);
     }
     expect(appReads(text).errors).toEqual([]);
@@ -257,7 +257,7 @@ describe("backup export (public and unencrypted)", () => {
     expect(f.secrets.data.map((e: any) => e.secret)).toEqual([K.def, K.prev, K.extra]);
     expect(f.secrets.data[0]).toEqual({ type: "privateKey", index: 0, address: addr(K.def), secret: K.def });
     expect(appReads(fileOf(r)).errors).toEqual([]);
-    expect(statSync(r.data.path).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(r.data.path).mode & 0o777).toBe(0o600); // POSIX modes only
     // the path guard keeps every other verb away from it
     const { assertNotKeyMaterialPath } = await import("../../../src/core/secret-guard.ts");
     expect(() => assertNotKeyMaterialPath(r.data.path)).toThrow(/backups or a backup file/);
