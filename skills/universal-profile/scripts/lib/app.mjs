@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 536f274a98ac (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 31097e1209ab (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -7495,7 +7495,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "536f274a98ac" : "source";
+var SOURCE = true ? "31097e1209ab" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -17847,6 +17847,7 @@ defineVerb({
         next: [
           "Show `say` and wait for the human's choice. Ask one question at a time; never mention commands, scripts, files or key stores.",
           "Choice 1 → references/onboarding.md J1 (suggest LUKSO first). Choice 2 → J2-relayer. Choice 3 → J2.",
+          'If your environment or policy does not let you hold crypto or send transactions yourself, say so first: what the skill normally does, what you may not do here, and which choice still works (2 or 3). See SKILL.md "If your environment restricts crypto transactions".',
           ...custody.length ? ["Custody notes for later (mention only when recommending the human as a second controller): " + custody.join(" | ")] : []
         ]
       },

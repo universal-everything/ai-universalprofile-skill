@@ -14,6 +14,8 @@ Run `up start` (it prepares everything and returns the choice as `data.say`; `up
 2. **Create it with the Universal Relayer (gas included)**: *"One subscription gives gas on LUKSO, Ethereum, Base, BNB Chain, Arbitrum, Robinhood Chain, Polygon and Avalanche. My account is ready on all of them right away. The relayer only pays the gas; it never controls your profile. This opens a separate website with its own terms."* → J2-relayer.
 3. **Use a Universal Profile you already have**: *"You give me the profile's address and allow me to act for it, with the permissions you choose. You stay in control."* → J2.
 
+**If your environment or policy restricts crypto transactions** (some cloud agent VMs do not let an agent hold crypto or send transactions): tell the human before offering the choice what the skill normally does, what you may not do here, and recommend choice 2 or 3 (SKILL.md, "If your environment restricts crypto transactions"). Never work around the restriction.
+
 Do not push either of the first two; explain the trade-off if asked. Choice 1 depends on nothing but the networks themselves and costs gas per network. Choice 2 is convenient and gasless for the agent, but depends on the relayer service and its subscription.
 
 > **TODO (product):** the Universal Relayer website link is not published yet (`data.paths[1].todo` in `up onboarding options`; `UNIVERSAL_RELAYER_WEBSITE` in the source). Until it is, say *"The Universal Relayer website is coming soon"* and offer choices 1 and 3. Never guess or search for a URL.

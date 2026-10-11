@@ -26,6 +26,7 @@ Each step below has: **Goal** · **Message** (adapt the wording, keep the conten
 - **Attach:** nothing.
 - **Expected reply:** 1, 2 or 3. Default: 1.
 - **Never:** explain keys, gas mechanics or standards here; push the relayer; mention a link that is not published (say "coming soon").
+- **If your environment restricts crypto** (you may not hold crypto or send transactions): before the choices, one short paragraph: *"Normally I'd set up my own profile: you send me a little gas once and I do the rest myself. Here I'm not allowed to hold crypto or send transactions, so the easiest way is the Universal Relayer, or you create the profile in your Universal Profile app and let me act for it."* Then offer only the choices that work.
 
 ## J1 · Step 1: networks
 

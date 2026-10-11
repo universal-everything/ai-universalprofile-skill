@@ -44,6 +44,7 @@ describe("start", () => {
     expect(say).not.toMatch(JARGON);
     expect(say).not.toContain(r.data.controller); // no addresses before they are needed
     expect(r.data.next.join(" ")).toMatch(/never mention commands/);
+    expect(r.data.next.join(" ")).toMatch(/does not let you hold crypto or send transactions yourself, say so first/);
   });
 
   it("is idempotent: a second run keeps the same key", async () => {
