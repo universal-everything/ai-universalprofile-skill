@@ -8,7 +8,8 @@ import { LSP23_ABI } from "../../../src/lsp/abis.ts";
 import { ALL_PERMISSIONS_HEX, PERMISSIONS, URD_PERMISSIONS } from "../../../src/lsp/constants.ts";
 import { verifyManifest } from "../../../src/lsp/lsp23.ts";
 import { toBytes32 } from "../../../src/lsp/permissions.ts";
-import { HUMAN_ADMIN, fakeManifest, newKey } from "../../support/backup-fixtures.ts";
+import { DATA_KEYS } from "../../../src/lsp/constants.ts";
+import { HUMAN_ADMIN, editedDeployment, fakeManifest, newKey } from "../../support/backup-fixtures.ts";
 
 const agent = privateKeyToAddress(newKey());
 const humanPerm = toBytes32(0x0000_0000_0000_0008n);
@@ -122,5 +123,71 @@ describe("initialControllersFor / permissionMismatch", () => {
     expect(permissionMismatch({ permissions: setData, decodedPermissions: { CALL: true } }).sort()).toEqual(["CALL", "SETDATA"]);
     expect(permissionMismatch({ permissions: setData })).toEqual([]);
     expect(permissionMismatch({ permissions: setData, decodedPermissions: { SETDATA: true, CALL: false } })).toEqual([]);
+  });
+});
+
+describe("malformed or empty permissions in the calldata (findings 3 and 4)", () => {
+  const permissionIndex = (keys: Hex[], who: string) => keys.findIndex((k) => k.toLowerCase() === (DATA_KEYS.AddressPermissionsPermissionsPrefix + who.slice(2)).toLowerCase());
+  const item = (m: ReturnType<typeof fakeManifest>, calldata: Hex, profile = m.profile) => ({ ...itemOf(m), profileAddress: profile, deploymentCalldata: calldata });
+
+  it("key and value lists of different lengths are unsupported data, not a controller with undefined permissions", () => {
+    const m = fakeManifest({ controller: agent });
+    const longer = editedDeployment(m, (k, v) => [k, v.slice(0, -1)]);
+    const d = decodeDeployment(item(m, longer.calldata));
+    expect(d).toMatchObject({ supported: false, rederives: false, initialControllers: [] });
+    expect(d.reason).toMatch(/lists of different lengths/);
+    const shorter = editedDeployment(m, (k, v) => [k.slice(0, -1), v]);
+    expect(decodeDeployment(item(m, shorter.calldata)).supported).toBe(false);
+  });
+
+  it("a Universal Receiver Delegate key without its value is no TypeError", () => {
+    const m = fakeManifest({ controller: agent });
+    const urdAt = (k: Hex[]) => k.findIndex((x) => x.toLowerCase() === DATA_KEYS.LSP1UniversalReceiverDelegate.toLowerCase());
+    const e = editedDeployment(m, (k, v) => {
+      const i = urdAt(k);
+      return [k, v.filter((_x, j) => j !== i)];
+    });
+    expect(() => decodeDeployment(item(m, e.calldata))).not.toThrow();
+    expect(decodeDeployment(item(m, e.calldata)).supported).toBe(false);
+  });
+
+  it("a permission value that is not a 32-byte permission set is marked invalid and never counts", () => {
+    const m = fakeManifest({ controller: agent });
+    // empty, too short, a 32-byte value that is not a plain permission set, one byte short
+    for (const bad of ["0x", "0x01", `0x${"ff".repeat(32)}`, `0x${"00".repeat(31)}`]) {
+      const e = editedDeployment(m, (k, v) => {
+        v[permissionIndex(k, agent)] = bad as Hex;
+        return [k, v];
+      });
+      const dec = decodeDeployment(item(m, e.calldata, e.profile));
+      const me = dec.initialControllers.find((c) => c.address === agent)!;
+      expect(me, bad).toMatchObject({ permissionsValid: false, hasPermissions: false, permissions: `0x${"00".repeat(32)}` });
+      expect(manifestFromBackup(item(m, e.calldata, e.profile) as any, dec, new Set([agent.toLowerCase()])).reason).toMatch(/not a valid permission set/);
+    }
+  });
+
+  it("a zero permission value is valid but gives no manifest and no proof", () => {
+    const m = fakeManifest({ controller: agent });
+    const e = editedDeployment(m, (k, v) => {
+      v[permissionIndex(k, agent)] = `0x${"00".repeat(32)}`;
+      return [k, v];
+    });
+    const dec = decodeDeployment(item(m, e.calldata, e.profile));
+    expect(dec.rederives).toBe(true);
+    expect(dec.initialControllers.find((c) => c.address === agent)).toMatchObject({ permissionsValid: true, hasPermissions: false });
+    const r = manifestFromBackup(item(m, e.calldata, e.profile) as any, dec, new Set([agent.toLowerCase()]));
+    expect(r.manifest).toBeUndefined();
+    expect(r.reason).toMatch(/no controller in the calldata has permissions/);
+  });
+
+  it("a held controller with no permissions is skipped for one that has some", () => {
+    const m = fakeManifest({ controller: agent, extra: [{ address: HUMAN_ADMIN, permissions: humanPerm }] });
+    const e = editedDeployment(m, (k, v) => {
+      v[permissionIndex(k, agent)] = `0x${"00".repeat(32)}`;
+      return [k, v];
+    });
+    const dec = decodeDeployment(item(m, e.calldata, e.profile));
+    const r = manifestFromBackup(item(m, e.calldata, e.profile) as any, dec, new Set([agent.toLowerCase()]));
+    expect(r.manifest?.controller).toBe(HUMAN_ADMIN);
   });
 });

@@ -138,6 +138,27 @@ describe("what the importer tolerates (quirks Q1 to Q5)", () => {
     }
   });
 
+  it("the entry array: two keys with the same resolved index are refused (a selective import could not tell them apart), whether the index is written or the position", async () => {
+    const k1 = generatePrivateKey();
+    const written = [{ type: "privateKey", index: 2, secret: ANVIL_KEY }, { type: "privateKey", index: 2, secret: k1 }];
+    const positional = [{ type: "privateKey", index: 1, secret: ANVIL_KEY }, { type: "privateKey", secret: k1 }]; // the second one resolves to its position, 1
+    for (const arr of [written, positional]) {
+      const e = await thrown(decryptSecrets(seal(JSON.stringify(arr), pw), pw));
+      expect(e.message).toBe("key number " + (arr === written ? 2 : 1) + " appears twice in the decrypted backup");
+      expect(e.message + JSON.stringify(e.details ?? {})).not.toContain(ANVIL_KEY.slice(2));
+    }
+  });
+
+  it("the entry array: only privateKey is a key and seedPhrase is skipped; any other or missing type is rejected without quoting it", async () => {
+    for (const type of ["mnemonic", "PRIVATEKEY", undefined, 7]) {
+      const e = await thrown(decryptSecrets(seal(JSON.stringify([{ type, index: 0, secret: ANVIL_KEY }]), pw), pw));
+      expect(e.message).toBe("entry 0 of the decrypted backup is not a private key or a seed phrase");
+    }
+    const ok = await decryptSecrets(seal(JSON.stringify([{ type: "seedPhrase", index: 0, secret: "twelve words" }, { type: "privateKey", index: 1, secret: ANVIL_KEY }]), pw), pw);
+    expect(ok.keys.map((k) => k.index)).toEqual([1]);
+    expect(ok.seedPhraseEntries).toBe(1);
+  });
+
   it("Q1: anything else is an unsupported payload, quoted nowhere", async () => {
     for (const plain of [JSON.stringify("hello secret text"), JSON.stringify({ other: 1 }), "not json at all", JSON.stringify([1, 2])]) {
       const e = await thrown(decryptSecrets(seal(plain, pw), pw));

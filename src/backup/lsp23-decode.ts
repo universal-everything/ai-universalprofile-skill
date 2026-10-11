@@ -19,7 +19,12 @@ const DEPLOY_CONTRACTS = "0x17ad46a8";
 
 export interface DecodedInitialController {
   address: Address;
+  /** The bytes32 permission value; all zero when the calldata's value is not a valid one (`permissionsValid` false). */
   permissions: Hex;
+  /** A 32-byte value that is a plain permission set (no bit above the lowest 32). */
+  permissionsValid: boolean;
+  /** Valid and not zero: the controller can actually do something. Only such a controller proves anything. */
+  hasPermissions: boolean;
   allowedCalls: Hex;
   allowedERC725YDataKeys: Hex;
   /** The Universal Receiver Delegate set at deployment (a contract, never a key). */
@@ -45,6 +50,10 @@ export interface DecodedDeployment {
 const unsupported = (reason: string): DecodedDeployment => ({ supported: false, reason, rederives: false, canonicalFactory: false, initialControllers: [] });
 
 const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+const ZERO_PERMISSIONS = `0x${"00".repeat(32)}` as Hex;
+/** A bytes32 permission value whose upper 28 bytes are zero: LSP6 permissions are a few low bits, anything else is not one. */
+const PERMISSION_VALUE = /^0x0{56}[0-9a-f]{8}$/i;
 
 function addressFromKey(key: Hex, prefix: Hex): Address | undefined {
   return key.toLowerCase().startsWith(prefix.toLowerCase()) && key.length === 66 ? getAddress(`0x${key.slice(26)}`) : undefined;
@@ -74,6 +83,7 @@ export function decodeDeployment(item: Pick<BackupLsp23Item, "profileAddress" | 
   } catch {
     return unsupported("the post-deployment data could not be decoded");
   }
+  if (dataKeyList.length !== dataValueList.length) return unsupported("the post-deployment data has lists of different lengths");
   let urd: Address | undefined;
   let lsp3: Hex | undefined;
   dataKeyList.forEach((key, i) => {
@@ -81,7 +91,10 @@ export function decodeDeployment(item: Pick<BackupLsp23Item, "profileAddress" | 
     const p = addressFromKey(key, DATA_KEYS.AddressPermissionsPermissionsPrefix);
     const c = addressFromKey(key, DATA_KEYS.AddressPermissionsAllowedCallsPrefix);
     const k = addressFromKey(key, DATA_KEYS.AddressPermissionsAllowedERC725YDataKeysPrefix);
-    if (p) perms.set(p, { address: p, permissions: value, allowedCalls: "0x", allowedERC725YDataKeys: "0x", isUrd: false });
+    if (p) {
+      const permissionsValid = PERMISSION_VALUE.test(value);
+      perms.set(p, { address: p, permissions: permissionsValid ? (value.toLowerCase() as Hex) : ZERO_PERMISSIONS, permissionsValid, hasPermissions: permissionsValid && BigInt(value) !== 0n, allowedCalls: "0x", allowedERC725YDataKeys: "0x", isUrd: false });
+    }
     else if (c) calls.set(c, value);
     else if (k) dataKeys.set(k, value);
     else if (key.toLowerCase() === DATA_KEYS.LSP1UniversalReceiverDelegate.toLowerCase() && value.length === 42 && isAddress(value, { strict: false })) urd = getAddress(value);
@@ -164,8 +177,9 @@ export function manifestFromBackup(item: BackupLsp23Item, dec: DecodedDeployment
   if (!dec.rederives) return { reason: "the calldata does not derive the profile address stated in the file" };
   const controllers = dec.initialControllers.filter((c) => !c.isUrd);
   if (!controllers.length) return { reason: "the calldata has no controller" };
-  const chosen = controllers.find((c) => heldKeys.has(c.address.toLowerCase())) ?? controllers[0];
-  if (BigInt(chosen.permissions || "0x0") === 0n) return { reason: "the first controller has no permissions" };
+  if (controllers.some((c) => !c.permissionsValid)) return { reason: "a controller's permission value is not a valid permission set" };
+  const chosen = controllers.find((c) => c.hasPermissions && heldKeys.has(c.address.toLowerCase())) ?? controllers.find((c) => c.hasPermissions);
+  if (!chosen) return { reason: "no controller in the calldata has permissions" };
   if (dec.plan.primaryContractDeploymentInit.fundingAmount !== "0" || dec.plan.secondaryContractDeploymentInit.fundingAmount !== "0") return { reason: "the deployment sends value, which this skill does not replay" };
   const plan: Lsp23Plan = { ...dec.plan, deployCalldata: item.deploymentCalldata };
   const manifest = manifestFromPlan(

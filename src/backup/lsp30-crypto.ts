@@ -127,7 +127,9 @@ function readPayload(plain: string): Omit<OpenedSecrets, "iterations" | "passwor
         seedPhraseEntries++;
         return;
       }
+      if (e.type !== "privateKey") throw new UpError("BAD_ARGS", `entry ${position} of the decrypted backup is not a private key or a seed phrase`);
       const index = Number.isInteger(e.index) && (e.index as number) >= 0 ? (e.index as number) : position;
+      if (keys.some((k) => k.index === index)) throw new UpError("BAD_ARGS", `key number ${index} appears twice in the decrypted backup`);
       keys.push(openKey(e.secret ?? e.privateKey, index, e.address));
     });
   } else if (isObj(v) && Array.isArray(v.privateKeys)) {

@@ -3,12 +3,14 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { keccak256, toHex, type Address, type Hex } from "viem";
+import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeFunctionData, keccak256, toHex, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAddress } from "viem/accounts";
 import { paths } from "../../src/core/home.ts";
 import { updateProfileRecord } from "../../src/core/profile-record.ts";
 import type { UpConfig } from "../../src/core/types.ts";
 import { ALL_PERMISSIONS_HEX } from "../../src/lsp/constants.ts";
+import { LSP23_ABI } from "../../src/lsp/abis.ts";
+import { decodeDeployment } from "../../src/backup/lsp23-decode.ts";
 import { manifestFromPlan, planDeployment, type DeploymentManifest } from "../../src/lsp/lsp23.ts";
 import { toBytes32 } from "../../src/lsp/permissions.ts";
 import { getBackend } from "../../src/signer/index.ts";
@@ -75,3 +77,16 @@ export async function seedHome(spec: SeedSpec, home = mkdtempSync(join(tmpdir(),
 
 export const newKey = (): Hex => generatePrivateKey();
 export { toBytes32 };
+
+/**
+ * The manifest's deployment calldata with its post-deployment data edited (a crafted or damaged file):
+ * `edit` gets the data keys and values and returns the lists to encode. `profile` is the address the new
+ * calldata derives to (the stated one when it cannot be derived).
+ */
+export function editedDeployment(m: DeploymentManifest, edit: (keys: Hex[], values: Hex[]) => [Hex[], Hex[]]): { calldata: Hex; profile: Address } {
+  const [primary, secondary, module, moduleData] = decodeFunctionData({ abi: LSP23_ABI, data: m.deployCalldata }).args as unknown as [any, any, Address, Hex];
+  const [keys, values] = decodeAbiParameters([{ type: "bytes32[]" }, { type: "bytes[]" }], moduleData) as unknown as [Hex[], Hex[]];
+  const [k2, v2] = edit([...keys], [...values]);
+  const calldata = encodeFunctionData({ abi: LSP23_ABI, functionName: "deployERC1167Proxies", args: [primary, secondary, module, encodeAbiParameters([{ type: "bytes32[]" }, { type: "bytes[]" }], [k2, v2])] });
+  return { calldata, profile: decodeDeployment({ profileAddress: m.profile, factoryAddress: m.plan.factory, deploymentCalldata: calldata }).derivedProfile ?? m.profile };
+}
