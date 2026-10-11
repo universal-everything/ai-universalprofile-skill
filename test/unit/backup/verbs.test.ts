@@ -113,24 +113,29 @@ describe("backup export (encrypted)", () => {
     const opened = await decryptSecrets(f.secrets.data, r.data.password);
     expect(opened.keys.map((k) => [k.index, k.privateKey])).toEqual([[0, K.def], [1, K.prev], [2, K.extra]]);
     const controllers = f.accounts.find((a: any) => a.address === m1.profile).networks[0].controllers;
-    expect(controllers.find((c: any) => c.address === addr(K.def))).toMatchObject({ type: "App", privateKeyIndex: 0, name: "AI agent key" });
-    expect(controllers.find((c: any) => c.address === addr(K.prev))).toMatchObject({ privateKeyIndex: 1, name: "AI agent key (previous)" });
-    expect(controllers.find((c: any) => c.address === addr(K.extra))).toMatchObject({ privateKeyIndex: 2, name: "AI agent key (not yet used)" });
+    expect(controllers.find((c: any) => c.address === addr(K.def))).toMatchObject({ type: "Device", privateKeyIndex: 0, name: "AI agent key" }); // what the app writes for a controller whose key it holds
+    // the other two keys control nothing in this profile: they are in `secrets` only, never listed as its controllers
+    expect(controllers.map((c: any) => c.address)).not.toContain(addr(K.prev));
+    expect(controllers.map((c: any) => c.address)).not.toContain(addr(K.extra));
     expect(controllers.find((c: any) => c.address === HUMAN_ADMIN)).toMatchObject({ type: "Device" });
     expect(controllers.some((c: any) => c.type === "UniversalReceiver")).toBe(true);
     expect(f.secrets).not.toHaveProperty("passwordHint");
   });
 
-  it("appends one public index line; no password, hint or key in it", async () => {
+  it("reserves the path, then appends one public index line; no password, hint or key in either", async () => {
     const r = await run("backup export", { hint: "the usual one" }, { approval: APPROVAL });
     const lines = readFileSync(join(paths.backups(home), "index.jsonl"), "utf8").trim().split("\n");
-    expect(lines).toHaveLength(1);
-    const e = JSON.parse(lines[0]);
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0])).toMatchObject({ event: "reserved", file: r.data.path });
+    const e = JSON.parse(lines[1]);
     expect(e).toMatchObject({ file: r.data.path, sha256: r.data.sha256, mode: "encrypted", encrypted: true, hintPresent: true, appCompatible: true });
     expect(e.keys).toEqual(r.data.keys);
-    expect(lines[0]).not.toContain(r.data.password);
-    expect(lines[0]).not.toContain("the usual one");
-    noKeys(lines[0]);
+    expect(r.data.indexed).toBe(true);
+    for (const line of lines) {
+      expect(line).not.toContain(r.data.password);
+      expect(line).not.toContain("the usual one");
+      noKeys(line);
+    }
     expect(JSON.parse(fileOf(r)).secrets.passwordHint).toBe("the usual one");
   });
 
@@ -404,7 +409,7 @@ describe("backup import into a fresh machine", () => {
 
   it("--dry-run shows the plan and changes nothing", async () => {
     const h = fresh();
-    const r = await run("backup import", { path: file.path, password: file.password, offline: true }, { dryRun: true, approval: offline.approval }, h);
+    const r = await run("backup import", { path: file.path, password: file.password, offline: true, "all-keys": true }, { dryRun: true, approval: offline.approval }, h);
     expect(r.data.dryRun).toBe(true);
     expect(r.data.keys.map((k: any) => k.status)).toEqual(["new", "new", "new"]);
     expect(await getBackend("memory").has(addr(K.def))).toBe(false);
@@ -414,7 +419,7 @@ describe("backup import into a fresh machine", () => {
 
   it("restores the keys, profiles and deployment data; the first key becomes active, the others additional keys; no key in any output", async () => {
     const h = fresh();
-    const r = await run("backup import", { path: file.path, password: file.password, offline: true }, offline, h);
+    const r = await run("backup import", { path: file.path, password: file.password, offline: true, "all-keys": true }, offline, h);
     noKeys(r);
     expect(r.data.keysResult.map((k: any) => [k.address, k.status])).toEqual([[addr(K.def), "restored"], [addr(K.prev), "restored"], [addr(K.extra), "restored"]]);
     for (const k of allKeys) expect(await getBackend("memory").has(addr(k))).toBe(true);
@@ -449,8 +454,8 @@ describe("backup import into a fresh machine", () => {
 
   it("is repeatable: a second import skips the keys that are here, keeps the manifests and the active key", async () => {
     const h = fresh();
-    await run("backup import", { path: file.path, password: file.password, offline: true }, offline, h);
-    const second = await run("backup import", { path: file.path, password: file.password, offline: true }, offline, h);
+    await run("backup import", { path: file.path, password: file.password, offline: true, "all-keys": true }, offline, h);
+    const second = await run("backup import", { path: file.path, password: file.password, offline: true, "all-keys": true }, offline, h);
     expect(second.data.keysResult.map((k: any) => k.status)).toEqual(["exists", "exists", "exists"]);
     expect(second.data.profilesResult.filter((p: any) => p.manifest).map((p: any) => p.manifest).sort()).toEqual(["kept-existing", "kept-existing", "none"].sort());
     expect(second.data.config.activeSet).toBe(false);
@@ -462,7 +467,7 @@ describe("backup import into a fresh machine", () => {
     const own = newKey();
     await getBackend("memory").importKey!(own);
     writeFileSync(join(h, "config.json"), JSON.stringify({ version: 1, controller: { address: addr(own), backend: "memory", createdAt: "x" } }));
-    const r = await run("backup import", { path: file.path, password: file.password, offline: true }, offline, h);
+    const r = await run("backup import", { path: file.path, password: file.password, offline: true, "all-keys": true }, offline, h);
     expect(r.data.config.activeSet).toBe(false);
     expect(JSON.parse(readFileSync(join(h, "config.json"), "utf8")).controller.address).toBe(addr(own));
     expect(JSON.parse(readFileSync(join(paths.keys(h), "candidates.json"), "utf8"))).toHaveLength(3);
@@ -481,20 +486,16 @@ describe("backup import into a fresh machine", () => {
     expect(r.warnings!.join(" ")).toContain("already has deployment data");
   });
 
-  it("Q17: only the keys of the profiles being restored, unless --all-keys (the app restores every key in the file)", async () => {
+  it("Q17: only the keys of the profiles being restored, unless --all-keys (the app restores every key in the file); the rest is said", async () => {
+    // no hand-edited file: the keys that control no profile are in `secrets` only, so a plain import leaves them out
     const plain = await run("backup export", { mode: "unencrypted", "explicit-consent": true }, { approval: APPROVAL });
-    const f = JSON.parse(fileOf(plain));
-    const strangers = new Set([addr(K.extra), addr(K.prev)]); // keys that no profile in the file lists any more
-    for (const a of f.accounts) for (const n of a.networks) n.controllers = n.controllers.filter((c: any) => !strangers.has(c.address));
-    for (const l of f.LSP23CrossChainDeployment) l.initialControllers = l.initialControllers.filter((c: any) => !strangers.has(c.address));
-    const narrowed = join(mkdtempSync(join(tmpdir(), "up-narrow-")), "narrow.json");
-    writeFileSync(narrowed, JSON.stringify(f, undefined, 2));
     let h = fresh();
-    const some = await run("backup import", { path: narrowed, offline: true }, offline, h);
+    const some = await run("backup import", { path: plain.data.path, offline: true }, offline, h);
     expect(some.data.keysResult.map((k: any) => k.address)).toEqual([addr(K.def)]);
     expect(await getBackend("memory").has(addr(K.extra))).toBe(false);
+    expect(some.warnings!.join(" ")).toContain("2 other keys in the file belong to none of the restored profiles");
     h = fresh();
-    const all = await run("backup import", { path: narrowed, offline: true, "all-keys": true }, offline, h);
+    const all = await run("backup import", { path: plain.data.path, offline: true, "all-keys": true }, offline, h);
     expect(all.data.keysResult.map((k: any) => k.address).sort()).toEqual(allKeys.map(addr).sort());
     expect(await getBackend("memory").has(addr(K.extra))).toBe(true);
   });
@@ -529,7 +530,7 @@ describe("backup import into a fresh machine", () => {
       }
     }
     setBackendsForTests([new Flaky()]);
-    const e = await fail(run("backup import", { path: file.path, password: file.password, offline: true }, offline, h));
+    const e = await fail(run("backup import", { path: file.path, password: file.password, offline: true, "all-keys": true }, offline, h));
     expect(e.message).toMatch(/the key store is locked \(1 key\(s\) were restored before this/);
     expect(e.details).toMatchObject({ keys: [{ status: "restored" }, { status: "failed" }] });
     noKeys(e.toJSON());
@@ -542,7 +543,7 @@ describe("backup import into a fresh machine", () => {
   it("a plain-text backup (for example an old one) restores without a password", async () => {
     const r = await run("backup export", { mode: "unencrypted", "explicit-consent": true }, { approval: APPROVAL });
     const h = fresh();
-    const i = await run("backup import", { path: r.data.path, offline: true }, offline, h);
+    const i = await run("backup import", { path: r.data.path, offline: true, "all-keys": true }, offline, h);
     expect(i.data.keysResult.map((k: any) => k.status)).toEqual(["restored", "restored", "restored"]);
     noKeys(i);
   });

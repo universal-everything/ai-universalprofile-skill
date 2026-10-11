@@ -7,6 +7,11 @@
 // additional keys, keys only the recovery inventory knows), in a fixed order; a key's position in
 // that list is its privateKeyIndex. `--profiles` narrows the profiles, not the keys: the agent's
 // keys belong to the agent, not to one profile.
+//
+// Which controllers: per profile and network only those established for that profile (the
+// deployment's initial controllers, the key a joined profile authorised, a key checked on the
+// network, the controllers found with --refresh, and what an imported backup listed). A held key
+// that controls nothing there appears only in `secrets`.
 import { readdir } from "node:fs/promises";
 import { getAddress, isAddress, type Address } from "viem";
 import { UpError } from "../core/errors.ts";
@@ -34,10 +39,21 @@ export interface ProfileState {
   address: Address;
   name: string;
   chainIds: number[];
-  /** Only a manifest that re-derives; with at least one recorded deployment. */
+  /** Only a manifest that re-derives; with at least one recorded deployment (or imported networks). */
   manifest?: DeploymentManifest;
+  /** The chain the deployment data was made for: the earliest recorded deployment, else the imported one. */
+  initialChainId?: number;
   /** Chain → controllers found on chain (only with --refresh). */
   onChain: Record<number, Address[]>;
+  /** Chain → the controllers established for this profile there, and how. */
+  controllers: Record<number, EstablishedController[]>;
+  /** Networks known only from an imported backup, not seen on a network from here. */
+  unverifiedChains: number[];
+}
+
+export interface EstablishedController {
+  address: Address;
+  source: "deployment" | "joined" | "checked" | "chain" | "imported";
 }
 
 export interface LocalState {
@@ -85,7 +101,33 @@ function deployedChains(m: DeploymentManifest | undefined, record: Record<string
   for (const id of m?.chains ?? []) if (Number.isInteger(id)) ids.add(id);
   for (const c of record.joined?.chains ?? []) if (c?.deployed === true && Number.isInteger(c.chainId)) ids.add(c.chainId);
   for (const [id, c] of Object.entries<any>(record.status?.chains ?? {})) if (c?.deployed === true && /^\d+$/.test(id)) ids.add(Number(id));
+  for (const c of importedChainsOf(record)) ids.add(c.chainId);
   return [...ids];
+}
+
+/** The networks and listed controllers an import recorded (`imported.chains`); malformed entries are ignored. */
+function importedChainsOf(record: Record<string, any>): { chainId: number; verified: boolean; controllers: Address[] }[] {
+  const raw = record.imported?.chains;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((c: any) => (Number.isInteger(c?.chainId) && c.chainId > 0 ? [{ chainId: c.chainId as number, verified: c.provenance === "verified", controllers: (Array.isArray(c.controllers) ? c.controllers : []).filter((a: unknown) => typeof a === "string" && isAddress(a, { strict: false })).map((a: string) => getAddress(a)) }] : []));
+}
+
+/** The controllers recorded for `chainId` of a profile record: the deployment's, a joined key, a checked key, the imported list. */
+function establishedFor(chainId: number, manifest: DeploymentManifest | undefined, dec: ReturnType<typeof decodeDeployment> | undefined, record: Record<string, any>, onChain: Address[]): EstablishedController[] {
+  const out: EstablishedController[] = [];
+  const add = (address: unknown, source: EstablishedController["source"]) => {
+    if (typeof address === "string" && isAddress(address, { strict: false }) && !out.some((x) => sameAddress(x.address, address))) out.push({ address: getAddress(address), source });
+  };
+  if (manifest && (manifest.chains?.includes(chainId) || manifest.deployments?.[String(chainId)])) {
+    if (dec?.supported) for (const c of dec.initialControllers) !c.isUrd && add(c.address, "deployment");
+    else (add(manifest.controller, "deployment"), manifest.extraControllers?.forEach((c) => add(c.address, "deployment")));
+  }
+  for (const c of record.joined?.chains ?? []) if (c?.chainId === chainId && c.authorised !== false) add(c.controller ?? record.joined?.controller, "joined");
+  const st = record.status?.chains?.[String(chainId)];
+  if (st?.isController === true) add(st.controller, "checked");
+  for (const a of onChain) add(a, "chain");
+  for (const c of importedChainsOf(record)) if (c.chainId === chainId) for (const a of c.controllers) add(a, "imported");
+  return out;
 }
 
 /** Profiles recorded on this machine (plus the default profile), narrowed to `only` when given. */
@@ -112,6 +154,7 @@ export async function collectProfiles(ctx: VerbContext, cfg: UpConfig, warnings:
       manifest = undefined;
     }
     const linkedChains = new Set(Object.keys(linked).map(Number));
+    const imported = importedChainsOf(record);
     let chainIds = deployedChains(manifest, record).filter((c) => !linkedChains.has(c));
     const onChain: Record<number, Address[]> = {};
     if (opts.refresh) {
@@ -127,10 +170,21 @@ export async function collectProfiles(ctx: VerbContext, cfg: UpConfig, warnings:
       }
     }
     chainIds = [...new Set(chainIds)];
-    const deployed = manifest ? Object.values(manifest.deployments ?? {}).some((d) => d?.status === "deployed" || d?.status === "already-deployed") : false;
-    if (chainIds.length) out.push({ address: id, name: aliasOf(id), chainIds, ...(manifest && deployed ? { manifest } : {}), onChain });
+    const recorded = manifest ? Object.values(manifest.deployments ?? {}).filter((d) => d?.status === "deployed" || d?.status === "already-deployed") : [];
+    const importedHere = imported.filter((c) => !linkedChains.has(c.chainId));
+    const dec = manifest ? decodeDeployment({ profileAddress: manifest.profile, factoryAddress: manifest.plan.factory, deploymentCalldata: manifest.deployCalldata }) : undefined;
+    const controllers: Record<number, EstablishedController[]> = {};
+    for (const c of chainIds) controllers[c] = establishedFor(c, manifest, dec, record, onChain[c] ?? []);
+    const first = [...recorded].sort((a, b) => a.deployedAt.localeCompare(b.deployedAt))[0]?.chainId;
+    const importedInitial = Number.isInteger(record.imported?.initialChainID) ? (record.imported.initialChainID as number) : chainIds[0];
+    const unverifiedChains = importedHere.filter((c) => !c.verified && !recorded.some((d) => d.chainId === c.chainId)).map((c) => c.chainId);
+    if (unverifiedChains.length) warnings.push(`the networks ${unverifiedChains.join(", ")} of ${id} come from an imported backup and were not confirmed on a network from here`);
+    if (chainIds.length) out.push({ address: id, name: aliasOf(id), chainIds, ...(manifest && (recorded.length || importedHere.length) ? { manifest, initialChainId: first ?? importedInitial } : {}), onChain, controllers, unverifiedChains });
     else if (!linkedChains.size) warnings.push(`the profile ${id} is not deployed or joined anywhere yet; nothing to back up for it`);
-    for (const [chain, address] of Object.entries(linked)) out.push({ address, name: aliasOf(address), chainIds: [Number(chain)], onChain: {} });
+    for (const [chain, address] of Object.entries(linked)) {
+      const c = Number(chain);
+      out.push({ address, name: aliasOf(address), chainIds: [c], onChain: {}, controllers: { [c]: establishedFor(c, undefined, undefined, { status: record.status }, []) }, unverifiedChains: [] });
+    }
   }
   return out;
 }
@@ -193,21 +247,23 @@ export function buildBackup(ctx: VerbContext, cfg: UpConfig, state: LocalState, 
         const push = (c: BackupController) => {
           if (!controllers.some((x) => sameAddress(x.address, c.address))) controllers.push(c);
         };
-        for (const k of state.keys) push({ address: k.address, type: "App", ...(indexOf(k.address) !== undefined ? { privateKeyIndex: indexOf(k.address) } : {}), name: keyName(k, !!active && sameAddress(active, k.address)) });
-        for (const c of dec?.initialControllers ?? []) {
-          if (c.isUrd) push({ address: c.address, type: "UniversalReceiver", name: "Universal Receiver" });
-          else push({ address: c.address, type: "Device", name: "Co-owner (key not held by the agent)" });
+        // only controllers established for this profile on this network; a held key that controls nothing here is in `secrets` only
+        const established = p.controllers[chainID] ?? [];
+        for (const e of established) {
+          const key = state.keys.find((k) => sameAddress(k.address, e.address));
+          if (key) push({ address: key.address, type: "Device", ...(indexOf(key.address) !== undefined ? { privateKeyIndex: indexOf(key.address) } : {}), name: keyName(key, !!active && sameAddress(active, key.address)) });
+          else if (dec?.urd && sameAddress(dec.urd, e.address)) push({ address: e.address, type: "UniversalReceiver", name: "Universal Receiver" });
+          else push({ address: e.address, type: "Device", name: e.source === "chain" ? "Controller (found on chain)" : "Co-owner (key not held by the agent)" });
         }
-        for (const a of p.onChain[chainID] ?? []) push({ address: a, type: "Device", name: "Controller (found on chain)" });
+        if (dec?.urd && established.length) push({ address: dec.urd, type: "UniversalReceiver", name: "Universal Receiver" });
         return { chainID, name: chainName(ctx, chainID), controllers };
       });
     accounts.push({ type: "LSP0-ERC725Account", name: p.name, address: p.address, networks });
     if (p.manifest && dec) {
-      const first = Object.values(p.manifest.deployments).filter((d) => d.status === "deployed" || d.status === "already-deployed").sort((a, b) => a.deployedAt.localeCompare(b.deployedAt))[0];
-      if (!first) continue;
+      if (p.initialChainId === undefined) continue;
       lsp23.push({
         profileAddress: p.manifest.profile,
-        initialChainID: first.chainId,
+        initialChainID: p.initialChainId,
         factoryAddress: p.manifest.plan.factory,
         deploymentCalldata: p.manifest.deployCalldata,
         salt: p.manifest.salt,

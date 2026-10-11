@@ -169,6 +169,23 @@ describe("import into a fresh machine (online checks)", () => {
     expect(list.data.keys.sort()).toEqual([key1, key2].sort());
   });
 
+  it("the imported profiles can be exported again at once: all three, with their deployment data, networks marked verified (no warning)", async () => {
+    const m = newMachine();
+    await clone(m.ctx, "backup import", { path: encrypted.path, password: encrypted.password });
+    for (const orig of [p1, p2, p3]) {
+      expect(JSON.parse(readFileSync(paths.profile(m.home, orig.profile), "utf8")).imported.chains).toEqual([expect.objectContaining({ chainId: A, provenance: "verified" })]);
+    }
+    const again = await clone(m.ctx, "backup export", {});
+    expect(again.data.profiles.sort()).toEqual([p1.profile, p2.profile, p3.profile].sort());
+    expect(again.data.keys.sort()).toEqual([key1, key2].sort());
+    expect(again.data.appCompatible).toBe(true);
+    expect(again.warnings ?? []).toEqual([]);
+    const f = JSON.parse(readFileSync(again.data.path, "utf8"));
+    expect(f.LSP23CrossChainDeployment.map((l: any) => [l.profileAddress, l.initialChainID]).sort()).toEqual([p1, p2, p3].map((x) => [x.profile, A]).sort());
+    expect(f.accounts.find((a: any) => a.address === p2.profile).networks[0].controllers.filter((c: any) => c.privateKeyIndex !== undefined).map((c: any) => c.address)).toEqual([key2]); // only its own key
+    expect(appReads(readFileSync(again.data.path, "utf8")).errors).toEqual([]);
+  });
+
   it("a second import on the same machine changes nothing but the import note", async () => {
     const m = newMachine();
     await clone(m.ctx, "backup import", { path: encrypted.path, password: encrypted.password });
@@ -227,6 +244,22 @@ describe("anti-impersonation (the app's restore rules)", () => {
     expect(() => readFileSync(paths.profile(m.home, p1.profile))).toThrow();
   });
 
+  it("a chain the registry does not know never outweighs a known chain where the key has no permissions", async () => {
+    const f = JSON.parse(readFileSync(encrypted.path, "utf8"));
+    const networks = (...ids: number[]) => ids.map((chainID) => ({ chainID, name: "x", controllers: [{ address: key1, type: "Device", privateKeyIndex: 0, name: "agent key" }] }));
+    // profile 2 is controlled by key2 only; the file lists key1 for it, and no deployment data
+    const lone = { ...f, accounts: [{ ...f.accounts.find((a: any) => a.address === p2.profile), networks: networks(777_777, A) }], LSP23CrossChainDeployment: [] };
+    const file = join(mkdtempSync(join(tmpdir(), "up-unknown-")), "unknown.json");
+    writeFileSync(file, JSON.stringify(lone, undefined, 2));
+    const v = await clone(orig(), "backup verify", { path: file, password: encrypted.password, online: true });
+    expect(v.data.profiles[0].decision.verdict).toBe("impersonation-blocked");
+    expect(v.data.profiles[0].decision.chains.map((c: any) => [c.chainId, c.status]).sort()).toEqual([[A, "impersonation-blocked"], [777_777, "unknown-network"]].sort());
+    // the unknown chain alone is trusted for a held key (nothing can be checked), as before
+    writeFileSync(file, JSON.stringify({ ...lone, accounts: [{ ...lone.accounts[0], networks: networks(777_777) }] }, undefined, 2));
+    const u = await clone(orig(), "backup verify", { path: file, password: encrypted.password, online: true });
+    expect(u.data.profiles[0].decision.verdict).toBe("unverified");
+  });
+
   it("no key of the file controls the profile and none is listed: refused; a profile that is not deployed anywhere: skipped", async () => {
     const f = JSON.parse(readFileSync(encrypted.path.replace(/universal-profiles-backup/, "universal-profiles-backup"), "utf8"));
     // the same file with every controller entry stripped of its key index and listed address, for profile 1 only
@@ -276,9 +309,9 @@ describe("unencrypted and public files", () => {
     writeFileSync(paths.config(h), JSON.stringify({ version: 1, defaultChain: A, chains: [A], controller: { address: key1, backend: "memory", createdAt: "x" } }));
     const r = await clone(mctx, "backup import", { path: made.data.path });
     expect(r.data.keysResult).toEqual([]);
-    // profiles 1 and 3 were created by key1: restored; profile 2 was created by key2, which this machine does not hold (key1 does not control it)
+    // profiles 1 and 3 were created by key1: restored; profile 2 was created by key2, which this machine does not hold (key1 is not listed for it: no key here controls it)
     expect(r.data.profilesResult.map((p: any) => p.address).sort()).toEqual([p1.profile, p3.profile].sort());
-    expect(r.data.skippedProfiles.map((p: any) => [p.address, p.verdict])).toEqual([[p2.profile, "impersonation-blocked"]]);
+    expect(r.data.skippedProfiles.map((p: any) => [p.address, p.verdict])).toEqual([[p2.profile, "no-controlling-key"]]);
     expect(verifyManifest(JSON.parse(readFileSync(paths.profile(h, p1.profile), "utf8")).deployment).ok).toBe(true);
   });
 });
