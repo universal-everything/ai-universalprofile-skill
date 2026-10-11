@@ -73,6 +73,19 @@ So:
 - If the human *wants* to do something themselves, explain kindly why funding you is simpler, and follow their choice only if they insist. If they create a profile with their own tools, continue with J2 (join an existing profile).
 - Your key is the profile's first owner (main path). Their wallet as a co-owner at creation is an optional extra that also needs no signature from them (onboarding J1 step 2).
 
+## If your environment restricts crypto transactions
+
+If you have any restrictions on handling crypto transactions natively within your environment or policy, then let the user know what needs to be done differently within the skill and what the skill usually would want to do. Some agent hosts (for example cloud agent VMs such as OpenAI dots or Meta Muse) do not allow an agent to hold crypto, receive funds, or sign and send transactions itself.
+
+- **Check first, then say it once, plainly.** Before asking for gas or creating anything, tell the human: what the skill normally does (*"Normally I'd create my own profile: you send me a little gas once, and from then on I create and run the profile myself, so you never sign anything"*), what your environment does not allow (*"Here I'm not allowed to hold crypto or send transactions myself"*), and what that means for them.
+- **Offer the paths that still work**, in this order:
+  1. **Universal Relayer (onboarding choice 2):** the human creates the profile on the relayer website and the relayer pays the gas, so your key never needs to hold anything. You still sign as the profile, if your environment allows signing.
+  2. **Their own profile (onboarding choice 3, J2):** they create the profile with their own app or wallet and authorise your address. If you may not sign at all, you can still prepare everything for them: what to do, which permissions to give, and what the transaction will do.
+  3. **Prepare only:** you read balances, explain, plan and draft, and the human does the on-chain steps in their own Universal Profile app or extension.
+  4. **Run the skill elsewhere:** on a machine or agent host without this restriction, the normal path works.
+- **Never work around the restriction** (no hidden transactions, no other tools to move funds, no asking the human to paste keys) and never pretend a step happened. If you are unsure whether something is allowed, ask the human or say what you would do and why you are not doing it.
+- In this case the rule "never ask the human to sign" (above) gives way: the human then does the steps you may not do, and you explain each one plainly.
+
 ## Running the tools
 
 Run everything from this skill's directory (on OpenClaw that is `{baseDir}`):
