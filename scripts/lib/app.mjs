@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 5c51c40ee541 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 6256b7880db4 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -9135,11 +9135,10 @@ function textWidth(text, scale) {
 function candidateSheetPng(items) {
   if (!items.length) throw new Error("no candidates to draw");
   const iconSize = BLOCKIE_GRID * IDENTICON_SCALE;
-  const colWidth = Math.max(iconSize, ...items.map((it) => Math.max(textWidth(shortAddress(it.address), ADDRESS_SCALE), textWidth(it.label, NUMBER_SCALE))));
-  const numberH = GLYPH_H * NUMBER_SCALE;
-  const addressH = GLYPH_H * ADDRESS_SCALE;
-  const width = 2 * MARGIN + items.length * colWidth + (items.length - 1) * GAP;
-  const height = 2 * MARGIN + iconSize + 14 + numberH + 10 + addressH;
+  const numberW = Math.max(...items.map((it) => textWidth(it.label, NUMBER_SCALE)));
+  const addressW = Math.max(...items.map((it) => textWidth(shortAddress(it.address), ADDRESS_SCALE)));
+  const width = 2 * MARGIN + iconSize + COL_GAP + numberW + COL_GAP + addressW;
+  const height = 2 * MARGIN + items.length * iconSize + (items.length - 1) * ROW_GAP;
   const palette2 = [[255, 255, 255, 255], [34, 34, 34, 255]];
   const colour = (c) => {
     const i = palette2.findIndex((p) => p[0] === c[0] && p[1] === c[1] && p[2] === c[2]);
@@ -9160,25 +9159,23 @@ function candidateSheetPng(items) {
     });
   };
   items.forEach((it, i) => {
-    const x = MARGIN + i * (colWidth + GAP);
+    const y = MARGIN + i * (iconSize + ROW_GAP);
     const b = blockie(it.address);
     const bg = colour(b.colors.bgcolor);
     const fg = colour(b.colors.color);
     const spot = colour(b.colors.spotcolor);
-    const ix = x + Math.floor((colWidth - iconSize) / 2);
     b.grid.forEach((v, cell) => {
       const cx = cell % BLOCKIE_GRID;
       const cy = Math.floor(cell / BLOCKIE_GRID);
-      rect(ix + cx * IDENTICON_SCALE, MARGIN + cy * IDENTICON_SCALE, IDENTICON_SCALE, IDENTICON_SCALE, v ? v === 1 ? fg : spot : bg);
+      rect(MARGIN + cx * IDENTICON_SCALE, y + cy * IDENTICON_SCALE, IDENTICON_SCALE, IDENTICON_SCALE, v ? v === 1 ? fg : spot : bg);
     });
-    const numberY = MARGIN + iconSize + 14;
-    text(it.label, x + Math.floor((colWidth - textWidth(it.label, NUMBER_SCALE)) / 2), numberY, NUMBER_SCALE);
-    const short2 = shortAddress(it.address);
-    text(short2, x + Math.floor((colWidth - textWidth(short2, ADDRESS_SCALE)) / 2), numberY + numberH + 10, ADDRESS_SCALE);
+    const numberX = MARGIN + iconSize + COL_GAP;
+    text(it.label, numberX + numberW - textWidth(it.label, NUMBER_SCALE), y + Math.floor((iconSize - GLYPH_H * NUMBER_SCALE) / 2), NUMBER_SCALE);
+    text(shortAddress(it.address), numberX + numberW + COL_GAP, y + Math.floor((iconSize - GLYPH_H * ADDRESS_SCALE) / 2), ADDRESS_SCALE);
   });
   return encodeIndexedPng({ width, height, palette: palette2, pixels });
 }
-var FONT, GLYPH_W, GLYPH_H, IDENTICON_SCALE, NUMBER_SCALE, ADDRESS_SCALE, MARGIN, GAP;
+var FONT, GLYPH_W, GLYPH_H, IDENTICON_SCALE, NUMBER_SCALE, ADDRESS_SCALE, MARGIN, ROW_GAP, COL_GAP;
 var init_sheet = __esm({
   "src/display/sheet.ts"() {
     "use strict";
@@ -9206,11 +9203,12 @@ var init_sheet = __esm({
     };
     GLYPH_W = 5;
     GLYPH_H = 7;
-    IDENTICON_SCALE = 12;
+    IDENTICON_SCALE = 9;
     NUMBER_SCALE = 4;
     ADDRESS_SCALE = 2;
-    MARGIN = 24;
-    GAP = 24;
+    MARGIN = 20;
+    ROW_GAP = 16;
+    COL_GAP = 20;
   }
 });
 
@@ -9253,7 +9251,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "5c51c40ee541" : "source";
+var SOURCE = true ? "6256b7880db4" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -12960,11 +12958,10 @@ defineVerb({
       warnings.push(`identicons not rendered: ${e.message}`);
     }
     const say = choices.length === 1 ? `This will be my profile's address: ${choices[0].address}. It stays the same on every network.` : [
-      `My profile needs an address. It's permanent and the same on every network. I've prepared ${choices.length} options to choose from:`,
+      `My profile needs an address. It's permanent and the same on every network. I've prepared ${choices.length} options:`,
+      ...choices.map((c) => `${c.choice} · ${c.short.replace("..", "…")}`),
       "",
-      ...choices.map((c) => `${c.choice}. ${c.address}`),
-      "",
-      (media.length ? "The picture shows each address's pattern, with its number underneath. Apps show that pattern next to an address so it's easy to recognise at a glance. " : "") + "Which number do you like? It's only a matter of taste, everything else is identical. If you don't mind, I'll take number 1. You can still add a real profile picture later."
+      (media.length ? "The picture shows each address's pattern with its number. Apps show that pattern next to an address so it's easy to recognise at a glance. " : "") + "Which number do you like? It's only a matter of taste, everything else is identical. If you don't mind, I'll take number 1. You can still add a real profile picture later."
     ].join("\n");
     return {
       media,
@@ -12982,7 +12979,7 @@ defineVerb({
         onChainCrossCheck: onChain2,
         reproduce: a.salt ? void 0 : `up account precompute --seed ${seed} --count ${a.count} --controller ${controller}${a.preset ? ` --preset ${a.preset}` : ""}`,
         next: [
-          "Tell the human `say` and attach the one picture in `media` in the same message (text first, then the picture). Never send separate unlabelled identicons and never send a picture without its explanation.",
+          "Tell the human `say` and attach the one picture in `media` in the same message (text first, then the picture). Never send separate unlabelled identicons, never send a picture without its explanation, never list full addresses (see references/onboarding-ux.md, step 3). After their choice, confirm it with the full address from `choices`.",
           `The human answers with a choice number n: deploy candidate n-1, i.e. up account deploy --seed ${seed} --candidate <n-1> --chain <id>   (or --salt <salt>)`
         ]
       },
