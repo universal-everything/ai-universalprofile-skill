@@ -8,6 +8,7 @@ Risk classes: **local** (no chain writes), **read** (chain/HTTP reads), **write*
 
 - **abi**: [`abi bundled`](#abi-bundled), [`abi decode`](#abi-decode), [`abi decode-error`](#abi-decode-error), [`abi decode-event`](#abi-decode-event), [`abi encode`](#abi-encode), [`abi fetch`](#abi-fetch), [`abi functions`](#abi-functions), [`abi resolve-proxy`](#abi-resolve-proxy), [`abi selector`](#abi-selector), [`contract call`](#contract-call), [`contract read`](#contract-read)
 - **account**: [`account data get`](#account-data-get), [`account data set`](#account-data-set), [`account deploy`](#account-deploy), [`account extensions add`](#account-extensions-add), [`account extensions remove`](#account-extensions-remove), [`account info`](#account-info), [`account manifest export`](#account-manifest-export), [`account manifest show`](#account-manifest-show), [`account precompute`](#account-precompute), [`account urd set`](#account-urd-set), [`profile join`](#profile-join), [`profile link`](#profile-link), [`profile metadata set`](#profile-metadata-set), [`profile metadata show`](#profile-metadata-show), [`profile status`](#profile-status), [`profile url`](#profile-url)
+- **backup**: [`backup export`](#backup-export), [`backup import`](#backup-import), [`backup inspect`](#backup-inspect), [`backup list`](#backup-list), [`backup verify`](#backup-verify)
 - **chains**: [`chains add`](#chains-add), [`chains list`](#chains-list), [`chains refresh`](#chains-refresh), [`chains rpc find`](#chains-rpc-find), [`chains rpc list`](#chains-rpc-list), [`chains rpc set`](#chains-rpc-set), [`chains rpc verify`](#chains-rpc-verify), [`chains verify`](#chains-verify), [`funding suggest`](#funding-suggest)
 - **display**: [`display address`](#display-address), [`identicon`](#identicon), [`qr`](#qr)
 - **erc4337**: [`account 4337 deploy-entrypoint`](#account-4337-deploy-entrypoint), [`account 4337 deploy-extension`](#account-4337-deploy-extension), [`account 4337 deposit`](#account-4337-deposit), [`account 4337 disable`](#account-4337-disable), [`account 4337 enable`](#account-4337-enable), [`account 4337 status`](#account-4337-status), [`account 4337 withdraw`](#account-4337-withdraw), [`bundler set`](#bundler-set)
@@ -504,6 +505,107 @@ Examples:
 up profile url
 up profile url --profile 0xProfile
 ```
+
+## backup
+
+### backup export
+
+Make a backup file of the agent's profiles and keys that the Universal Profile mobile app can import (LSP-30), encrypted with a password by default.
+
+Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) or at --path. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.
+
+- CLI: `up backup export [path] [options]`
+- MCP tool: `up_backup_export` · risk: **secret**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--path` | string |  | Where to write the file (must not exist; its folder must exist). Default: <UP_HOME>/backups/universal-profiles-backup-YYYY-MM-DD.json. |
+| `--mode` | string (encrypted\|public\|unencrypted) |  | encrypted (keys locked with a password, default), public (no keys at all) or unencrypted (keys in plain text; dangerous). Default: `"encrypted"`. |
+| `--profiles` | string[] |  | Only these profiles (addresses or aliases). Default: every profile on this machine. The keys are always all of the agent's keys. |
+| `--password` | string |  | The backup password the human chose and told you in chat (at least 12 characters, 16 or more is better). Omit to have one generated. |
+| `--password-env` | string |  | Name of an environment variable that holds the backup password (read once, then removed from this process). |
+| `--password-stdin` | boolean |  | Read the backup password from standard input (CLI only; not available over MCP). |
+| `--generate-password` | boolean |  | Generate a strong password (the default for export when no password is given); it is returned in data.password so you can tell the human. |
+| `--hint` | string |  | A hint for the password (up to 255 characters). It is stored unencrypted in the file and must not contain the password. |
+| `--explicit-consent` | boolean |  | Required for --mode unencrypted: the human explicitly wants the keys in a file without a password. Default: `false`. |
+| `--refresh` | boolean |  | Also read each profile's current controllers from the networks (best effort, 8 seconds per network). Default: `false`. |
+
+Examples:
+
+```
+up backup export --approval "<the human's words>"
+up backup export --mode public
+up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval "<their words>"
+```
+
+### backup import
+
+Restore profiles and keys from a backup file (made by this skill or by the Universal Profile app): keys go into a key store, profiles into the local records. Needs the human's approval.
+
+The human sends the file as a chat attachment (the host saves it to a path) and the password in chat. A profile is restored only if the network shows a backup key still controls it, or the file proves a backup key created it (its deployment data re-derives the profile address); a file claiming someone else's profile is refused. Keys are permanent: none is overwritten or deleted, each new one is recorded before it is stored, one already here is skipped. Restored keys become additional keys; one becomes the active key only if none was set up. Restores the keys of the selected profiles, or all with --all-keys.
+
+- CLI: `up backup import <path> [options]`
+- MCP tool: `up_backup_import` · risk: **secret**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--path` | string | yes | Path of the backup file. |
+| `--password` | string |  | The backup password the human chose and told you in chat (at least 12 characters, 16 or more is better). Omit to have one generated. |
+| `--password-env` | string |  | Name of an environment variable that holds the backup password (read once, then removed from this process). |
+| `--password-stdin` | boolean |  | Read the backup password from standard input (CLI only; not available over MCP). |
+| `--profiles` | string[] |  | Only these profiles of the file (addresses). Default: every profile that can be restored. |
+| `--backend` | string |  | Key store for the restored keys (default: what `up init` would choose). |
+| `--all-keys` | boolean |  | Restore every key in the file, not only those of the selected profiles. Default: `false`. |
+| `--offline` | boolean |  | Skip the check on the networks. Only when the human's approval says 'offline' in their words. Default: `false`. |
+
+Examples:
+
+```
+up backup import /path/to/universal-profiles-backup-2026-10-10.json --password-env BACKUP_PASSWORD --approval "<the human's words>"
+```
+
+### backup inspect
+
+Read a backup file (never decrypts it) and show what it contains: profiles, networks, controllers, the deployment data and whether it checks out, and every problem found.
+
+Safe on any backup file, also one the human sent: no password, public data only (addresses, names as quoted text, the password hint). Re-derives each profile address from the file's deployment data; a mismatch means the file may be forged. Never prints encrypted data or any key.
+
+- CLI: `up backup inspect <path> [options]`
+- MCP tool: `up_backup_inspect` · risk: **local**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--path` | string | yes | Path of the backup file (for a chat attachment, the path the host saved it to). |
+
+### backup list
+
+The backups made on this machine, whether they cover the agent's current keys and profiles, and whether to offer the human a new one (`data.ask`).
+
+Checks each backup in <UP_HOME>/backups/index.jsonl (still there, unchanged; no decryption) against the current keys and profiles. `data.ask` is null or a question for the human: ask it once in your own words, then run this with --mark-asked. Plain-text backups that still exist are flagged.
+
+- CLI: `up backup list [options]`
+- MCP tool: `up_backup_list` · risk: **local**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--mark-asked` | boolean |  | Record that the human has just been asked about a backup (no question is returned again until something changes). Default: `false`. |
+
+### backup verify
+
+Open a backup file in memory with its password and check it: the keys inside (addresses only), which are already here, and with --online whether each profile could be restored.
+
+The checks of backup import, changing nothing. Key addresses are derived from the keys, never trusted from the file. With --online each profile is checked on its networks the way the app does (a backup key still controls it, or the file proves a key created it). Prints addresses only.
+
+- CLI: `up backup verify <path> [options]`
+- MCP tool: `up_backup_verify` · risk: **read**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--path` | string | yes | Path of the backup file. |
+| `--password` | string |  | The backup password the human chose and told you in chat (at least 12 characters, 16 or more is better). Omit to have one generated. |
+| `--password-env` | string |  | Name of an environment variable that holds the backup password (read once, then removed from this process). |
+| `--password-stdin` | boolean |  | Read the backup password from standard input (CLI only; not available over MCP). |
+| `--online` | boolean |  | Also check each profile on its networks (needs network access). Default: `false`. |
 
 ## chains
 

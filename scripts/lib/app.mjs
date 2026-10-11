@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 28558cd0bed8 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 5115054de027 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -198,6 +198,7 @@ var json_exports = {};
 __export(json_exports, {
   SECRET_CONTAINER: () => SECRET_CONTAINER,
   redact: () => redact,
+  releaseKeys: () => releaseKeys,
   replacer: () => replacer,
   safeUrlText: () => safeUrlText,
   scrubUrls: () => scrubUrls,
@@ -241,12 +242,16 @@ function maskUrl(s) {
     return s;
   }
 }
+function releaseKeys(obj, ...keys) {
+  released.set(obj, /* @__PURE__ */ new Set([...released.get(obj) ?? [], ...keys]));
+  return obj;
+}
 function redact(value, inSecretContainer = false) {
   if (Array.isArray(value)) return value.map((v) => redact(v, inSecretContainer));
   if (value && typeof value === "object" && !(value instanceof Uint8Array)) {
     const out = {};
     for (const [k, v] of Object.entries(value)) {
-      if (typeof v === "string" && (inSecretContainer || SECRET_KEY.test(k))) out[k] = "[redacted]";
+      if (typeof v === "string" && (inSecretContainer || SECRET_KEY.test(k)) && !released.get(value)?.has(k)) out[k] = "[redacted]";
       else out[k] = redact(v, SECRET_CONTAINER.test(k));
     }
     return out;
@@ -266,16 +271,152 @@ function safeUrlText(raw) {
 function scrubUrls(text) {
   return text.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]*/gi, (m) => safeUrlText(m)).replace(/[^\s/@"'<>]*@/g, "[redacted]@").replace(/[?#][^\s"'<>]*/g, (m) => m === "?…" ? m : "?…");
 }
-var SECRET_KEY, SECRET_CONTAINER;
+var SECRET_KEY, SECRET_CONTAINER, released;
 var init_json = __esm({
   "src/core/json.ts"() {
     "use strict";
     SECRET_KEY = /(private.?key|secret|mnemonic|passphrase|password|apikey|api.?key|access.?token|auth.?token|bearer)$/i;
     SECRET_CONTAINER = /^(explorerKeys|ipfsKeys|apiKeys|secrets|credentials)$/i;
+    released = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// src/core/secret-guard.ts
+var secret_guard_exports = {};
+__export(secret_guard_exports, {
+  WITHHELD_MESSAGE: () => WITHHELD_MESSAGE,
+  assertNotKeyMaterialPath: () => assertNotKeyMaterialPath,
+  assertNothingSecretToWrite: () => assertNothingSecretToWrite,
+  clearSecretsForTests: () => clearSecretsForTests,
+  containsSecret: () => containsSecret,
+  guardOutput: () => guardOutput,
+  registerSecret: () => registerSecret,
+  safeWords: () => safeWords
+});
+import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from "node:fs";
+import { resolve, sep } from "node:path";
+function forms(secret) {
+  const s = secret.trim().toLowerCase();
+  const plain = s.startsWith("0x") ? s.slice(2) : s;
+  return [.../* @__PURE__ */ new Set([plain, JSON.stringify(plain).slice(1, -1)])];
+}
+function registerSecret(secret) {
+  if (!secret || secret.trim().length < 8) return;
+  for (const f of forms(secret)) if (!secrets.includes(f)) secrets.push(f);
+}
+function containsSecret(text) {
+  if (!secrets.length || !text) return false;
+  const t = text.toLowerCase();
+  return secrets.some((s) => t.includes(s));
+}
+function assertNothingSecretToWrite(text, what = "a state file") {
+  if (containsSecret(text) || containsSecret(text.replace(/[^0-9a-z]/gi, ""))) throw new UpError("INTERNAL", `refusing to write ${what}: it would contain the agent's private key; nothing was written. This is a bug in the skill`);
+}
+function guardOutput(text, json2) {
+  if (!containsSecret(text)) return text;
+  return json2 ? JSON.stringify({ ok: false, error: { code: "INTERNAL", message: WITHHELD_MESSAGE } }) : `✗ INTERNAL: ${WITHHELD_MESSAGE}`;
+}
+function realOf(p) {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+function indexedBackups() {
+  try {
+    const text = readFileSync(resolve(paths.backups(upHome()), "index.jsonl"), "utf8");
+    const written = /* @__PURE__ */ new Set();
+    const open4 = /* @__PURE__ */ new Map();
+    for (const l of text.split("\n")) {
+      try {
+        const v = JSON.parse(l);
+        if (typeof v?.file !== "string") continue;
+        const f = resolve(v.file);
+        if (v.event === "reserved") open4.set(f, (open4.get(f) ?? 0) + 1);
+        else if (v.event === "cancelled") open4.set(f, Math.max(0, (open4.get(f) ?? 0) - 1));
+        else written.add(f);
+      } catch {
+      }
+    }
+    return [.../* @__PURE__ */ new Set([...written, ...[...open4].filter(([, n]) => n > 0).map(([f]) => f)])];
+  } catch {
+    return [];
+  }
+}
+function startsLikeBackup(file2) {
+  let fd;
+  try {
+    fd = openSync(file2, "r");
+    if (!fstatSync(fd).isFile()) return false;
+    const buf = Buffer.alloc(160);
+    const n = readSync(fd, buf, 0, buf.length, 0);
+    return /^\uFEFF?\s*\{\s*"version"\s*:\s*2\s*,\s*"backupDate"\s*:/.test(buf.subarray(0, n).toString("utf8"));
+  } catch {
+    return false;
+  } finally {
+    if (fd !== void 0) closeSync(fd);
+  }
+}
+function assertNotKeyMaterialPath(file2, what = "file", opts = {}) {
+  let real = resolve(file2);
+  try {
+    real = realpathSync(real);
+  } catch {
+  }
+  const keysDir = resolve(paths.keys(upHome()));
+  let keysReal = keysDir;
+  try {
+    keysReal = realpathSync(keysDir);
+  } catch {
+  }
+  const inside = (dir) => real === dir || real.startsWith(dir + sep);
+  if (inside(keysDir) || inside(keysReal) || /\.(key|cred|dpapi)$/i.test(real) || /(^|[\\/])keystore[^\\/]*\.json$/i.test(real)) {
+    throw new UpError("BAD_ARGS", `refusing to read ${what} from the key store or a key file`, { hint: "key files are only ever used inside the skill for signing; pass a different file" });
+  }
+  if (!opts.allowBackups) {
+    const backupsDir = resolve(paths.backups(upHome()));
+    let backupsReal = backupsDir;
+    try {
+      backupsReal = realpathSync(backupsDir);
+    } catch {
+    }
+    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real) || startsLikeBackup(real)) {
+      throw new UpError("BAD_ARGS", `refusing to read ${what} from the backups or a backup file`, { hint: "backup files hold encrypted (or, if asked for, plain) keys; only the backup verbs open them. Never read or send a backup file's contents" });
+    }
+  }
+}
+function safeWords(words) {
+  return words.map((w) => /[0-9a-f]{32,}/i.test(w) ? "<hidden>" : w.length > 64 ? `${w.slice(0, 32)}…` : w).join(" ");
+}
+function clearSecretsForTests() {
+  secrets.length = 0;
+}
+var secrets, WITHHELD_MESSAGE;
+var init_secret_guard = __esm({
+  "src/core/secret-guard.ts"() {
+    "use strict";
+    init_errors();
+    init_home();
+    secrets = [];
+    WITHHELD_MESSAGE = "output withheld: it contained the agent's private key or a passphrase, which must never be sent to the AI provider. This is a bug in the skill; nothing was revealed.";
   }
 });
 
 // src/core/home.ts
+var home_exports = {};
+__export(home_exports, {
+  appendLine: () => appendLine,
+  ensureDir: () => ensureDir,
+  isJsonObject: () => isJsonObject,
+  paths: () => paths,
+  readJson: () => readJson,
+  readJsonStrict: () => readJsonStrict,
+  upHome: () => upHome,
+  writeFileAtomic: () => writeFileAtomic,
+  writeJson: () => writeJson,
+  writeJsonWithBackup: () => writeJsonWithBackup
+});
 import { appendFile, copyFile, mkdir, open, readFile, rename, writeFile, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -311,7 +452,9 @@ async function readJson(file2, fallback) {
 }
 async function writeJson(file2, value) {
   const { toJson: toJson2 } = await Promise.resolve().then(() => (init_json(), json_exports));
-  await writeFileAtomic(file2, toJson2(value) + "\n");
+  const text = toJson2(value) + "\n";
+  (await Promise.resolve().then(() => (init_secret_guard(), secret_guard_exports))).assertNothingSecretToWrite(text);
+  await writeFileAtomic(file2, text);
 }
 async function readJsonStrict(file2, fallback) {
   let text;
@@ -348,6 +491,7 @@ function isJsonObject(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 async function appendLine(file2, line) {
+  (await Promise.resolve().then(() => (init_secret_guard(), secret_guard_exports))).assertNothingSecretToWrite(line);
   await ensureDir(dirname(file2));
   let prefix = "";
   try {
@@ -379,6 +523,7 @@ var init_home = __esm({
       cache: (home, ...p) => join(home, "cache", ...p),
       media: (home) => join(home, "media"),
       keys: (home) => join(home, "keys"),
+      backups: (home) => join(home, "backups"),
       audit: (home) => join(home, "audit.log")
     };
   }
@@ -451,7 +596,9 @@ async function requireConsent(home, flags, req) {
     });
   }
   await ensureDir(home);
-  await appendFile2(paths.audit(home), toJson({ at: (/* @__PURE__ */ new Date()).toISOString(), decision, approval: flags.approval, ...block }, false) + "\n", { mode: 384 });
+  const line = toJson({ at: (/* @__PURE__ */ new Date()).toISOString(), decision, approval: flags.approval, ...block }, false) + "\n";
+  (await Promise.resolve().then(() => (init_secret_guard(), secret_guard_exports))).assertNothingSecretToWrite(line, "the audit log");
+  await appendFile2(paths.audit(home), line, { mode: 384 });
 }
 var VALUE_MOVING_SIGNATURES, VALUE_MOVING_SELECTORS, ALWAYS_HUMAN_VERBS, DEFAULT_POLICY;
 var init_policy = __esm({
@@ -507,12 +654,12 @@ var init_policy = __esm({
 });
 
 // src/core/assets.ts
-import { existsSync as existsSync2, readFileSync } from "node:fs";
-import { dirname as dirname2, join as join2, resolve } from "node:path";
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+import { dirname as dirname2, join as join2, resolve as resolve2 } from "node:path";
 import { fileURLToPath } from "node:url";
 function assetsDir() {
   if (cached) return cached;
-  if (process.env.UP_ASSETS_DIR) return cached = resolve(process.env.UP_ASSETS_DIR);
+  if (process.env.UP_ASSETS_DIR) return cached = resolve2(process.env.UP_ASSETS_DIR);
   const here = dirname2(fileURLToPath(import.meta.url));
   const candidates = [
     join2(here, "..", "..", "assets"),
@@ -528,7 +675,7 @@ function skillDir() {
 }
 function assetJson(...rel) {
   const file2 = join2(assetsDir(), ...rel);
-  if (!jsonCache.has(file2)) jsonCache.set(file2, JSON.parse(readFileSync(file2, "utf8")));
+  if (!jsonCache.has(file2)) jsonCache.set(file2, JSON.parse(readFileSync2(file2, "utf8")));
   return jsonCache.get(file2);
 }
 var cached, jsonCache;
@@ -739,12 +886,18 @@ var init_rpc = __esm({
 });
 
 // src/chain/registry.ts
-import { readFileSync as readFileSync2, existsSync as existsSync3 } from "node:fs";
+var registry_exports = {};
+__export(registry_exports, {
+  LSP: () => LSP,
+  createRegistry: () => createRegistry,
+  loadOverlay: () => loadOverlay
+});
+import { readFileSync as readFileSync3, existsSync as existsSync3 } from "node:fs";
 function loadOverlay(home) {
   const f = paths.cache(home, "registry", "overlay.json");
   if (!existsSync3(f)) return {};
   try {
-    return JSON.parse(readFileSync2(f, "utf8"));
+    return JSON.parse(readFileSync3(f, "utf8"));
   } catch {
     return {};
   }
@@ -1334,1726 +1487,19 @@ var init_safe_fetch = __esm({
   }
 });
 
-// skills/universal-profile/assets/abis/errors.json
-var errors_default;
-var init_errors2 = __esm({
-  "skills/universal-profile/assets/abis/errors.json"() {
-    errors_default = [
-      {
-        inputs: [],
-        name: "ERC725X_ContractDeploymentFailed",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "ERC725X_CreateOperationsRequireEmptyRecipientAddress",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "ERC725X_ExecuteParametersEmptyArray",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "ERC725X_ExecuteParametersLengthMismatch",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "balance",
-            type: "uint256"
-          },
-          {
-            internalType: "uint256",
-            name: "value",
-            type: "uint256"
-          }
-        ],
-        name: "ERC725X_InsufficientBalance",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "ERC725X_MsgValueDisallowedInDelegateCall",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "ERC725X_MsgValueDisallowedInStaticCall",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "ERC725X_NoContractBytecodeProvided",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "operationTypeProvided",
-            type: "uint256"
-          }
-        ],
-        name: "ERC725X_UnknownOperationType",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "ERC725Y_DataKeysValuesEmptyArray",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "ERC725Y_DataKeysValuesLengthMismatch",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "caller",
-            type: "address"
-          }
-        ],
-        name: "LSP14CallerNotPendingOwner",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP14CannotTransferOwnershipToSelf",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP14MustAcceptOwnershipInSeparateTransaction",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "renounceOwnershipStart",
-            type: "uint256"
-          },
-          {
-            internalType: "uint256",
-            name: "renounceOwnershipEnd",
-            type: "uint256"
-          }
-        ],
-        name: "LSP14NotInRenounceOwnershipInterval",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bool",
-            name: "postCall",
-            type: "bool"
-          },
-          {
-            internalType: "bytes4",
-            name: "returnedStatus",
-            type: "bytes4"
-          }
-        ],
-        name: "LSP20CallVerificationFailed",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bool",
-            name: "postCall",
-            type: "bool"
-          }
-        ],
-        name: "LSP20CallingVerifierFailed",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "logicVerifier",
-            type: "address"
-          }
-        ],
-        name: "LSP20EOACannotVerifyCall",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes4",
-            name: "functionSelector",
-            type: "bytes4"
-          }
-        ],
-        name: "NoExtensionFoundForFunctionSelector",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "AccountNotSetupYet",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "iteration",
-            type: "uint256"
-          }
-        ],
-        name: "BatchCallsFailed",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "BatchExecuteRelayCallParamsLengthMismatch",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "guardian",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "caller",
-            type: "address"
-          }
-        ],
-        name: "CallerIsNotGuardian",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "caller",
-            type: "address"
-          }
-        ],
-        name: "CallerIsNotTheAccount",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "votedAddress",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "caller",
-            type: "address"
-          }
-        ],
-        name: "CallerIsNotVotedAddress",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "recoverer",
-            type: "address"
-          }
-        ],
-        name: "CallerVotesHaveNotReachedThreshold",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "committer",
-            type: "address"
-          }
-        ],
-        name: "CannotRecoverAfterDirectCommit",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "uint256",
-            name: "delay",
-            type: "uint256"
-          }
-        ],
-        name: "CannotRecoverBeforeDelay",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "guardian",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "guardianVotedAddress",
-            type: "address"
-          }
-        ],
-        name: "CannotVoteToAddressTwice",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "guardian",
-            type: "address"
-          }
-        ],
-        name: "GuardianAlreadyExists",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "guardian",
-            type: "address"
-          }
-        ],
-        name: "GuardianNotFound",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "uint256",
-            name: "threshold",
-            type: "uint256"
-          }
-        ],
-        name: "GuardianNumberCannotGoBelowThreshold",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "committer",
-            type: "address"
-          }
-        ],
-        name: "InvalidCommitment",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "signer",
-            type: "address"
-          },
-          {
-            internalType: "uint256",
-            name: "invalidNonce",
-            type: "uint256"
-          },
-          {
-            internalType: "bytes",
-            name: "signature",
-            type: "bytes"
-          }
-        ],
-        name: "InvalidRelayNonce",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "bytes32",
-            name: "secretHash",
-            type: "bytes32"
-          }
-        ],
-        name: "InvalidSecretHash",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "totalValues",
-            type: "uint256"
-          },
-          {
-            internalType: "uint256",
-            name: "msgValue",
-            type: "uint256"
-          }
-        ],
-        name: "LSP11BatchExcessiveValueSent",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "totalValues",
-            type: "uint256"
-          },
-          {
-            internalType: "uint256",
-            name: "msgValue",
-            type: "uint256"
-          }
-        ],
-        name: "LSP11BatchInsufficientValueSent",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "nonGuardian",
-            type: "address"
-          }
-        ],
-        name: "NotAGuardianOfTheAccount",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "RelayCallBeforeStartTime",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "RelayCallExpired",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes4",
-            name: "functionSelector",
-            type: "bytes4"
-          }
-        ],
-        name: "RelayCallNotSupported",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "votedAddress",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "recoveredAddress",
-            type: "address"
-          }
-        ],
-        name: "SignerIsNotVotedAddress",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "uint256",
-            name: "threshold",
-            type: "uint256"
-          }
-        ],
-        name: "ThresholdExceedsGuardianNumber",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "callerAddress",
-            type: "address"
-          }
-        ],
-        name: "OwnableCallerNotTheOwner",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "ContractInitializationFailed",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "InvalidValueSum",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "caller",
-            type: "address"
-          }
-        ],
-        name: "CannotRegisterEOAsAsAssets",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes",
-            name: "errorData",
-            type: "bytes"
-          }
-        ],
-        name: "PrimaryContractProxyInitFailureError",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes",
-            name: "errorData",
-            type: "bytes"
-          }
-        ],
-        name: "SecondaryContractProxyInitFailureError",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "addr",
-            type: "address"
-          }
-        ],
-        name: "LSP26AlreadyFollowing",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP26CannotSelfFollow",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "addr",
-            type: "address"
-          }
-        ],
-        name: "LSP26NotFollowing",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "ERC725Y_MsgValueDisallowed",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP4TokenNameNotEditable",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP4TokenSymbolNotEditable",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP4TokenTypeNotEditable",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "OwnableCannotSetZeroAddressAsOwner",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "BatchExecuteParamsLengthMismatch",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "CallingKeyManagerNotAllowed",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "DelegateCallDisallowedViaKeyManager",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes32",
-            name: "dataKey",
-            type: "bytes32"
-          },
-          {
-            internalType: "bytes",
-            name: "dataValue",
-            type: "bytes"
-          }
-        ],
-        name: "InvalidDataValuesForDataKeys",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes4",
-            name: "invalidFunction",
-            type: "bytes4"
-          }
-        ],
-        name: "InvalidERC725Function",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes",
-            name: "allowedCallsValue",
-            type: "bytes"
-          }
-        ],
-        name: "InvalidEncodedAllowedCalls",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes",
-            name: "value",
-            type: "bytes"
-          },
-          {
-            internalType: "string",
-            name: "context",
-            type: "string"
-          }
-        ],
-        name: "InvalidEncodedAllowedERC725YDataKeys",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "InvalidLSP6Target",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes",
-            name: "payload",
-            type: "bytes"
-          }
-        ],
-        name: "InvalidPayload",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "from",
-            type: "address"
-          }
-        ],
-        name: "InvalidWhitelistedCall",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "KeyManagerCannotBeSetAsExtensionForLSP20Functions",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "totalValues",
-            type: "uint256"
-          },
-          {
-            internalType: "uint256",
-            name: "msgValue",
-            type: "uint256"
-          }
-        ],
-        name: "LSP6BatchExcessiveValueSent",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "totalValues",
-            type: "uint256"
-          },
-          {
-            internalType: "uint256",
-            name: "msgValue",
-            type: "uint256"
-          }
-        ],
-        name: "LSP6BatchInsufficientValueSent",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "from",
-            type: "address"
-          }
-        ],
-        name: "NoCallsAllowed",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "from",
-            type: "address"
-          }
-        ],
-        name: "NoERC725YDataKeysAllowed",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "from",
-            type: "address"
-          }
-        ],
-        name: "NoPermissionsSet",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "from",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "to",
-            type: "address"
-          },
-          {
-            internalType: "bytes4",
-            name: "selector",
-            type: "bytes4"
-          }
-        ],
-        name: "NotAllowedCall",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "from",
-            type: "address"
-          },
-          {
-            internalType: "bytes32",
-            name: "disallowedKey",
-            type: "bytes32"
-          }
-        ],
-        name: "NotAllowedERC725YDataKey",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "from",
-            type: "address"
-          },
-          {
-            internalType: "string",
-            name: "permission",
-            type: "string"
-          }
-        ],
-        name: "NotAuthorised",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes32",
-            name: "dataKey",
-            type: "bytes32"
-          }
-        ],
-        name: "NotRecognisedPermissionKey",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes",
-            name: "storedData",
-            type: "bytes"
-          }
-        ],
-        name: "InvalidExtensionAddress",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes",
-            name: "data",
-            type: "bytes"
-          }
-        ],
-        name: "InvalidFunctionSelector",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "tokenOwner",
-            type: "address"
-          },
-          {
-            internalType: "uint256",
-            name: "authorizedAmount",
-            type: "uint256"
-          },
-          {
-            internalType: "address",
-            name: "operator",
-            type: "address"
-          },
-          {
-            internalType: "uint256",
-            name: "amount",
-            type: "uint256"
-          }
-        ],
-        name: "LSP7AmountExceedsAuthorizedAmount",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "balance",
-            type: "uint256"
-          },
-          {
-            internalType: "address",
-            name: "tokenOwner",
-            type: "address"
-          },
-          {
-            internalType: "uint256",
-            name: "amount",
-            type: "uint256"
-          }
-        ],
-        name: "LSP7AmountExceedsBalance",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "callIndex",
-            type: "uint256"
-          }
-        ],
-        name: "LSP7BatchCallFailed",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7CannotSendWithAddressZero",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7CannotUseAddressZeroAsOperator",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "caller",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "tokenOwner",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "operator",
-            type: "address"
-          }
-        ],
-        name: "LSP7DecreaseAllowanceNotAuthorized",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7DecreasedAllowanceBelowZero",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7InvalidTransferBatch",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "tokenReceiver",
-            type: "address"
-          }
-        ],
-        name: "LSP7NotifyTokenReceiverContractMissingLSP1Interface",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "tokenReceiver",
-            type: "address"
-          }
-        ],
-        name: "LSP7NotifyTokenReceiverIsEOA",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "caller",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "tokenOwner",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "operator",
-            type: "address"
-          }
-        ],
-        name: "LSP7RevokeOperatorNotAuthorized",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7TokenContractCannotHoldValue",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7TokenOwnerCannotBeOperator",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "operator",
-            type: "address"
-          }
-        ],
-        name: "OperatorAllowanceCannotBeIncreasedFromZero",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "AccessControlBadConfirmation",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "AccessControlCannotSetAdminForDefaultAdminRole",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "account",
-            type: "address"
-          },
-          {
-            internalType: "bytes32",
-            name: "neededRole",
-            type: "bytes32"
-          }
-        ],
-        name: "AccessControlUnauthorizedAccount",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "to",
-            type: "address"
-          },
-          {
-            internalType: "uint256",
-            name: "tranferAmount",
-            type: "uint256"
-          },
-          {
-            internalType: "uint256",
-            name: "balanceOf",
-            type: "uint256"
-          },
-          {
-            internalType: "uint256",
-            name: "tokenBalanceCap",
-            type: "uint256"
-          }
-        ],
-        name: "LSP7CappedBalanceExceeded",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7MintDisabled",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7CannotUpdateTransferLockPeriod",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7InvalidTransferLockPeriod",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7TokenAlreadyTransferable",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7TransferDisabled",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7RevokableFeatureDisabled",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "InvalidShortString",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7VotesBrokenClockMode",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "supply",
-            type: "uint256"
-          },
-          {
-            internalType: "uint256",
-            name: "cap",
-            type: "uint256"
-          }
-        ],
-        name: "LSP7VotesExceededSafeSupply",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "timepoint",
-            type: "uint256"
-          }
-        ],
-        name: "LSP7VotesFutureLookup",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "signer",
-            type: "address"
-          },
-          {
-            internalType: "uint256",
-            name: "nonce",
-            type: "uint256"
-          }
-        ],
-        name: "LSP7VotesInvalidNonce",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "expiry",
-            type: "uint256"
-          }
-        ],
-        name: "LSP7VotesSignatureExpired",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "string",
-            name: "str",
-            type: "string"
-          }
-        ],
-        name: "StringTooLong",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP7CappedSupplyCannotMintOverCap",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "uint256",
-            name: "callIndex",
-            type: "uint256"
-          }
-        ],
-        name: "LSP8BatchCallFailed",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8CannotSendToAddressZero",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8CannotUseAddressZeroAsOperator",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8InvalidTransferBatch",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes32",
-            name: "tokenId",
-            type: "bytes32"
-          }
-        ],
-        name: "LSP8NonExistentTokenId",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "operator",
-            type: "address"
-          },
-          {
-            internalType: "bytes32",
-            name: "tokenId",
-            type: "bytes32"
-          }
-        ],
-        name: "LSP8NonExistingOperator",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes32",
-            name: "tokenId",
-            type: "bytes32"
-          },
-          {
-            internalType: "address",
-            name: "caller",
-            type: "address"
-          }
-        ],
-        name: "LSP8NotTokenOperator",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "tokenOwner",
-            type: "address"
-          },
-          {
-            internalType: "bytes32",
-            name: "tokenId",
-            type: "bytes32"
-          },
-          {
-            internalType: "address",
-            name: "caller",
-            type: "address"
-          }
-        ],
-        name: "LSP8NotTokenOwner",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "tokenReceiver",
-            type: "address"
-          }
-        ],
-        name: "LSP8NotifyTokenReceiverContractMissingLSP1Interface",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "tokenReceiver",
-            type: "address"
-          }
-        ],
-        name: "LSP8NotifyTokenReceiverIsEOA",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "operator",
-            type: "address"
-          },
-          {
-            internalType: "bytes32",
-            name: "tokenId",
-            type: "bytes32"
-          }
-        ],
-        name: "LSP8OperatorAlreadyAuthorized",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "caller",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "tokenOwner",
-            type: "address"
-          },
-          {
-            internalType: "bytes32",
-            name: "tokenId",
-            type: "bytes32"
-          }
-        ],
-        name: "LSP8RevokeOperatorNotAuthorized",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8TokenContractCannotHoldValue",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8TokenIdFormatNotEditable",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8TokenIdsDataEmptyArray",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8TokenIdsDataLengthMismatch",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8TokenOwnerCannotBeOperator",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes32",
-            name: "tokenId",
-            type: "bytes32"
-          },
-          {
-            internalType: "address",
-            name: "oldOwner",
-            type: "address"
-          },
-          {
-            internalType: "address",
-            name: "newOwner",
-            type: "address"
-          }
-        ],
-        name: "LSP8TokenOwnerChanged",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "address",
-            name: "to",
-            type: "address"
-          },
-          {
-            internalType: "uint256",
-            name: "currentBalance",
-            type: "uint256"
-          },
-          {
-            internalType: "uint256",
-            name: "tokenBalanceCap",
-            type: "uint256"
-          }
-        ],
-        name: "LSP8CappedBalanceExceeded",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8MintDisabled",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes32",
-            name: "tokenId",
-            type: "bytes32"
-          }
-        ],
-        name: "LSP8TokenIdAlreadyMinted",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8CannotUpdateTransferLockPeriod",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8InvalidTransferLockPeriod",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8TokenAlreadyTransferable",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8TransferDisabled",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8RevokableFeatureDisabled",
-        type: "error"
-      },
-      {
-        inputs: [],
-        name: "LSP8CappedSupplyCannotMintOverCap",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            internalType: "bytes32",
-            name: "dataKey",
-            type: "bytes32"
-          }
-        ],
-        name: "LSP1DelegateNotAllowedToSetDataKey",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            name: "preOpGas",
-            type: "uint256"
-          },
-          {
-            name: "paid",
-            type: "uint256"
-          },
-          {
-            name: "validAfter",
-            type: "uint48"
-          },
-          {
-            name: "validUntil",
-            type: "uint48"
-          },
-          {
-            name: "targetSuccess",
-            type: "bool"
-          },
-          {
-            name: "targetResult",
-            type: "bytes"
-          }
-        ],
-        name: "ExecutionResult",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            name: "opIndex",
-            type: "uint256"
-          },
-          {
-            name: "reason",
-            type: "string"
-          }
-        ],
-        name: "FailedOp",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            name: "sender",
-            type: "address"
-          }
-        ],
-        name: "SenderAddressResult",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            name: "aggregator",
-            type: "address"
-          }
-        ],
-        name: "SignatureValidationFailed",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            components: [
-              {
-                name: "preOpGas",
-                type: "uint256"
-              },
-              {
-                name: "prefund",
-                type: "uint256"
-              },
-              {
-                name: "sigFailed",
-                type: "bool"
-              },
-              {
-                name: "validAfter",
-                type: "uint48"
-              },
-              {
-                name: "validUntil",
-                type: "uint48"
-              },
-              {
-                name: "paymasterContext",
-                type: "bytes"
-              }
-            ],
-            name: "returnInfo",
-            type: "tuple"
-          },
-          {
-            components: [
-              {
-                name: "stake",
-                type: "uint256"
-              },
-              {
-                name: "unstakeDelaySec",
-                type: "uint256"
-              }
-            ],
-            name: "senderInfo",
-            type: "tuple"
-          },
-          {
-            components: [
-              {
-                name: "stake",
-                type: "uint256"
-              },
-              {
-                name: "unstakeDelaySec",
-                type: "uint256"
-              }
-            ],
-            name: "factoryInfo",
-            type: "tuple"
-          },
-          {
-            components: [
-              {
-                name: "stake",
-                type: "uint256"
-              },
-              {
-                name: "unstakeDelaySec",
-                type: "uint256"
-              }
-            ],
-            name: "paymasterInfo",
-            type: "tuple"
-          }
-        ],
-        name: "ValidationResult",
-        type: "error"
-      },
-      {
-        inputs: [
-          {
-            components: [
-              {
-                name: "preOpGas",
-                type: "uint256"
-              },
-              {
-                name: "prefund",
-                type: "uint256"
-              },
-              {
-                name: "sigFailed",
-                type: "bool"
-              },
-              {
-                name: "validAfter",
-                type: "uint48"
-              },
-              {
-                name: "validUntil",
-                type: "uint48"
-              },
-              {
-                name: "paymasterContext",
-                type: "bytes"
-              }
-            ],
-            name: "returnInfo",
-            type: "tuple"
-          },
-          {
-            components: [
-              {
-                name: "stake",
-                type: "uint256"
-              },
-              {
-                name: "unstakeDelaySec",
-                type: "uint256"
-              }
-            ],
-            name: "senderInfo",
-            type: "tuple"
-          },
-          {
-            components: [
-              {
-                name: "stake",
-                type: "uint256"
-              },
-              {
-                name: "unstakeDelaySec",
-                type: "uint256"
-              }
-            ],
-            name: "factoryInfo",
-            type: "tuple"
-          },
-          {
-            components: [
-              {
-                name: "stake",
-                type: "uint256"
-              },
-              {
-                name: "unstakeDelaySec",
-                type: "uint256"
-              }
-            ],
-            name: "paymasterInfo",
-            type: "tuple"
-          },
-          {
-            components: [
-              {
-                name: "aggregator",
-                type: "address"
-              },
-              {
-                components: [
-                  {
-                    name: "stake",
-                    type: "uint256"
-                  },
-                  {
-                    name: "unstakeDelaySec",
-                    type: "uint256"
-                  }
-                ],
-                name: "stakeInfo",
-                type: "tuple"
-              }
-            ],
-            name: "aggregatorInfo",
-            type: "tuple"
-          }
-        ],
-        name: "ValidationResultWithAggregation",
-        type: "error"
-      }
-    ];
-  }
-});
-
 // src/chain/error-abis.ts
 var standard, ERROR_ABIS;
 var init_error_abis = __esm({
   "src/chain/error-abis.ts"() {
     "use strict";
-    init_errors2();
+    init_assets();
     standard = [
       { type: "error", name: "Error", inputs: [{ name: "message", type: "string" }] },
       { type: "error", name: "Panic", inputs: [{ name: "code", type: "uint256" }] },
       { type: "error", name: "FailedOp", inputs: [{ name: "opIndex", type: "uint256" }, { name: "reason", type: "string" }] },
       { type: "error", name: "SignatureValidationFailed", inputs: [{ name: "aggregator", type: "address" }] }
     ];
-    ERROR_ABIS = [standard, errors_default];
+    ERROR_ABIS = [standard, assetJson("abis", "errors.json")];
   }
 });
 
@@ -3711,60 +2157,8 @@ var init_bundled = __esm({
   }
 });
 
-// src/core/secret-guard.ts
-import { realpathSync } from "node:fs";
-import { resolve as resolve2, sep } from "node:path";
-function forms(secret) {
-  const s = secret.trim().toLowerCase();
-  const plain = s.startsWith("0x") ? s.slice(2) : s;
-  return [.../* @__PURE__ */ new Set([plain, JSON.stringify(plain).slice(1, -1)])];
-}
-function registerSecret(secret) {
-  if (!secret || secret.trim().length < 8) return;
-  for (const f of forms(secret)) if (!secrets.includes(f)) secrets.push(f);
-}
-function containsSecret(text) {
-  if (!secrets.length || !text) return false;
-  const t = text.toLowerCase();
-  return secrets.some((s) => t.includes(s));
-}
-function guardOutput(text, json2) {
-  if (!containsSecret(text)) return text;
-  return json2 ? JSON.stringify({ ok: false, error: { code: "INTERNAL", message: WITHHELD_MESSAGE } }) : `✗ INTERNAL: ${WITHHELD_MESSAGE}`;
-}
-function assertNotKeyMaterialPath(file2, what = "file") {
-  let real = resolve2(file2);
-  try {
-    real = realpathSync(real);
-  } catch {
-  }
-  const keysDir = resolve2(paths.keys(upHome()));
-  let keysReal = keysDir;
-  try {
-    keysReal = realpathSync(keysDir);
-  } catch {
-  }
-  const inside = (dir) => real === dir || real.startsWith(dir + sep);
-  if (inside(keysDir) || inside(keysReal) || /\.(key|cred|dpapi)$/i.test(real) || /(^|[\\/])keystore[^\\/]*\.json$/i.test(real)) {
-    throw new UpError("BAD_ARGS", `refusing to read ${what} from the key store or a key file`, { hint: "key files are only ever used inside the skill for signing; pass a different file" });
-  }
-}
-function safeWords(words) {
-  return words.map((w) => /[0-9a-f]{32,}/i.test(w) ? "<hidden>" : w.length > 64 ? `${w.slice(0, 32)}…` : w).join(" ");
-}
-var secrets, WITHHELD_MESSAGE;
-var init_secret_guard = __esm({
-  "src/core/secret-guard.ts"() {
-    "use strict";
-    init_errors();
-    init_home();
-    secrets = [];
-    WITHHELD_MESSAGE = "output withheld: it contained the agent's private key or a passphrase, which must never be sent to the AI provider. This is a bug in the skill; nothing was revealed.";
-  }
-});
-
 // src/abi/codec.ts
-import { existsSync as existsSync5, readFileSync as readFileSync3, statSync } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync4, statSync } from "node:fs";
 import {
   decodeAbiParameters,
   decodeErrorResult as decodeErrorResult2,
@@ -3821,7 +2215,7 @@ function parseAbiInput(input) {
     assertNotKeyMaterialPath(s, "an ABI");
     let parsed;
     try {
-      parsed = JSON.parse(readFileSync3(s, "utf8"));
+      parsed = JSON.parse(readFileSync4(s, "utf8"));
     } catch {
       throw new UpError("BAD_ARGS", `ABI file ${s} is not valid JSON`);
     }
@@ -4781,14 +3175,14 @@ var init_proc = __esm({
 });
 
 // src/signer/env.ts
-import { existsSync as existsSync7, readFileSync as readFileSync4 } from "node:fs";
+import { existsSync as existsSync7, readFileSync as readFileSync5 } from "node:fs";
 function defaultEnvDeps() {
   return {
     platform: process.platform,
     env: process.env,
     readFile: (p) => {
       try {
-        return readFileSync4(p, "utf8");
+        return readFileSync5(p, "utf8");
       } catch {
         return null;
       }
@@ -4980,6 +3374,18 @@ var init_env = __esm({
 });
 
 // src/signer/local-signer.ts
+var local_signer_exports = {};
+__export(local_signer_exports, {
+  SECP256K1_N: () => SECP256K1_N,
+  addressOf: () => addressOf,
+  assertValidPrivateKey: () => assertValidPrivateKey,
+  createLocalSigner: () => createLocalSigner,
+  generateKey: () => generateKey,
+  intendedValidatorDigest: () => intendedValidatorDigest,
+  isValidPrivateKey: () => isValidPrivateKey,
+  normalizePrivateKey: () => normalizePrivateKey,
+  storageId: () => storageId
+});
 import { concat, getAddress as getAddress4, isAddress as isAddress2, isHex as isHex3, keccak256 as keccak2566 } from "./vendor-viem.mjs";
 import { generatePrivateKey, privateKeyToAccount } from "./vendor-viem.mjs";
 function isValidPrivateKey(key) {
@@ -5776,7 +4182,7 @@ var init_remote_signer = __esm({
 
 // src/signer/windows-dpapi.ts
 import { readFile as readFile4, rm as rm3 } from "node:fs/promises";
-import { existsSync as existsSync11, readFileSync as readFileSync5 } from "node:fs";
+import { existsSync as existsSync11, readFileSync as readFileSync6 } from "node:fs";
 import { join as join6 } from "node:path";
 import { randomBytes as randomBytes3 } from "node:crypto";
 function powershellArgs(script) {
@@ -5851,7 +4257,7 @@ var init_windows_dpapi = __esm({
         this.psOverride = opts.powershell;
         this.readFile = opts.readFile ?? ((p) => {
           try {
-            return readFileSync5(p, "utf8");
+            return readFileSync6(p, "utf8");
           } catch {
             return null;
           }
@@ -5962,6 +4368,12 @@ var init_windows_dpapi = __esm({
 });
 
 // src/signer/select.ts
+var select_exports = {};
+__export(select_exports, {
+  chainControllerList: () => chainControllerList,
+  controllerFor: () => controllerFor,
+  localControllers: () => localControllers
+});
 import { getAddress as getAddress6, isAddress as isAddress3 } from "./vendor-viem.mjs";
 function checked(c, where) {
   if (!c || typeof c.address !== "string" || !isAddress3(c.address, { strict: false }) || typeof c.backend !== "string") {
@@ -6025,7 +4437,7 @@ __export(signer_exports, {
   selectAutoBackend: () => selectAutoBackend,
   setBackendsForTests: () => setBackendsForTests
 });
-import { realpathSync as realpathSync2, readFileSync as readFileSync6 } from "node:fs";
+import { realpathSync as realpathSync2, readFileSync as readFileSync7 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve as resolve3 } from "node:path";
 import { getAddress as getAddress7, isAddress as isAddress4 } from "./vendor-viem.mjs";
@@ -6148,7 +4560,7 @@ function custodyWarnings(backendId, home = upHome()) {
     let procMounts = null;
     if (process.platform === "linux") {
       try {
-        procMounts = readFileSync6("/proc/mounts", "utf8");
+        procMounts = readFileSync7("/proc/mounts", "utf8");
       } catch {
       }
     }
@@ -6429,6 +4841,7 @@ var init_token_guard = __esm({
 var profile_record_exports = {};
 __export(profile_record_exports, {
   chainAddressesOf: () => chainAddressesOf,
+  linkEvidenceOf: () => linkEvidenceOf,
   profileAddressOn: () => profileAddressOn,
   readProfileRecord: () => readProfileRecord,
   updateProfileRecord: () => updateProfileRecord,
@@ -6462,6 +4875,12 @@ async function profileAddressOn(home, identity, chainId) {
   const linked = chainAddressesOf(await readProfileRecord(home, identity))[String(chainId)];
   return linked ?? getAddress9(identity);
 }
+function linkEvidenceOf(record, chainId) {
+  const ev = record?.linkEvidence?.[String(chainId)];
+  const linked = chainAddressesOf(record)[String(chainId)];
+  if (!ev || !linked || typeof ev.address !== "string" || ev.address.toLowerCase() !== linked.toLowerCase() || !Array.isArray(ev.controllers)) return [];
+  return ev.controllers.filter((a) => typeof a === "string" && isAddress6(a, { strict: false })).map((a) => getAddress9(a));
+}
 var init_profile_record = __esm({
   "src/core/profile-record.ts"() {
     "use strict";
@@ -6471,6 +4890,17 @@ var init_profile_record = __esm({
 });
 
 // src/lsp/read.ts
+var read_exports = {};
+__export(read_exports, {
+  assertRpcChainId: () => assertRpcChainId,
+  ethCall: () => ethCall2,
+  getBalance: () => getBalance,
+  getCode: () => getCode2,
+  hasCode: () => hasCode,
+  latestBlock: () => latestBlock,
+  read: () => read2,
+  tryRead: () => tryRead2
+});
 import { decodeFunctionResult as decodeFunctionResult3, encodeFunctionData as encodeFunctionData4 } from "./vendor-viem.mjs";
 async function ethCall2(ctx, chainId, req) {
   try {
@@ -6523,325 +4953,18 @@ var init_read2 = __esm({
   }
 });
 
-// node_modules/@erc725/erc725.js/build/chunk-AHQT6NWT.mjs
-var LSP1UniversalReceiverDelegate_default, LSP3ProfileMetadata_default, LSP4DigitalAsset_default2, LSP4DigitalAssetLegacy_default, LSP5ReceivedAssets_default, LSP6KeyManager_default, LSP8IdentifiableDigitalAsset_default2, LSP9Vault_default, LSP10ReceivedVaults_default, LSP12IssuedAssets_default, LSP17ContractExtension_default, LSP1Schema, LSP3Schema, LSP4Schema, LSP4LegacySchema, LSP5Schema, LSP6Schema, LSP8Schema, LSP9Schema, LSP10Schema, LSP12Schema, LSP17Schema, AllSchemas;
-var init_chunk_AHQT6NWT = __esm({
-  "node_modules/@erc725/erc725.js/build/chunk-AHQT6NWT.mjs"() {
-    LSP1UniversalReceiverDelegate_default = [
-      {
-        name: "LSP1UniversalReceiverDelegate",
-        key: "0x0cfc51aec37c55a4d0b1a65c6255c4bf2fbdf6277f3cc0730c45b828b6db8b47",
-        keyType: "Singleton",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "LSP1UniversalReceiverDelegate:<bytes32>",
-        key: "0x0cfc51aec37c55a4d0b10000<bytes32>",
-        keyType: "Mapping",
-        valueType: "address",
-        valueContent: "Address"
-      }
-    ];
-    LSP3ProfileMetadata_default = [
-      {
-        name: "SupportedStandards:LSP3Profile",
-        key: "0xeafec4d89fa9619884b600005ef83ad9559033e6e941db7d7c495acdce616347",
-        keyType: "Mapping",
-        valueType: "bytes4",
-        valueContent: "0x5ef83ad9"
-      },
-      {
-        name: "LSP3Profile",
-        key: "0x5ef83ad9559033e6e941db7d7c495acdce616347d28e90c7ce47cbfcfcad3bc5",
-        keyType: "Singleton",
-        valueType: "bytes",
-        valueContent: "VerifiableURI"
-      },
-      {
-        name: "LSP12IssuedAssets[]",
-        key: "0x7c8c3416d6cda87cd42c71ea1843df28ac4850354f988d55ee2eaa47b6dc05cd",
-        keyType: "Array",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "LSP12IssuedAssetsMap:<address>",
-        key: "0x74ac2555c10b9349e78f0000<address>",
-        keyType: "Mapping",
-        valueType: "(bytes4,uint128)",
-        valueContent: "(Bytes4,Number)"
-      },
-      {
-        name: "LSP5ReceivedAssets[]",
-        key: "0x6460ee3c0aac563ccbf76d6e1d07bada78e3a9514e6382b736ed3f478ab7b90b",
-        keyType: "Array",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "LSP5ReceivedAssetsMap:<address>",
-        key: "0x812c4334633eb816c80d0000<address>",
-        keyType: "Mapping",
-        valueType: "(bytes4,uint128)",
-        valueContent: "(Bytes4,Number)"
-      },
-      {
-        name: "LSP1UniversalReceiverDelegate",
-        key: "0x0cfc51aec37c55a4d0b1a65c6255c4bf2fbdf6277f3cc0730c45b828b6db8b47",
-        keyType: "Singleton",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "LSP1UniversalReceiverDelegate:<bytes32>",
-        key: "0x0cfc51aec37c55a4d0b10000<bytes32>",
-        keyType: "Mapping",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "LSP17Extension:<bytes4>",
-        key: "0xcee78b4094da860110960000<bytes4>",
-        keyType: "Mapping",
-        valueType: "address",
-        valueContent: "Address"
-      }
-    ];
-    LSP4DigitalAsset_default2 = [
-      {
-        name: "SupportedStandards:LSP4DigitalAsset",
-        key: "0xeafec4d89fa9619884b60000a4d96624a38f7ac2d8d9a604ecf07c12c77e480c",
-        keyType: "Mapping",
-        valueType: "bytes4",
-        valueContent: "0xa4d96624"
-      },
-      {
-        name: "LSP4TokenName",
-        key: "0xdeba1e292f8ba88238e10ab3c7f88bd4be4fac56cad5194b6ecceaf653468af1",
-        keyType: "Singleton",
-        valueType: "string",
-        valueContent: "String"
-      },
-      {
-        name: "LSP4TokenSymbol",
-        key: "0x2f0a68ab07768e01943a599e73362a0e17a63a72e94dd2e384d2c1d4db932756",
-        keyType: "Singleton",
-        valueType: "string",
-        valueContent: "String"
-      },
-      {
-        name: "LSP4TokenType",
-        key: "0xe0261fa95db2eb3b5439bd033cda66d56b96f92f243a8228fd87550ed7bdfdb3",
-        keyType: "Singleton",
-        valueType: "uint256",
-        valueContent: "Number"
-      },
-      {
-        name: "LSP4Metadata",
-        key: "0x9afb95cacc9f95858ec44aa8c3b685511002e30ae54415823f406128b85b238e",
-        keyType: "Singleton",
-        valueType: "bytes",
-        valueContent: "VerifiableURI"
-      },
-      {
-        name: "LSP4Creators[]",
-        key: "0x114bd03b3a46d48759680d81ebb2b414fda7d030a7105a851867accf1c2352e7",
-        keyType: "Array",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "LSP4CreatorsMap:<address>",
-        key: "0x6de85eaf5d982b4e5da00000<address>",
-        keyType: "Mapping",
-        valueType: "(bytes4,uint128)",
-        valueContent: "(Bytes4,Number)"
-      }
-    ];
-    LSP4DigitalAssetLegacy_default = [
-      {
-        name: "SupportedStandards:LSP4DigitalCertificate",
-        key: "0xeafec4d89fa9619884b6b89135626455000000000000000000000000abf0613c",
-        keyType: "Mapping",
-        valueContent: "0xabf0613c",
-        valueType: "bytes"
-      }
-    ];
-    LSP5ReceivedAssets_default = [
-      {
-        name: "LSP5ReceivedAssets[]",
-        key: "0x6460ee3c0aac563ccbf76d6e1d07bada78e3a9514e6382b736ed3f478ab7b90b",
-        keyType: "Array",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "LSP5ReceivedAssetsMap:<address>",
-        key: "0x812c4334633eb816c80d0000<address>",
-        keyType: "Mapping",
-        valueType: "(bytes4,uint128)",
-        valueContent: "(Bytes4,Number)"
-      }
-    ];
-    LSP6KeyManager_default = [
-      {
-        name: "AddressPermissions[]",
-        key: "0xdf30dba06db6a30e65354d9a64c609861f089545ca58c6b4dbe31a5f338cb0e3",
-        keyType: "Array",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "AddressPermissions:Permissions:<address>",
-        key: "0x4b80742de2bf82acb3630000<address>",
-        keyType: "MappingWithGrouping",
-        valueType: "bytes32",
-        valueContent: "BitArray"
-      },
-      {
-        name: "AddressPermissions:AllowedCalls:<address>",
-        key: "0x4b80742de2bf393a64c70000<address>",
-        keyType: "MappingWithGrouping",
-        valueType: "(bytes4,address,bytes4,bytes4)[CompactBytesArray]",
-        valueContent: "(BitArray,Address,Bytes4,Bytes4)"
-      },
-      {
-        name: "AddressPermissions:AllowedERC725YDataKeys:<address>",
-        key: "0x4b80742de2bf866c29110000<address>",
-        keyType: "MappingWithGrouping",
-        valueType: "bytes[CompactBytesArray]",
-        valueContent: "Bytes"
-      }
-    ];
-    LSP8IdentifiableDigitalAsset_default2 = [
-      {
-        name: "LSP8TokenIdFormat",
-        key: "0xf675e9361af1c1664c1868cfa3eb97672d6b1a513aa5b81dec34c9ee330e818d",
-        keyType: "Singleton",
-        valueType: "uint256",
-        valueContent: "Number"
-      },
-      {
-        name: "LSP8TokenMetadataBaseURI",
-        key: "0x1a7628600c3bac7101f53697f48df381ddc36b9015e7d7c9c5633d1252aa2843",
-        keyType: "Singleton",
-        valueType: "bytes",
-        valueContent: "VerifiableURI"
-      },
-      {
-        name: "LSP8ReferenceContract",
-        key: "0x708e7b881795f2e6b6c2752108c177ec89248458de3bf69d0d43480b3e5034e6",
-        keyType: "Singleton",
-        valueType: "(address,bytes32)",
-        valueContent: "(Address,Bytes32)"
-      }
-    ];
-    LSP9Vault_default = [
-      {
-        name: "SupportedStandards:LSP9Vault",
-        key: "0xeafec4d89fa9619884b600007c0334a14085fefa8b51ae5a40895018882bdb90",
-        keyType: "Mapping",
-        valueType: "bytes4",
-        valueContent: "0x7c0334a1"
-      },
-      {
-        name: "LSP1UniversalReceiverDelegate",
-        key: "0x0cfc51aec37c55a4d0b1a65c6255c4bf2fbdf6277f3cc0730c45b828b6db8b47",
-        keyType: "Singleton",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "LSP1UniversalReceiverDelegate:<bytes32>",
-        key: "0x0cfc51aec37c55a4d0b10000<bytes32>",
-        keyType: "Mapping",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "LSP17Extension:<bytes4>",
-        key: "0xcee78b4094da860110960000<bytes4>",
-        keyType: "Mapping",
-        valueType: "address",
-        valueContent: "Address"
-      }
-    ];
-    LSP10ReceivedVaults_default = [
-      {
-        name: "LSP10VaultsMap:<address>",
-        key: "0x192448c3c0f88c7f238c0000<address>",
-        keyType: "Mapping",
-        valueType: "(bytes4,uint128)",
-        valueContent: "(Bytes4,Number)"
-      },
-      {
-        name: "LSP10Vaults[]",
-        key: "0x55482936e01da86729a45d2b87a6b1d3bc582bea0ec00e38bdb340e3af6f9f06",
-        keyType: "Array",
-        valueType: "address",
-        valueContent: "Address"
-      }
-    ];
-    LSP12IssuedAssets_default = [
-      {
-        name: "LSP12IssuedAssets[]",
-        key: "0x7c8c3416d6cda87cd42c71ea1843df28ac4850354f988d55ee2eaa47b6dc05cd",
-        keyType: "Array",
-        valueType: "address",
-        valueContent: "Address"
-      },
-      {
-        name: "LSP12IssuedAssetsMap:<address>",
-        key: "0x74ac2555c10b9349e78f0000<address>",
-        keyType: "Mapping",
-        valueType: "(bytes4,uint128)",
-        valueContent: "(Bytes4,Number)"
-      }
-    ];
-    LSP17ContractExtension_default = [
-      {
-        name: "LSP17Extension:<bytes4>",
-        key: "0xcee78b4094da860110960000<bytes4>",
-        keyType: "Mapping",
-        valueType: "address",
-        valueContent: "Address"
-      }
-    ];
-    LSP1Schema = LSP1UniversalReceiverDelegate_default;
-    LSP3Schema = LSP3ProfileMetadata_default;
-    LSP4Schema = LSP4DigitalAsset_default2;
-    LSP4LegacySchema = LSP4DigitalAssetLegacy_default;
-    LSP5Schema = LSP5ReceivedAssets_default;
-    LSP6Schema = LSP6KeyManager_default;
-    LSP8Schema = LSP8IdentifiableDigitalAsset_default2;
-    LSP9Schema = LSP9Vault_default;
-    LSP10Schema = LSP10ReceivedVaults_default;
-    LSP12Schema = LSP12IssuedAssets_default;
-    LSP17Schema = LSP17ContractExtension_default;
-    AllSchemas = LSP1Schema.concat(
-      LSP3Schema,
-      LSP4Schema,
-      LSP4LegacySchema,
-      LSP5Schema,
-      LSP6Schema,
-      LSP8Schema,
-      LSP9Schema,
-      LSP10Schema,
-      LSP12Schema,
-      LSP17Schema
-    );
-  }
-});
-
-// node_modules/@erc725/erc725.js/build/schemas/index.mjs
-var init_schemas = __esm({
-  "node_modules/@erc725/erc725.js/build/schemas/index.mjs"() {
-    init_chunk_AHQT6NWT();
-  }
-});
-
 // src/lsp/abis.ts
+var abis_exports = {};
+__export(abis_exports, {
+  ERC1271_ABI: () => ERC1271_ABI,
+  ERC165_ABI: () => ERC165_ABI2,
+  KM_ABI: () => KM_ABI,
+  KM_INIT_ABI: () => KM_INIT_ABI,
+  LSP23_ABI: () => LSP23_ABI,
+  POST_DEPLOYMENT_MODULE_ABI: () => POST_DEPLOYMENT_MODULE_ABI,
+  UP_ABI: () => UP_ABI,
+  UP_INIT_ABI: () => UP_INIT_ABI
+});
 import { parseAbi as parseAbi4 } from "./vendor-viem.mjs";
 var UP_ABI, KM_ABI, LSP23_ABI, UP_INIT_ABI, KM_INIT_ABI, POST_DEPLOYMENT_MODULE_ABI, ERC165_ABI2, ERC1271_ABI;
 var init_abis = __esm({
@@ -6906,6 +5029,41 @@ var init_abis = __esm({
 });
 
 // src/lsp/constants.ts
+var constants_exports = {};
+__export(constants_exports, {
+  ADMIN_PERMISSIONS: () => ADMIN_PERMISSIONS,
+  ALL_PERMISSIONS: () => ALL_PERMISSIONS,
+  ALL_PERMISSIONS_HEX: () => ALL_PERMISSIONS_HEX,
+  CALLTYPE: () => CALLTYPE,
+  DATA_KEYS: () => DATA_KEYS,
+  ERC1271_FAIL: () => ERC1271_FAIL,
+  ERC1271_MAGIC: () => ERC1271_MAGIC,
+  ERC20_PROBES: () => ERC20_PROBES,
+  INTERFACE_IDS: () => INTERFACE_IDS2,
+  KNOWN_EXTENSION_SELECTORS: () => KNOWN_EXTENSION_SELECTORS,
+  LSP14_RENOUNCE_DELAY: () => LSP14_RENOUNCE_DELAY,
+  LSP14_RENOUNCE_PERIOD: () => LSP14_RENOUNCE_PERIOD,
+  LSP20_MAGIC: () => LSP20_MAGIC,
+  LSP25_VERSION: () => LSP25_VERSION,
+  OPERATIONS: () => OPERATIONS,
+  PERMISSIONS: () => PERMISSIONS,
+  PERMISSION_ALIASES: () => PERMISSION_ALIASES,
+  PERMISSION_BITS: () => PERMISSION_BITS,
+  PERMISSION_NAMES: () => PERMISSION_NAMES,
+  TYPE_IDS: () => TYPE_IDS,
+  URD_PERMISSIONS: () => URD_PERMISSIONS,
+  VERIFICATION_METHODS: () => VERIFICATION_METHODS,
+  WILDCARD_ADDRESS: () => WILDCARD_ADDRESS,
+  WILDCARD_BYTES4: () => WILDCARD_BYTES4,
+  allowedCallsKey: () => allowedCallsKey,
+  allowedDataKeysKey: () => allowedDataKeysKey,
+  extensionKey: () => extensionKey,
+  parseArrayLength: () => parseArrayLength,
+  permissionsArrayIndexKey: () => permissionsArrayIndexKey,
+  permissionsKey: () => permissionsKey,
+  uint128Hex: () => uint128Hex,
+  urdTypeKey: () => urdTypeKey
+});
 function permissionsKey(controller) {
   return DATA_KEYS.AddressPermissionsPermissionsPrefix + addr20(controller);
 }
@@ -6923,6 +5081,11 @@ function extensionKey(selector) {
   if (!/^[0-9a-f]{8}$/.test(s)) throw new Error(`invalid bytes4 selector: ${selector}`);
   return DATA_KEYS.LSP17ExtensionPrefix + s + "0".repeat(32);
 }
+function urdTypeKey(typeId) {
+  const t = typeId.toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]{64}$/.test(t)) throw new Error(`invalid bytes32 typeId: ${typeId}`);
+  return DATA_KEYS.LSP1UniversalReceiverDelegatePrefix + t.slice(0, 40);
+}
 function uint128Hex(n) {
   return "0x" + BigInt(n).toString(16).padStart(32, "0");
 }
@@ -6930,7 +5093,7 @@ function parseArrayLength(v) {
   if (!v || v === "0x") return 0n;
   return BigInt(v);
 }
-var PERMISSION_BITS, PERMISSION_NAMES, PERMISSIONS, PERMISSION_ALIASES, ALL_PERMISSIONS, URD_PERMISSIONS, ADMIN_PERMISSIONS, CALLTYPE, WILDCARD_ADDRESS, WILDCARD_BYTES4, DATA_KEYS, INTERFACE_IDS2, ERC1271_MAGIC, LSP25_VERSION, LSP14_RENOUNCE_DELAY, LSP14_RENOUNCE_PERIOD, KNOWN_EXTENSION_SELECTORS, addr20;
+var PERMISSION_BITS, PERMISSION_NAMES, PERMISSIONS, PERMISSION_ALIASES, ALL_PERMISSIONS, ALL_PERMISSIONS_HEX, URD_PERMISSIONS, ADMIN_PERMISSIONS, CALLTYPE, WILDCARD_ADDRESS, WILDCARD_BYTES4, DATA_KEYS, INTERFACE_IDS2, ERC20_PROBES, ERC1271_MAGIC, ERC1271_FAIL, LSP20_MAGIC, LSP25_VERSION, LSP14_RENOUNCE_DELAY, LSP14_RENOUNCE_PERIOD, TYPE_IDS, VERIFICATION_METHODS, OPERATIONS, KNOWN_EXTENSION_SELECTORS, addr20;
 var init_constants = __esm({
   "src/lsp/constants.ts"() {
     "use strict";
@@ -6985,6 +5148,7 @@ var init_constants = __esm({
       SUPER_STATIC_CALL: "SUPER_STATICCALL"
     };
     ALL_PERMISSIONS = 0x7f3f7fn;
+    ALL_PERMISSIONS_HEX = "0x00000000000000000000000000000000000000000000000000000000007f3f7f";
     URD_PERMISSIONS = PERMISSIONS.SUPER_SETDATA | PERMISSIONS.REENTRANCY;
     ADMIN_PERMISSIONS = PERMISSIONS.CHANGEOWNER | PERMISSIONS.ADDCONTROLLER | PERMISSIONS.EDITPERMISSIONS;
     CALLTYPE = {
@@ -7058,10 +5222,29 @@ var init_constants = __esm({
       ERC1155: "0xd9b67a26"
       // ERC-20 has no ERC-165 id: detect with probes (decimals()/totalSupply()/balanceOf()).
     };
+    ERC20_PROBES = { totalSupply: "0x18160ddd", balanceOf: "0x70a08231", decimals: "0x313ce567" };
     ERC1271_MAGIC = "0x1626ba7e";
+    ERC1271_FAIL = "0xffffffff";
+    LSP20_MAGIC = {
+      VERIFY_CALL_WITH_POST_VERIFICATION: "0xde928f01",
+      VERIFY_CALL_WITHOUT_POST_VERIFICATION: "0xde928f00",
+      VERIFY_CALL_RESULT: "0xd3fc45d3"
+    };
     LSP25_VERSION = 25n;
     LSP14_RENOUNCE_DELAY = 200n;
     LSP14_RENOUNCE_PERIOD = 200n;
+    TYPE_IDS = {
+      LSP0ValueReceived: "0x9c4705229491d365fb5434052e12a386d6771d976bea61070a8c694e8affea3d",
+      LSP0OwnershipTransferStarted: "0xe17117c9d2665d1dbeb479ed8058bbebde3c50ac50e2e65619f60006caac6926",
+      LSP0OwnershipTransferred_SenderNotification: "0xa4e59c931d14f7c8a7a35027f92ee40b5f2886b9fdcdb78f30bc5ecce5a2f814",
+      LSP0OwnershipTransferred_RecipientNotification: "0xceca317f109c43507871523e82dc2a3cc64dfa18f12da0b6db14f6e23f995538"
+    };
+    VERIFICATION_METHODS = {
+      "keccak256(utf8)": "0x6f357c6a",
+      "keccak256(bytes)": "0x8019f9b1",
+      ecdsa: "0xac75a10e"
+    };
+    OPERATIONS = { CALL: 0, CREATE: 1, CREATE2: 2, STATICCALL: 3, DELEGATECALL: 4 };
     KNOWN_EXTENSION_SELECTORS = {
       "0x3a871cdd": "validateUserOp (ERC-4337 v0.6, Extension4337)",
       "0x150b7a02": "onERC721Received (ERC-721 safe transfers)",
@@ -7410,6 +5593,7 @@ __export(profile_exports, {
 });
 import { getAddress as getAddress14, isAddress as isAddress11, keccak256 as keccak2568, toBytes, zeroAddress } from "./vendor-viem.mjs";
 import { ERC725 } from "./vendor-erc725.mjs";
+import { LSP3Schema } from "./vendor-erc725.mjs";
 async function resolveKeyManager(ctx, chainId, profile) {
   if (!await hasCode(ctx, chainId, profile)) {
     throw new UpError("NOT_DEPLOYED", `no contract at ${profile} on chain ${chainId}`, { hint: `deploy it there (up account deploy --profile ${profile} --chain ${chainId}) or pick the chain where it exists` });
@@ -7597,7 +5781,6 @@ function keyNameHash(name) {
 var init_profile = __esm({
   "src/lsp/profile.ts"() {
     "use strict";
-    init_schemas();
     init_errors();
     init_abis();
     init_constants();
@@ -7819,8 +6002,8 @@ var init_client = __esm({
 });
 
 // src/relayer/registry.ts
-var registry_exports = {};
-__export(registry_exports, {
+var registry_exports2 = {};
+__export(registry_exports2, {
   clientFor: () => clientFor,
   getCapabilities: () => getCapabilities,
   listRelayers: () => listRelayers,
@@ -8548,7 +6731,7 @@ async function deploymentCostWei(ctx, chainId, from) {
 }
 async function relayerCoverage(ctx, chainId, key) {
   try {
-    const { selectRelayer: selectRelayer2 } = await Promise.resolve().then(() => (init_registry2(), registry_exports));
+    const { selectRelayer: selectRelayer2 } = await Promise.resolve().then(() => (init_registry2(), registry_exports2));
     const r = await selectRelayer2(ctx, chainId);
     if (!r) return void 0;
     const profile = await ctx.profile(void 0, chainId).catch(() => void 0);
@@ -9312,7 +7495,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "28558cd0bed8" : "source";
+var SOURCE = true ? "5115054de027" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -9783,6 +7966,23 @@ defineVerb({
 });
 
 // src/signer/verbs.ts
+var verbs_exports2 = {};
+__export(verbs_exports2, {
+  MIN_PASSPHRASE_LENGTH: () => MIN_PASSPHRASE_LENGTH,
+  importRecorded: () => importRecorded,
+  initVerb: () => initVerb,
+  keptKeys: () => keptKeys,
+  keyActivateVerb: () => keyActivateVerb,
+  keyAddressVerb: () => keyAddressVerb,
+  keyBackendVerb: () => keyBackendVerb,
+  keyBackupVerb: () => keyBackupVerb,
+  keyNewCandidateVerb: () => keyNewCandidateVerb,
+  keyVerbs: () => keyVerbs,
+  readCandidates: () => readCandidates,
+  updateCandidates: () => updateCandidates,
+  withKeyLock: () => withKeyLock,
+  writeNewFileExclusive: () => writeNewFileExclusive
+});
 init_secret_guard();
 init_errors();
 init_home();
@@ -9801,7 +8001,7 @@ init_policy();
 init_registry();
 init_rpc();
 import { getAddress as getAddress10, isAddress as isAddress7 } from "./vendor-viem.mjs";
-import { readFileSync as readFileSync7, existsSync as existsSync13 } from "node:fs";
+import { readFileSync as readFileSync8, existsSync as existsSync13 } from "node:fs";
 var DEFAULT_CONFIG = { version: 1 };
 function upgradeConfig(raw) {
   if (!raw || typeof raw !== "object") return raw;
@@ -9907,7 +8107,7 @@ function createContext(opts) {
       if (v !== void 0 && v !== "") return registry2.chain(v).chainId;
       if (!cfgCache && existsSync13(paths.config(home))) {
         try {
-          const raw = JSON.parse(readFileSync7(paths.config(home), "utf8"));
+          const raw = JSON.parse(readFileSync8(paths.config(home), "utf8"));
           if (isJsonObject(raw)) {
             const c = { ...DEFAULT_CONFIG, ...upgradeConfig(raw) };
             cfgCache = c;
@@ -9962,6 +8162,12 @@ function checksum(a) {
 }
 
 // src/signer/inventory.ts
+var inventory_exports = {};
+__export(inventory_exports, {
+  inventoryFile: () => inventoryFile,
+  readInventory: () => readInventory,
+  recordKey: () => recordKey
+});
 init_home();
 import { readFile as readFile6 } from "node:fs/promises";
 import { join as join8 } from "node:path";
@@ -10139,12 +8345,12 @@ function sameAddress(a, b) {
 function sameKey(a, b) {
   return !a && !b || sameAddress(a, b);
 }
-async function createRecorded(home, backend) {
+async function storeRecorded(home, backendId, store2, note) {
   let recorded;
   try {
-    return await backend.create(async (address) => {
+    return await store2(async (address) => {
       try {
-        await recordKey(home, { address, backend: backend.id });
+        await recordKey(home, { address, backend: backendId, ...note ? { note } : {} });
       } catch (e) {
         throw new UpError("INTERNAL", `could not record the new key in ${inventoryFile(home)} (${e.message}); no key was created`, { hint: "fix the state directory (keys/), then retry" });
       }
@@ -10153,12 +8359,20 @@ async function createRecorded(home, backend) {
   } catch (e) {
     if (recorded) {
       const d = e?.details;
-      const note = d?.kept ? `kept after ${d.problem ?? "a failed check"}` : "creation failed; not stored";
-      await recordKey(home, { address: recorded, backend: backend.id, note, ...d?.kept ? {} : { notStored: true } }).catch(() => {
+      const why = d?.kept ? `kept after ${d.problem ?? "a failed check"}` : "creation failed; not stored";
+      await recordKey(home, { address: recorded, backend: backendId, note: why, ...d?.kept ? {} : { notStored: true } }).catch(() => {
       });
     }
     throw e;
   }
+}
+async function createRecorded(home, backend) {
+  return storeRecorded(home, backend.id, (before) => backend.create(before));
+}
+async function importRecorded(home, backend, privateKey, note) {
+  const importKey = backend.importKey;
+  if (!importKey) throw new UpError("NOT_SUPPORTED", `the ${backend.id} key store cannot import a key`, { hint: "choose another key store with --backend (up key backend lists them)" });
+  return storeRecorded(home, backend.id, (before) => importKey.call(backend, privateKey, before), note);
 }
 function requireController(cfg) {
   if (!cfg.controller) throw new UpError("NO_SIGNER", "no controller key is configured", { hint: "run: up init" });
@@ -10411,9 +8625,17 @@ async function writeNewFileExclusive(file2, content) {
       if (process.platform !== "win32") await chmod2(file2, 384).catch(() => {
       });
     }
-  } finally {
-    await rm4(tmp, { force: true });
+  } catch (e) {
+    await rm4(tmp, { force: true }).catch(() => {
+    });
+    throw e;
   }
+  try {
+    await rm4(tmp, { force: true });
+  } catch (e) {
+    return { warning: `the file was written, but the temporary copy ${tmp} could not be removed (${e.code ?? "error"}); it holds the same content and can be deleted by hand` };
+  }
+  return {};
 }
 var keyBackupVerb = defineVerb({
   name: "key backup",
@@ -10464,11 +8686,12 @@ var keyBackupVerb = defineVerb({
     const ks = await encryptKeystoreV3(key, passphrase);
     const check = await decryptKeystoreV3(ks, passphrase);
     if (check !== key) throw new UpError("INTERNAL", "backup verification failed; nothing was written");
-    await writeNewFileExclusive(file2, JSON.stringify(ks, null, 2) + "\n");
+    const written = await writeNewFileExclusive(file2, JSON.stringify(ks, null, 2) + "\n");
     ctx.log(`encrypted key backup written: ${file2}`);
     return {
       data: { path: file2, address: c.address, format: "keystore-v3", kdf, verified: true },
-      text: `Encrypted backup of ${c.address} written to ${file2} (Ethereum keystore v3). Keep the passphrase somewhere else — the file alone cannot be opened, the file plus passphrase controls the key.`
+      text: `Encrypted backup of ${c.address} written to ${file2} (Ethereum keystore v3). Keep the passphrase somewhere else — the file alone cannot be opened, the file plus passphrase controls the key.`,
+      ...written.warning ? { warnings: [written.warning] } : {}
     };
   }
 });
@@ -10662,6 +8885,91 @@ async function activateForChain(ctx, args, address, chainId) {
     ].filter(Boolean).join("\n")
   };
 }
+var keyVerbs = [initVerb, keyAddressVerb, keyBackendVerb, keyBackupVerb, keyNewCandidateVerb, keyActivateVerb];
+
+// src/backup/verbs.ts
+init_verbs();
+
+// src/backup/password.ts
+init_errors();
+var PASSWORD_PARAMS = [
+  { name: "password", type: "string", description: "The backup password the human chose and told you in chat (at least 12 characters, 16 or more is better). Omit to have one generated." },
+  { name: "password-env", type: "string", description: "Name of an environment variable that holds the backup password (read once, then removed from this process)." },
+  { name: "password-stdin", type: "boolean", description: "Read the backup password from standard input (CLI only; not available over MCP)." }
+];
+
+// src/backup/verbs.ts
+var MODES = ["encrypted", "public", "unencrypted"];
+var PASSWORD_HELP = [
+  ...PASSWORD_PARAMS,
+  { name: "generate-password", type: "boolean", description: "Generate a strong password (the default for export when no password is given); it is returned in data.password so you can tell the human." }
+];
+defineVerb({
+  name: "backup export",
+  group: "backup",
+  summary: "Make a backup file of the agent's profiles and keys that the Universal Profile mobile app can import (LSP-30), encrypted with a password by default.",
+  description: "Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) or at --path. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.",
+  risk: "secret",
+  params: [
+    { name: "path", type: "string", positional: 0, description: "Where to write the file (must not exist; its folder must exist). Default: <UP_HOME>/backups/universal-profiles-backup-YYYY-MM-DD.json." },
+    { name: "mode", type: "string", enum: MODES, default: "encrypted", description: "encrypted (keys locked with a password, default), public (no keys at all) or unencrypted (keys in plain text; dangerous)." },
+    { name: "profiles", type: "string[]", description: "Only these profiles (addresses or aliases). Default: every profile on this machine. The keys are always all of the agent's keys." },
+    ...PASSWORD_HELP,
+    { name: "hint", type: "string", description: "A hint for the password (up to 255 characters). It is stored unencrypted in the file and must not contain the password." },
+    { name: "explicit-consent", type: "boolean", default: false, description: "Required for --mode unencrypted: the human explicitly wants the keys in a file without a password." },
+    { name: "refresh", type: "boolean", default: false, description: "Also read each profile's current controllers from the networks (best effort, 8 seconds per network)." }
+  ],
+  examples: [`up backup export --approval "<the human's words>"`, "up backup export --mode public", 'up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval "<their words>"'],
+  run: (ctx, a) => import("./backup.mjs").then((m) => m.runExport(ctx, a))
+});
+defineVerb({
+  name: "backup list",
+  group: "backup",
+  summary: "The backups made on this machine, whether they cover the agent's current keys and profiles, and whether to offer the human a new one (`data.ask`).",
+  description: "Checks each backup in <UP_HOME>/backups/index.jsonl (still there, unchanged; no decryption) against the current keys and profiles. `data.ask` is null or a question for the human: ask it once in your own words, then run this with --mark-asked. Plain-text backups that still exist are flagged.",
+  risk: "local",
+  params: [{ name: "mark-asked", type: "boolean", default: false, description: "Record that the human has just been asked about a backup (no question is returned again until something changes)." }],
+  run: (ctx, a) => import("./backup.mjs").then((m) => m.runList(ctx, a))
+});
+defineVerb({
+  name: "backup inspect",
+  group: "backup",
+  summary: "Read a backup file (never decrypts it) and show what it contains: profiles, networks, controllers, the deployment data and whether it checks out, and every problem found.",
+  description: "Safe on any backup file, also one the human sent: no password, public data only (addresses, names as quoted text, the password hint). Re-derives each profile address from the file's deployment data; a mismatch means the file may be forged. Never prints encrypted data or any key.",
+  risk: "local",
+  params: [{ name: "path", type: "string", positional: 0, required: true, description: "Path of the backup file (for a chat attachment, the path the host saved it to)." }],
+  run: (ctx, a) => import("./backup.mjs").then((m) => m.runInspect(ctx, a))
+});
+defineVerb({
+  name: "backup verify",
+  group: "backup",
+  summary: "Open a backup file in memory with its password and check it: the keys inside (addresses only), which are already here, and with --online whether each profile could be restored.",
+  description: "The checks of backup import, changing nothing. Key addresses are derived from the keys, never trusted from the file. With --online each profile is checked on its networks the way the app does (a backup key still controls it, or the file proves a key created it). Prints addresses only.",
+  risk: "read",
+  params: [
+    { name: "path", type: "string", positional: 0, required: true, description: "Path of the backup file." },
+    ...PASSWORD_PARAMS,
+    { name: "online", type: "boolean", default: false, description: "Also check each profile on its networks (needs network access)." }
+  ],
+  run: (ctx, a) => import("./backup.mjs").then((m) => m.runVerify(ctx, a))
+});
+defineVerb({
+  name: "backup import",
+  group: "backup",
+  summary: "Restore profiles and keys from a backup file (made by this skill or by the Universal Profile app): keys go into a key store, profiles into the local records. Needs the human's approval.",
+  description: "The human sends the file as a chat attachment (the host saves it to a path) and the password in chat. A profile is restored only if the network shows a backup key still controls it, or the file proves a backup key created it (its deployment data re-derives the profile address); a file claiming someone else's profile is refused. Keys are permanent: none is overwritten or deleted, each new one is recorded before it is stored, one already here is skipped. Restored keys become additional keys; one becomes the active key only if none was set up. Restores the keys of the selected profiles, or all with --all-keys.",
+  risk: "secret",
+  params: [
+    { name: "path", type: "string", positional: 0, required: true, description: "Path of the backup file." },
+    ...PASSWORD_PARAMS,
+    { name: "profiles", type: "string[]", description: "Only these profiles of the file (addresses). Default: every profile that can be restored." },
+    { name: "backend", type: "string", description: "Key store for the restored keys (default: what `up init` would choose)." },
+    { name: "all-keys", type: "boolean", default: false, description: "Restore every key in the file, not only those of the selected profiles." },
+    { name: "offline", type: "boolean", default: false, description: "Skip the check on the networks. Only when the human's approval says 'offline' in their words." }
+  ],
+  examples: [`up backup import /path/to/universal-profiles-backup-2026-10-10.json --password-env BACKUP_PASSWORD --approval "<the human's words>"`],
+  run: (ctx, a) => import("./backup.mjs").then((m) => m.runImport(ctx, a))
+});
 
 // src/exec/verbs.ts
 import { decodeFunctionResult as decodeFunctionResult4, encodeFunctionData as encodeFunctionData11, getAddress as getAddress22, isAddress as isAddress14 } from "./vendor-viem.mjs";
@@ -10676,6 +8984,10 @@ init_profile();
 import { encodeFunctionData as encodeFunctionData7 } from "./vendor-viem.mjs";
 
 // src/exec/common.ts
+init_assets();
+init_errors();
+init_policy();
+init_abis();
 import {
   decodeEventLog as decodeEventLog2,
   decodeFunctionData as decodeFunctionData2,
@@ -10686,498 +8998,11 @@ import {
   zeroAddress as zeroAddress2
 } from "./vendor-viem.mjs";
 
-// skills/universal-profile/assets/abis/selectors.json
-var selectors_default = {
-  "0x6963d438": [
-    "batchCalls(bytes[] data) returns (bytes[] results)"
-  ],
-  "0xead3fbdf": [
-    "RENOUNCE_OWNERSHIP_CONFIRMATION_DELAY() view returns (uint256)"
-  ],
-  "0x01bfba61": [
-    "RENOUNCE_OWNERSHIP_CONFIRMATION_PERIOD() view returns (uint256)"
-  ],
-  "0xffa1ad74": [
-    "VERSION() view returns (string)"
-  ],
-  "0x79ba5097": [
-    "acceptOwnership()"
-  ],
-  "0x44c028fe": [
-    "execute(uint256 operationType, address target, uint256 value, bytes data) payable returns (bytes)"
-  ],
-  "0x31858452": [
-    "executeBatch(uint256[] operationsType, address[] targets, uint256[] values, bytes[] datas) payable returns (bytes[])"
-  ],
-  "0x54f6127f": [
-    "getData(bytes32 dataKey) view returns (bytes dataValue)"
-  ],
-  "0xdedff9c6": [
-    "getDataBatch(bytes32[] dataKeys) view returns (bytes[] dataValues)"
-  ],
-  "0x1626ba7e": [
-    "isValidSignature(bytes32 dataHash, bytes signature) view returns (bytes4 returnedStatus)",
-    "isValidSignature(bytes32 hash, bytes signature) view returns (bytes4 magicValue)"
-  ],
-  "0x8da5cb5b": [
-    "owner() view returns (address)"
-  ],
-  "0xe30c3978": [
-    "pendingOwner() view returns (address)"
-  ],
-  "0x715018a6": [
-    "renounceOwnership()"
-  ],
-  "0x7f23690c": [
-    "setData(bytes32 dataKey, bytes dataValue) payable"
-  ],
-  "0x97902421": [
-    "setDataBatch(bytes32[] dataKeys, bytes[] dataValues) payable"
-  ],
-  "0x01ffc9a7": [
-    "supportsInterface(bytes4 interfaceId) view returns (bool)"
-  ],
-  "0xf2fde38b": [
-    "transferOwnership(address pendingNewOwner)",
-    "transferOwnership(address newOwner)"
-  ],
-  "0x6bb56a14": [
-    "universalReceiver(bytes32 typeId, bytes receivedData) payable returns (bytes returnedValues)",
-    "universalReceiver(bytes32 typeId, bytes data) payable returns (bytes)"
-  ],
-  "0xc4d66de8": [
-    "initialize(address initialOwner) payable",
-    "initialize(address target_)",
-    "initialize(address newOwner) payable"
-  ],
-  "0xa245bbda": [
-    "universalReceiverDelegate(address sender, uint256 value, bytes32 typeId, bytes data) returns (bytes)",
-    "universalReceiverDelegate(address notifier, uint256, bytes32 typeId, bytes) returns (bytes)"
-  ],
-  "0xc6845210": [
-    "addGuardian(address account, address newGuardian)"
-  ],
-  "0x1ce59666": [
-    "cancelRecoveryProcess(address account)"
-  ],
-  "0xa9e3b276": [
-    "commitToRecover(address account, address votedAddress, bytes32 commitment)"
-  ],
-  "0x6289a163": [
-    "getCommitmentInfoOf(address account, uint256 recoveryCounter, address committedBy) view returns (bytes32, uint256)"
-  ],
-  "0x88095527": [
-    "getFirstRecoveryTimestampOf(address account, uint256 recoveryCounter) view returns (uint256)"
-  ],
-  "0x8ca4aaaf": [
-    "getGuardiansOf(address account) view returns (address[])"
-  ],
-  "0xdbd119bd": [
-    "getGuardiansThresholdOf(address account) view returns (uint256)"
-  ],
-  "0xcee79d45": [
-    "getRecoveryCounterOf(address account) view returns (uint256)"
-  ],
-  "0x02543bff": [
-    "getRecoveryDelayOf(address account) view returns (uint256)"
-  ],
-  "0x06fe1738": [
-    "getSecretHashOf(address account) view returns (bytes32)"
-  ],
-  "0x506d1a0f": [
-    "getVotedAddressByGuardian(address account, uint256 recoveryCounter, address guardian) view returns (address)"
-  ],
-  "0xa65068b6": [
-    "getVotesOfGuardianVotedAddress(address account, uint256 recoveryCounter, address votedAddress) view returns (uint256)"
-  ],
-  "0xd617b890": [
-    "hasReachedThreshold(address account, uint256 recoveryCounter, address votedAddress) view returns (bool)"
-  ],
-  "0x769e54df": [
-    "isGuardianOf(address account, address guardianAddress) view returns (bool)"
-  ],
-  "0xf3b3c785": [
-    "recoverAccess(address votedAddress, address account, bytes32 secretHash, bytes32 newSecretHash, bytes calldataToExecute) payable returns (bytes)",
-    "recoverAccess(address account, address votedAddress, bytes32 secretHash, bytes32 newSecretHash, bytes calldataToExecute) payable returns (bytes)"
-  ],
-  "0x9b27a90e": [
-    "removeGuardian(address account, address existingGuardian)"
-  ],
-  "0x639cea19": [
-    "setGuardiansThreshold(address account, uint256 newThreshold)"
-  ],
-  "0xa219b404": [
-    "setRecoveryDelay(address account, uint256 recoveryDelay)"
-  ],
-  "0x78f84ebd": [
-    "setRecoverySecretHash(address account, bytes32 newRecoverSecretHash)"
-  ],
-  "0xfa04a7f1": [
-    "voteForRecovery(address account, address guardian, address guardianVotedAddress)"
-  ],
-  "0xb79336ee": [
-    "COMMITMEMT_DELAY() view returns (uint256)"
-  ],
-  "0x8bc0ab75": [
-    "DEFAULT_RECOVERY_DELAY() view returns (uint256)"
-  ],
-  "0x4c8a4e74": [
-    "executeRelayCall(bytes signature, uint256 nonce, uint256 validityTimestamps, bytes payload) payable returns (bytes)"
-  ],
-  "0xa20856a5": [
-    "executeRelayCallBatch(bytes[] signatures, uint256[] nonces, uint256[] validityTimestamps, uint256[] values, bytes[] payloads) payable returns (bytes[])"
-  ],
-  "0xb44581d9": [
-    "getNonce(address from, uint128 channelId) view returns (uint256)"
-  ],
-  "0x3b315680": [
-    "computeAddress(bytes32 creationBytecodeHash, bytes32 providedSalt, bool initializable, bytes initializeCalldata) view returns (address)"
-  ],
-  "0xe888edcb": [
-    "computeERC1167Address(address implementationContract, bytes32 providedSalt, bool initializable, bytes initializeCalldata) view returns (address)"
-  ],
-  "0x26736355": [
-    "deployCreate2(bytes creationBytecode, bytes32 providedSalt) payable returns (address)"
-  ],
-  "0xcdbd473a": [
-    "deployCreate2AndInitialize(bytes creationBytecode, bytes32 providedSalt, bytes initializeCalldata, uint256 constructorMsgValue, uint256 initializeCalldataMsgValue) payable returns (address)"
-  ],
-  "0x49d8abed": [
-    "deployERC1167Proxy(address implementationContract, bytes32 providedSalt) returns (address)"
-  ],
-  "0x5340165f": [
-    "deployERC1167ProxyAndInitialize(address implementationContract, bytes32 providedSalt, bytes initializeCalldata) payable returns (address)"
-  ],
-  "0x1a17ccbf": [
-    "generateSalt(bytes32 providedSalt, bool initializable, bytes initializeCalldata) pure returns (bytes32)"
-  ],
-  "0x06fdde03": [
-    "name() view returns (string)"
-  ],
-  "0x95d89b41": [
-    "symbol() view returns (string)"
-  ],
-  "0xbc197c81": [
-    "onERC1155BatchReceived(address, address, uint256[], uint256[], bytes) returns (bytes4)"
-  ],
-  "0xf23a6e61": [
-    "onERC1155Received(address, address, uint256, uint256, bytes) returns (bytes4)"
-  ],
-  "0x150b7a02": [
-    "onERC721Received(address, address, uint256, bytes) returns (bytes4)"
-  ],
-  "0x0023de29": [
-    "tokensReceived(address operator, address from, address to, uint256 amount, bytes userData, bytes operatorData)"
-  ],
-  "0xb0d691fe": [
-    "entryPoint() view returns (address)"
-  ],
-  "0x3a871cdd": [
-    "validateUserOp((address sender, uint256 nonce, bytes initCode, bytes callData, uint256 callGasLimit, uint256 verificationGasLimit, uint256 preVerificationGas, uint256 maxFeePerGas, uint256 maxPriorityFeePerGas, bytes paymasterAndData, bytes signature) userOp, bytes32 userOpHash, uint256) returns (uint256)"
-  ],
-  "0xde928f14": [
-    "lsp20VerifyCall(address requestor, address target, address caller, uint256 value, bytes callData) returns (bytes4 returnedStatus)",
-    "lsp20VerifyCall(address, address targetContract, address caller, uint256 msgValue, bytes callData) returns (bytes4)"
-  ],
-  "0xd3fc45d3": [
-    "lsp20VerifyCallResult(bytes32 callHash, bytes callResult) returns (bytes4)",
-    "lsp20VerifyCallResult(bytes32, bytes) returns (bytes4)"
-  ],
-  "0xdd5940f3": [
-    "computeAddresses((bytes32 salt, uint256 fundingAmount, bytes creationBytecode) primaryContractDeployment, (uint256 fundingAmount, bytes creationBytecode, bool addPrimaryContractAddress, bytes extraConstructorParams) secondaryContractDeployment, address postDeploymentModule, bytes postDeploymentModuleCalldata) view returns (address primaryContractAddress, address secondaryContractAddress)"
-  ],
-  "0x72b19d36": [
-    "computeERC1167Addresses((bytes32 salt, uint256 fundingAmount, address implementationContract, bytes initializationCalldata) primaryContractDeploymentInit, (uint256 fundingAmount, address implementationContract, bytes initializationCalldata, bool addPrimaryContractAddress, bytes extraInitializationParams) secondaryContractDeploymentInit, address postDeploymentModule, bytes postDeploymentModuleCalldata) view returns (address primaryContractAddress, address secondaryContractAddress)"
-  ],
-  "0x754b86b5": [
-    "deployContracts((bytes32 salt, uint256 fundingAmount, bytes creationBytecode) primaryContractDeployment, (uint256 fundingAmount, bytes creationBytecode, bool addPrimaryContractAddress, bytes extraConstructorParams) secondaryContractDeployment, address postDeploymentModule, bytes postDeploymentModuleCalldata) payable returns (address primaryContractAddress, address secondaryContractAddress)"
-  ],
-  "0x6a66a753": [
-    "deployERC1167Proxies((bytes32 salt, uint256 fundingAmount, address implementationContract, bytes initializationCalldata) primaryContractDeploymentInit, (uint256 fundingAmount, address implementationContract, bytes initializationCalldata, bool addPrimaryContractAddress, bytes extraInitializationParams) secondaryContractDeploymentInit, address postDeploymentModule, bytes postDeploymentModuleCalldata) payable returns (address primaryContractAddress, address secondaryContractAddress)"
-  ],
-  "0x28c4d14e": [
-    "executePostDeployment(address primaryContract, address secondaryContract, bytes calldataToPostDeploymentModule)",
-    "executePostDeployment(address universalProfile, address keyManager, bytes setDataBatchBytes)"
-  ],
-  "0x4f04d60a": [
-    "setDataAndTransferOwnership(bytes32[] dataKeys, bytes[] dataValues, address newOwner) payable"
-  ],
-  "0x4dbf27cc": [
-    "follow(address addr)"
-  ],
-  "0xcf8711c8": [
-    "followBatch(address[] addresses)"
-  ],
-  "0x30b3a890": [
-    "followerCount(address addr) view returns (uint256)"
-  ],
-  "0x64548707": [
-    "followingCount(address addr) view returns (uint256)"
-  ],
-  "0xb2a8d069": [
-    "getFollowersByIndex(address addr, uint256 startIndex, uint256 endIndex) view returns (address[])"
-  ],
-  "0x5a39c581": [
-    "getFollowsByIndex(address addr, uint256 startIndex, uint256 endIndex) view returns (address[])"
-  ],
-  "0x99ec3a42": [
-    "isFollowing(address follower, address addr) view returns (bool)"
-  ],
-  "0x015a4ead": [
-    "unfollow(address addr)"
-  ],
-  "0x8dd1e47e": [
-    "unfollowBatch(address[] addresses)"
-  ],
-  "0x4821954f": [
-    "toLSP4MetadataJSON(string name, string description, (string title, string url)[] links, (string key, string value, string valueType)[] attributes, ((uint256 width, uint256 height, string url, (string method, bytes32 data) verification)[] icons, (address contractAddress)[] lsp7icons, (address contractAddress, bytes32 tokenId)[] lsp8icons) icons, (((uint256 width, uint256 height, string url, (string method, bytes32 data) verification)[] images, (address contractAddress)[] lsp7images, (address contractAddress, bytes32 tokenId)[] lsp8images)[] imageFields) images, ((string url, string fileType, (string method, bytes32 data) verification)[] assets, (address contractAddress)[] lsp7assets, (address contractAddress, bytes32 tokenId)[] lsp8assets) assets) pure returns (string)"
-  ],
-  "0x09c5eabe": [
-    "execute(bytes payload) payable returns (bytes)"
-  ],
-  "0xbf0176ff": [
-    "executeBatch(uint256[] values, bytes[] payloads) payable returns (bytes[])"
-  ],
-  "0xd4b83992": [
-    "target() view returns (address)"
-  ],
-  "0xb49506fd": [
-    "authorizeOperator(address operator, uint256 amount, bytes operatorNotificationData)"
-  ],
-  "0x65aeaa95": [
-    "authorizedAmountFor(address operator, address tokenOwner) view returns (uint256)"
-  ],
-  "0x70a08231": [
-    "balanceOf(address tokenOwner) view returns (uint256)"
-  ],
-  "0x313ce567": [
-    "decimals() view returns (uint8)"
-  ],
-  "0x78381670": [
-    "decreaseAllowance(address operator, address tokenOwner, uint256 subtractedAmount, bytes operatorNotificationData)"
-  ],
-  "0xd72fc29a": [
-    "getOperatorsOf(address tokenOwner) view returns (address[])"
-  ],
-  "0x2bc1da82": [
-    "increaseAllowance(address operator, uint256 addedAmount, bytes operatorNotificationData)"
-  ],
-  "0x30d0dc37": [
-    "revokeOperator(address operator, address tokenOwner, bool notify, bytes operatorNotificationData)"
-  ],
-  "0x18160ddd": [
-    "totalSupply() view returns (uint256)"
-  ],
-  "0x760d9bba": [
-    "transfer(address from, address to, uint256 amount, bool force, bytes data)"
-  ],
-  "0x2d7667c9": [
-    "transferBatch(address[] from, address[] to, uint256[] amount, bool[] force, bytes[] data)"
-  ],
-  "0xa217fddf": [
-    "DEFAULT_ADMIN_ROLE() view returns (bytes32)"
-  ],
-  "0x248a9ca3": [
-    "getRoleAdmin(bytes32 role) view returns (bytes32)"
-  ],
-  "0x9010d07c": [
-    "getRoleMember(bytes32 role, uint256 index) view returns (address)"
-  ],
-  "0xca15c873": [
-    "getRoleMemberCount(bytes32 role) view returns (uint256)"
-  ],
-  "0xa3246ad3": [
-    "getRoleMembers(bytes32 role) view returns (address[])"
-  ],
-  "0x2f2ff15d": [
-    "grantRole(bytes32 role, address account)"
-  ],
-  "0x91d14854": [
-    "hasRole(bytes32 role, address account) view returns (bool)"
-  ],
-  "0x36568abe": [
-    "renounceRole(bytes32 role, address callerConfirmation)",
-    "renounceRole(bytes32 role, address account)"
-  ],
-  "0xd547741f": [
-    "revokeRole(bytes32 role, address account)"
-  ],
-  "0x2de94807": [
-    "rolesOf(address account) view returns (bytes32[])"
-  ],
-  "0x1e4e0091": [
-    "setRoleAdmin(bytes32 role, bytes32 adminRole)"
-  ],
-  "0x44d17187": [
-    "burn(address from, uint256 amount, bytes data)"
-  ],
-  "0xd1ca0188": [
-    "tokenBalanceCap() view returns (uint256)"
-  ],
-  "0x94187753": [
-    "UNCAPPED_BALANCE_ROLE() view returns (bytes32)"
-  ],
-  "0x52058d8a": [
-    "tokenSupplyCap() view returns (uint256)"
-  ],
-  "0x7e5cd5c1": [
-    "disableMinting()"
-  ],
-  "0x7580d920": [
-    "mint(address to, uint256 amount, bool force, bytes data)"
-  ],
-  "0xd5391393": [
-    "MINTER_ROLE() view returns (bytes32)"
-  ],
-  "0x46b45af7": [
-    "isMintable() view returns (bool)"
-  ],
-  "0x2121dc75": [
-    "isTransferable() view returns (bool)"
-  ],
-  "0x696fd68c": [
-    "makeTransferable()"
-  ],
-  "0xecff3a0c": [
-    "transferLockEnabled() view returns (bool)"
-  ],
-  "0x8fb05730": [
-    "transferLockEnd() view returns (uint256)"
-  ],
-  "0xe6fc6098": [
-    "transferLockStart() view returns (uint256)"
-  ],
-  "0x45e14c46": [
-    "updateTransferLockPeriod(uint256 newTransferLockStart, uint256 newTransferLockEnd)"
-  ],
-  "0x12318ac4": [
-    "NON_TRANSFERABLE_BYPASS_ROLE() view returns (bytes32)"
-  ],
-  "0xc282ca78": [
-    "disableRevokable()"
-  ],
-  "0x9e045773": [
-    "isRevokable() view returns (bool)"
-  ],
-  "0xf5fb0b0c": [
-    "revoke(address from, address to, uint256 amount, bytes data)"
-  ],
-  "0x7c4acabf": [
-    "REVOKER_ROLE() view returns (bytes32)"
-  ],
-  "0x4bf5d7e9": [
-    "CLOCK_MODE() view returns (string)"
-  ],
-  "0x3644e515": [
-    "DOMAIN_SEPARATOR() view returns (bytes32)"
-  ],
-  "0xf1127ed8": [
-    "checkpoints(address account, uint32 pos) view returns ((uint32 fromBlock, uint224 votes))"
-  ],
-  "0x91ddadf4": [
-    "clock() view returns (uint48)"
-  ],
-  "0x5c19a95c": [
-    "delegate(address delegatee)"
-  ],
-  "0xc3cda520": [
-    "delegateBySig(address delegatee, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s)"
-  ],
-  "0x587cde1e": [
-    "delegates(address account) view returns (address)"
-  ],
-  "0x84b0196e": [
-    "eip712Domain() view returns (bytes1 fields, string name, string version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] extensions)"
-  ],
-  "0x8e539e8c": [
-    "getPastTotalSupply(uint256 timepoint) view returns (uint256)"
-  ],
-  "0x3a46b1a8": [
-    "getPastVotes(address account, uint256 timepoint) view returns (uint256)"
-  ],
-  "0x9ab24eb0": [
-    "getVotes(address account) view returns (uint256)"
-  ],
-  "0x7ecebe00": [
-    "nonces(address owner) view returns (uint256)"
-  ],
-  "0x6fcfff45": [
-    "numCheckpoints(address account) view returns (uint32)"
-  ],
-  "0x15f71630": [
-    "initialize(string name_, string symbol_, address newOwner_, uint256 lsp4TokenType_, bool isNonDivisible_, (bool isMintable, uint256 initialMintAmount) mintableParams, (uint256 tokenBalanceCap, uint256 tokenSupplyCap) cappedParams, (uint256 transferLockStart, uint256 transferLockEnd) nonTransferableParams, (bool isRevokable) revokableParams)"
-  ],
-  "0x04689a81": [
-    "initialize(string name_, string symbol_, address newOwner_, uint256 lsp4TokenType_, bool isNonDivisible_)"
-  ],
-  "0x86a10ddd": [
-    "authorizeOperator(address operator, bytes32 tokenId, bytes operatorNotificationData)"
-  ],
-  "0x1d26fce6": [
-    "getDataBatchForTokenIds(bytes32[] tokenIds, bytes32[] dataKeys) returns (bytes[] dataValues)",
-    "getDataBatchForTokenIds(bytes32[] tokenIds, bytes32[] dataKeys) view returns (bytes[] dataValues)"
-  ],
-  "0x16e023b3": [
-    "getDataForTokenId(bytes32 tokenId, bytes32 dataKey) returns (bytes dataValues)",
-    "getDataForTokenId(bytes32 tokenId, bytes32 dataKey) view returns (bytes dataValue)"
-  ],
-  "0x49a6078d": [
-    "getOperatorsOf(bytes32 tokenId) view returns (address[])"
-  ],
-  "0x2a3654a4": [
-    "isOperatorFor(address operator, bytes32 tokenId) view returns (bool)"
-  ],
-  "0xdb8c9663": [
-    "revokeOperator(address operator, bytes32 tokenId, bool notify, bytes operatorNotificationData)"
-  ],
-  "0xbe9f0e6f": [
-    "setDataBatchForTokenIds(bytes32[] tokenIds, bytes32[] dataKeys, bytes[] dataValues)"
-  ],
-  "0xd6c1407c": [
-    "setDataForTokenId(bytes32 tokenId, bytes32 dataKey, bytes dataValue)"
-  ],
-  "0xa3b261f2": [
-    "tokenIdsOf(address tokenOwner) view returns (bytes32[])"
-  ],
-  "0x217b2270": [
-    "tokenOwnerOf(bytes32 tokenId) view returns (address)"
-  ],
-  "0x511b6952": [
-    "transfer(address from, address to, bytes32 tokenId, bool force, bytes data)"
-  ],
-  "0x7e87632c": [
-    "transferBatch(address[] from, address[] to, bytes32[] tokenId, bool[] force, bytes[] data)"
-  ],
-  "0x6c79b70b": [
-    "burn(bytes32 tokenId, bytes data)"
-  ],
-  "0x92a91a3a": [
-    "tokenAt(uint256 index) view returns (bytes32)"
-  ],
-  "0xaf255b61": [
-    "mint(address to, bytes32 tokenId, bool force, bytes data)"
-  ],
-  "0x84bfc8eb": [
-    "revoke(address from, address to, bytes32 tokenId, bytes data)"
-  ],
-  "0x48c4f93e": [
-    "initialize(string name_, string symbol_, address newOwner_, uint256 lsp4TokenType_, uint256 lsp8TokenIdFormat_, (bool isMintable, bytes32[] initialMintTokenIds) mintableParams, (uint256 tokenBalanceCap, uint256 tokenSupplyCap) cappedParams, (uint256 transferLockStart, uint256 transferLockEnd) nonTransferableParams, (bool isRevokable) revokableParams)"
-  ],
-  "0x74823132": [
-    "initialize(string name_, string symbol_, address newOwner_, uint256 lsp4TokenType_, uint256 lsp8TokenIdFormat_)"
-  ]
-};
-
-// src/exec/common.ts
-init_errors();
-init_policy();
-init_abis();
-
 // src/lsp/schemas.ts
-init_schemas();
 init_constants();
 import { ERC725 as ERC7252, encodeArrayKey as encodeArrayKey2 } from "./vendor-erc725.mjs";
-var SCHEMAS2 = [...LSP1Schema, ...LSP3Schema, ...LSP4Schema, ...LSP5Schema, ...LSP6Schema, ...LSP8Schema, ...LSP9Schema, ...LSP10Schema, ...LSP12Schema, ...LSP17Schema];
+import { LSP1Schema, LSP3Schema as LSP3Schema2, LSP4Schema, LSP5Schema, LSP6Schema, LSP8Schema, LSP9Schema, LSP10Schema, LSP12Schema, LSP17Schema } from "./vendor-erc725.mjs";
+var SCHEMAS2 = [...LSP1Schema, ...LSP3Schema2, ...LSP4Schema, ...LSP5Schema, ...LSP6Schema, ...LSP8Schema, ...LSP9Schema, ...LSP10Schema, ...LSP12Schema, ...LSP17Schema];
 var strip2 = (h) => h.toLowerCase().replace(/^0x/, "");
 var isKeyHex = (s) => /^0x[0-9a-fA-F]{64}$/.test(s);
 var PLACEHOLDER_RE = {
@@ -11282,7 +9107,7 @@ function allowedKeyFor(input) {
 // src/exec/common.ts
 init_transport();
 var OPERATION_NAMES = { 0: "CALL", 1: "CREATE", 2: "CREATE2", 3: "STATICCALL", 4: "DELEGATECALL" };
-var SELECTORS = selectors_default;
+var SELECTORS = assetJson("abis", "selectors.json");
 function decodeCalldata2(data, abi2) {
   if (!data || data === "0x") return { source: "value-transfer" };
   if (abi2) {
@@ -11885,7 +9710,7 @@ init_errors();
 init_assets();
 init_transport();
 init_secret_guard();
-import { readFileSync as readFileSync8, existsSync as existsSync15 } from "node:fs";
+import { readFileSync as readFileSync9, existsSync as existsSync15 } from "node:fs";
 import { join as join10 } from "node:path";
 import { encodeFunctionData as encodeFunctionData10, getAddress as getAddress21, isAddress as isAddress13, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
 function parseValue(v) {
@@ -11924,7 +9749,7 @@ function loadAbi(spec) {
     assertNotKeyMaterialPath(s, "an ABI");
     let j;
     try {
-      j = JSON.parse(readFileSync8(s, "utf8"));
+      j = JSON.parse(readFileSync9(s, "utf8"));
     } catch {
       throw new UpError("BAD_ARGS", `ABI file ${s} is not valid JSON`);
     }
@@ -11934,7 +9759,7 @@ function loadAbi(spec) {
   for (const dir of ["lsp", "reference", "deployed"]) {
     const f = join10(assetsDir(), "abis", dir, `${base}.json`);
     if (existsSync15(f)) {
-      const j = JSON.parse(readFileSync8(f, "utf8"));
+      const j = JSON.parse(readFileSync9(f, "utf8"));
       return { abi: Array.isArray(j) ? j : j.abi, source: `bundled:${dir}/${base}` };
     }
   }
@@ -12446,11 +10271,11 @@ init_allowed();
 init_constants();
 
 // src/lsp/lsp3.ts
-init_schemas();
 init_errors();
 init_json();
 init_constants();
 import { ERC725 as ERC7253 } from "./vendor-erc725.mjs";
+import { LSP3Schema as LSP3Schema3 } from "./vendor-erc725.mjs";
 import { keccak256 as keccak25614, toBytes as toBytes4 } from "./vendor-viem.mjs";
 var LSP3_FIELDS = ["name", "description", "links", "tags", "profile-image", "background-image", "avatar"];
 var FIELD_PROP = { name: "name", description: "description", links: "links", tags: "tags", "profile-image": "profileImage", "background-image": "backgroundImage", avatar: "avatar" };
@@ -12624,14 +10449,14 @@ function serialiseLsp3(json2) {
   return { text, bytes, hash: keccak25614(bytes) };
 }
 function encodeLsp3Value(url, jsonHash) {
-  const enc = ERC7253.encodeData([{ keyName: "LSP3Profile", value: { verification: { method: "keccak256(utf8)", data: jsonHash }, url } }], LSP3Schema);
+  const enc = ERC7253.encodeData([{ keyName: "LSP3Profile", value: { verification: { method: "keccak256(utf8)", data: jsonHash }, url } }], LSP3Schema3);
   if (enc.keys[0]?.toLowerCase() !== DATA_KEYS.LSP3Profile) throw new Error("erc725.js returned an unexpected key for LSP3Profile");
   return enc.values[0];
 }
 function decodeLsp3Value(raw) {
   if (!raw || raw === "0x") return void 0;
   try {
-    const v = ERC7253.decodeData([{ keyName: "LSP3Profile", value: raw }], LSP3Schema)[0]?.value;
+    const v = ERC7253.decodeData([{ keyName: "LSP3Profile", value: raw }], LSP3Schema3)[0]?.value;
     if (!v || typeof v.url !== "string") return void 0;
     return { url: v.url, verification: v.verification ? { method: String(v.verification.method), data: String(v.verification.data) } : void 0 };
   } catch {
@@ -13146,7 +10971,11 @@ defineVerb({
     } else if (out.status === "deployed") {
       say = `Done! My profile now exists on ${chainName6}:
 ${m.profile}`;
-      next = ["Send the profile address with its QR (up display address <profile> --chain <id>) and say where money for the profile goes: the profile address, never the gas address.", ...metadataNext];
+      next = [
+        "Send the profile address with its QR (up display address <profile> --chain <id>) and say where money for the profile goes: the profile address, never the gas address.",
+        ...metadataNext,
+        'Later, once, offer the human a backup of the account (a file plus a password they keep safe, restorable in the Universal Profile app): run up backup list; if data.ask is set, ask its question (references/onboarding.md, "Backup"). A new key or profile makes it ask again.'
+      ];
     } else if (out.status === "already-deployed") {
       say = `My profile already exists on ${chainName6}:
 ${m.profile}`;
@@ -13586,7 +11415,9 @@ defineVerb({
       await updateProfileRecord(ctx.home, identity, (latest) => {
         const next = { ...chainAddressesOf(latest) };
         delete next[String(chainId)];
-        return { chainAddresses: next };
+        const evidence = { ...latest.linkEvidence ?? {} };
+        delete evidence[String(chainId)];
+        return { chainAddresses: next, linkEvidence: evidence };
       });
       return { data: { profile: identity, chainId, linked: null, removedLink: previous, changed: true }, text: `On ${where} your profile is ${identity} again (link to ${previous} removed).` };
     }
@@ -13618,7 +11449,12 @@ defineVerb({
     };
     await ctx.consent({ verb: "profile link", risk: "admin", chainId, summary, target: address });
     if (ctx.flags.dryRun) return { data: { dryRun: true, ...summary }, text: `DRY RUN: on ${where} your profile would be ${address}.`, warnings };
-    await updateProfileRecord(ctx.home, identity, (latest) => ({ chainAddresses: { ...chainAddressesOf(latest), [String(chainId)]: address } }));
+    await updateProfileRecord(ctx.home, identity, (latest) => {
+      const evidence = { ...latest.linkEvidence ?? {} };
+      if (agentKey && agentIsController === true) evidence[String(chainId)] = { address, controllers: [agentKey], checkedAt: (/* @__PURE__ */ new Date()).toISOString() };
+      else delete evidence[String(chainId)];
+      return { chainAddresses: { ...chainAddressesOf(latest), [String(chainId)]: address }, linkEvidence: evidence };
+    });
     return {
       data: { profile: identity, chainId, linked: address, previousLink: previous ?? null, keyManager: km.keyManager, agentKey: agentKey ?? null, agentIsController: agentIsController ?? null, changed: true },
       text: `On ${where} your Universal Profile ${identity} is now the contract ${address} (Key Manager ${km.keyManager}). The agent acts as ${address} there; every other chain keeps ${identity}.`,
@@ -19682,7 +17518,7 @@ EIP-681: ${eip681.content}` : ""}`,
 init_verbs();
 init_errors();
 init_assets();
-import { existsSync as existsSync16, readdirSync as readdirSync2, readFileSync as readFileSync9 } from "node:fs";
+import { existsSync as existsSync16, readdirSync as readdirSync2, readFileSync as readFileSync10 } from "node:fs";
 import { join as join12 } from "node:path";
 
 // src/knowledge/standards.ts
@@ -19752,7 +17588,7 @@ function listDocTopics() {
   const dir = referencesDir();
   if (!existsSync16(dir)) return [];
   return readdirSync2(dir, { withFileTypes: true }).filter((d) => d.isFile() && d.name.endsWith(".md")).map((d) => {
-    const text = readFileSync9(join12(dir, d.name), "utf8");
+    const text = readFileSync10(join12(dir, d.name), "utf8");
     return { topic: d.name.slice(0, -3), file: `references/${d.name}`, ...describe(text), lines: text.split(/\r?\n/).length };
   }).sort((a, b) => a.topic.localeCompare(b.topic));
 }
@@ -19773,7 +17609,7 @@ function readDoc(rawTopic) {
       details: { topics: topics.map((d) => d.topic) }
     });
   }
-  return { doc, content: readFileSync9(join12(skillDir(), doc.file), "utf8") };
+  return { doc, content: readFileSync10(join12(skillDir(), doc.file), "utf8") };
 }
 defineVerb({
   name: "docs",
@@ -20180,13 +18016,47 @@ async function runCli(argv) {
 // src/mcp/server.ts
 init_verbs();
 import { createInterface } from "node:readline";
-import { readdirSync as readdirSync3, readFileSync as readFileSync10, existsSync as existsSync17 } from "node:fs";
+import { readdirSync as readdirSync3, readFileSync as readFileSync11, existsSync as existsSync17 } from "node:fs";
 import { join as join13 } from "node:path";
 init_lock();
 init_errors();
 init_json();
 init_assets();
 init_secret_guard();
+
+// src/core/safe-text.ts
+var safe_text_exports = {};
+__export(safe_text_exports, {
+  KEY_WITHHELD: () => KEY_WITHHELD,
+  canonicalDateTime: () => canonicalDateTime,
+  looksLikeKey: () => looksLikeKey,
+  safeEcho: () => safeEcho,
+  safeFileText: () => safeFileText
+});
+var INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]/g;
+var SPREAD = /(?<=[0-9a-f])[\s_.,:;'"`|/\\-]+(?=[0-9a-f])/gi;
+var KEY_WITHHELD = "[withheld: looks like key material]";
+function looksLikeKey(text) {
+  const t = text.replace(INVISIBLE, "");
+  return /[0-9a-f]{64}/i.test(t) || /[0-9a-f]{64}/i.test(t.replace(SPREAD, ""));
+}
+function safeFileText(value, max = 80) {
+  const raw = typeof value === "string" ? value : value === void 0 || value === null ? "" : String(value);
+  if (looksLikeKey(raw)) return KEY_WITHHELD;
+  const t = raw.replace(INVISIBLE, " ").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+function safeEcho(value, max = 64) {
+  const raw = typeof value === "string" ? value : value === void 0 || value === null ? "" : typeof value === "object" ? "[object]" : String(value);
+  const t = raw.replace(INVISIBLE, " ").replace(/[0-9a-f]{32,}/gi, "<hidden>").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+var ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+function canonicalDateTime(value) {
+  return typeof value === "string" && ISO_DATE_TIME.test(value) && !Number.isNaN(Date.parse(value)) ? value : void 0;
+}
+
+// src/mcp/server.ts
 var PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 var writeQueue = Promise.resolve();
 function serialised(fn) {
@@ -20253,7 +18123,7 @@ risk: ${v.risk}`,
         });
       case "tools/call": {
         const v = verbFromToolName(params?.name);
-        if (!v) return fail(-32602, `unknown tool ${params?.name}`);
+        if (!v) return fail(-32602, `unknown tool ${safeEcho(params?.name)}`);
         try {
           const args = coerceArgs(v, params?.arguments ?? {});
           const execute = async () => {
@@ -20269,7 +18139,7 @@ risk: ${v.risk}`,
           const payload = redact({ ok: true, verb: v.name, data: r.data, media: r.media, warnings: r.warnings });
           const content = [{ type: "text", text: (r.text ? r.text + "\n\n" : "") + JSON.stringify(payload, replacer, 2) }];
           for (const m of r.media ?? []) {
-            if (m.mimeType.startsWith("image/") && existsSync17(m.path)) content.push({ type: "image", data: readFileSync10(m.path).toString("base64"), mimeType: m.mimeType });
+            if (m.mimeType.startsWith("image/") && existsSync17(m.path)) content.push({ type: "image", data: readFileSync11(m.path).toString("base64"), mimeType: m.mimeType });
           }
           return ok({ content, structuredContent: JSON.parse(JSON.stringify(payload, replacer)), isError: false });
         } catch (e) {
@@ -20282,17 +18152,18 @@ risk: ${v.risk}`,
         return ok({ resources: referenceFiles().map((r) => ({ uri: r.uri, name: r.name, mimeType: "text/markdown" })) });
       case "resources/read": {
         const r = referenceFiles().find((x) => x.uri === params?.uri);
-        if (!r) return fail(-32602, `unknown resource ${params?.uri}`);
-        return ok({ contents: [{ uri: r.uri, mimeType: "text/markdown", text: readFileSync10(r.path, "utf8") }] });
+        if (!r) return fail(-32602, `unknown resource ${safeEcho(params?.uri)}`);
+        return ok({ contents: [{ uri: r.uri, mimeType: "text/markdown", text: readFileSync11(r.path, "utf8") }] });
       }
       default:
-        return fail(-32601, `method not found: ${method}`);
+        return fail(-32601, `method not found: ${safeEcho(method)}`);
     }
   } catch (e) {
-    return fail(-32603, e.message);
+    return fail(-32603, safeEcho(e.message, 300));
   }
 }
 async function runMcpServer() {
+  process.env.UP_MCP_SERVER = "1";
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
   const pending = /* @__PURE__ */ new Set();
   rl.on("line", (line) => {
@@ -20321,7 +18192,79 @@ async function runMcpServer() {
 
 // src/app.ts
 init_verbs();
+
+// app.ts
+init_registry();
+init_errors();
+init_home();
+init_json();
+init_profile_record();
+
+// src/core/public-record.ts
+var public_record_exports = {};
+__export(public_record_exports, {
+  assertNoKeyMaterial: () => assertNoKeyMaterial,
+  holdsKeyMaterial: () => holdsKeyMaterial,
+  textHoldsKey: () => textHoldsKey
+});
+init_errors();
+init_secret_guard();
+var TEXT_FIELDS = /* @__PURE__ */ new Set(["name", "type", "hint", "passwordHint", "encryptionType", "backupDate", "file", "path", "destination", "alias", "label", "note", "effect", "say", "message", "chain", "network"]);
+var PURE_HEX = /^(0x)?[0-9a-f]*$/i;
+var MAX_DEPTH = 24;
+function textHoldsKey(text) {
+  return containsSecret(text) || containsSecret(text.replace(/[^0-9a-z]/gi, "")) || looksLikeKey(text);
+}
+function holdsKeyMaterial(value) {
+  const seen = /* @__PURE__ */ new Set();
+  const walk = (v, field, depth) => {
+    if (typeof v === "string") {
+      if (PURE_HEX.test(v) && !TEXT_FIELDS.has(field)) return containsSecret(v);
+      return textHoldsKey(v);
+    }
+    if (v === null || typeof v !== "object") return false;
+    if (seen.has(v) || depth > MAX_DEPTH) return false;
+    seen.add(v);
+    if (Array.isArray(v)) return v.some((x) => walk(x, field, depth + 1));
+    return Object.entries(v).some(([k, x]) => textHoldsKey(k) || walk(x, k, depth + 1));
+  };
+  return walk(value, "", 0);
+}
+function assertNoKeyMaterial(what, value) {
+  if (holdsKeyMaterial(value)) throw new UpError("BAD_ARGS", `${what} holds private key material (or text shaped like it); nothing was changed`, { hint: "rename or replace it" });
+}
+
+// app.ts
+init_secret_guard();
+init_abis();
+init_constants();
+init_lsp23();
+init_permissions();
+init_profile();
+init_read2();
+init_signer();
+init_local_signer();
+init_select();
 export {
+  registry_exports as $s0,
+  errors_exports as $s1,
+  lsp23_exports as $s10,
+  permissions_exports as $s11,
+  profile_exports as $s12,
+  read_exports as $s13,
+  signer_exports as $s14,
+  inventory_exports as $s15,
+  local_signer_exports as $s16,
+  select_exports as $s17,
+  verbs_exports2 as $s18,
+  home_exports as $s2,
+  json_exports as $s3,
+  profile_record_exports as $s4,
+  public_record_exports as $s5,
+  safe_text_exports as $s6,
+  secret_guard_exports as $s7,
+  abis_exports as $s8,
+  constants_exports as $s9,
   GLOBAL_PARAMS,
   allVerbs,
   handleMcpMessage,
