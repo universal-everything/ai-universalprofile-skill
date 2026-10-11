@@ -98,8 +98,11 @@ describe("backup export (encrypted)", () => {
     const r = await run("backup export", {}, { approval: APPROVAL });
     const text = fileOf(r);
     expect(r.data.path).toBe(join(paths.backups(home), `universal-profiles-backup-${new Date().toISOString().slice(0, 10)}.json`));
-    expect(statSync(r.data.path).mode & 0o777).toBe(0o600);
-    expect(statSync(paths.backups(home)).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") {
+      // POSIX modes; Windows has no such permission bits
+      if (process.platform !== "win32") expect(statSync(r.data.path).mode & 0o777).toBe(0o600);
+      expect(statSync(paths.backups(home)).mode & 0o777).toBe(0o700);
+    }
     expect(appReads(text).errors).toEqual([]);
     expect(looksLikeAppWriter(text)).toBe(true);
     const f = JSON.parse(text);
