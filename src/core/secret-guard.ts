@@ -6,7 +6,7 @@
 //
 // The registry lives only in this process's memory, like the signer itself; it is never
 // serialised, logged or written anywhere.
-import { readFileSync, realpathSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { UpError } from "./errors.ts";
 import { paths, upHome } from "./home.ts";
@@ -66,6 +66,22 @@ function indexedBackups(): string[] {
   }
 }
 
+/** Whether the file starts the way every LSP-30 backup does (`{ "version": 2, "backupDate": …`), wherever it lives and whatever it is called. */
+function startsLikeBackup(file: string): boolean {
+  let fd: number | undefined;
+  try {
+    fd = openSync(file, "r");
+    if (!fstatSync(fd).isFile()) return false;
+    const buf = Buffer.alloc(160);
+    const n = readSync(fd, buf, 0, buf.length, 0);
+    return /^\uFEFF?\s*\{\s*"version"\s*:\s*2\s*,\s*"backupDate"\s*:/.test(buf.subarray(0, n).toString("utf8"));
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
 /**
  * Refuses user-supplied file paths inside the skill's key store (`<UP_HOME>/keys`) or that look
  * like key files, so no verb can read a key file and echo, parse or upload its contents. Backup
@@ -99,7 +115,7 @@ export function assertNotKeyMaterialPath(file: string, what = "file", opts: { al
     } catch {
       /* no backups yet */
     }
-    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real)) {
+    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real) || startsLikeBackup(real)) {
       throw new UpError("BAD_ARGS", `refusing to read ${what} from the backups or a backup file`, { hint: "backup files hold encrypted (or, if asked for, plain) keys; only the backup verbs open them. Never read or send a backup file's contents" });
     }
   }

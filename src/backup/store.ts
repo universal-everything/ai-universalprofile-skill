@@ -38,7 +38,7 @@ export interface IndexEntry {
 
 export interface IndexEvent {
   at: string;
-  event: "asked" | "import";
+  event: "asked" | "import" | "reserved";
   fingerprint?: string;
   kind?: string;
   file?: string;
