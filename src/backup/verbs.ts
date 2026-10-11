@@ -270,6 +270,7 @@ defineVerb({
     if (a["mark-asked"] === true) await appendIndex(ctx.home, { at: new Date().toISOString(), event: "asked", fingerprint: fp.full, kind: ask?.kind ?? "keys" });
     const plaintext = rows.filter((r) => r.mode === "unencrypted" && r.exists).map((r) => r.file);
     const warnings = [
+      ...state.warnings,
       ...plaintext.map((f) => `a plain-text backup still exists at ${f}: it holds the keys unprotected. Tell the human to delete it once it is no longer needed (backups are never deleted by the skill)`),
       ...rows.filter((r) => !r.exists).map((r) => `the backup ${r.file} no longer exists`),
       ...rows.filter((r) => r.exists && r.changed).map((r) => `the backup ${r.file} was changed after it was made`),
@@ -322,7 +323,7 @@ defineVerb({
       for (const n of it.permissionNotes) allIssues.push({ level: "warn", code: "decoded-permissions", message: `decodedPermissions disagrees with the permissions value: ${n}` });
     }
     const s = backup.secrets;
-    const secrets =
+    const keyMaterial =
       s.kind === "encrypted"
         ? { kind: "encrypted", encryptionType: s.encryptionType ?? null, hintPresent: Boolean(s.hint), ...(s.hint ? { hint: safeText(s.hint, 255) } : {}), sizes: { secretBytes: Buffer.from(s.data.secret, "base64").length, ivBytes: Buffer.from(s.data.iv, "base64").length, saltBytes: Buffer.from(s.data.salt, "base64").length } }
         : s.kind === "plain"
@@ -347,11 +348,11 @@ defineVerb({
       canRebuildLocalManifest: Boolean(it.manifest),
     }));
     const text = [
-      `Backup of ${plural(accounts.length, "profile", "profiles")} (version 2, made ${backup.backupDate || "at an unknown time"}); ${secrets.kind === "encrypted" ? "keys are password protected" : secrets.kind === "plain-text keys" ? "KEYS ARE IN PLAIN TEXT" : "no keys in it"}.`,
+      `Backup of ${plural(accounts.length, "profile", "profiles")} (version 2, made ${backup.backupDate || "at an unknown time"}); ${keyMaterial.kind === "encrypted" ? "keys are password protected" : keyMaterial.kind === "plain-text keys" ? "KEYS ARE IN PLAIN TEXT" : "no keys in it"}.`,
       ...accounts.map((x) => `- ${x.address}${x.name ? ` "${x.name}"` : ""}: ${x.networks.map((n) => n.network).join(", ") || "no networks"}`),
       ...allIssues.map((i) => `${i.level === "error" ? "Problem" : "Note"}: ${i.message}`),
     ].join("\n");
-    return { data: { ...base, valid: !allIssues.some((i) => i.level === "error"), version: 2, backupDate: backup.backupDate, secrets, accounts, deployments, issues: allIssues }, text, warnings };
+    return { data: { ...base, valid: !allIssues.some((i) => i.level === "error"), version: 2, backupDate: backup.backupDate, keyMaterial, accounts, deployments, issues: allIssues }, text, warnings };
   },
 });
 

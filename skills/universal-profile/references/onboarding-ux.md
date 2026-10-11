@@ -12,7 +12,7 @@ Read this before every onboarding step. `onboarding.md` says **what** to do; thi
 6. **Offer a default.** Every question has a safe default the human can accept with one word ("If you don't mind, I'll take number 1").
 7. **Short.** At most about 8 lines of text plus the list. No lectures. Background in SKILL.md "Why it works this way" is for you, not for them.
 8. **Confirm the choice back** in one line before acting ("Got it: number 3, 0x1ab2…7d9c.").
-9. **Never invent steps.** No testnet, no asking the human to sign or pay the deployment, no MetaMask contract calls, no "back up your key", no "send assets to my gas address".
+9. **Never invent steps.** No testnet, no asking the human to sign or pay the deployment, no MetaMask contract calls, no "back up your key" (the account backup below is offered as "a backup of my account", never as the key), no "send assets to my gas address".
 10. **When something fails,** say what happened in one plain sentence and what you will do next. No error codes unless they ask.
 
 Each step below has: **Goal** · **Message** (adapt the wording, keep the content) · **Attach** · **Expected reply** · **Never**.
@@ -91,6 +91,31 @@ Each step below has: **Goal** · **Message** (adapt the wording, keep the conten
   > Right now only I can control this profile. I recommend adding your own wallet as a second owner, so the profile is safe even if this computer is lost. Nothing is shared and the address stays the same.
   > Send your wallet's public address, or say "later".
 - **Expected reply:** an address or "later". If "later", don't ask again unprompted.
+
+## Backup (offer once after the first profile; again after a new key or profile)
+
+- **Goal:** the human has a backup file and its password, kept in different places, so the account can be restored in the Universal Profile app or by the agent on a new machine.
+- **Message (the question):** from `up backup list` → `data.ask.say`. It reads like:
+  > Do you want a backup of my account? I'd give you a file and a password. Keep them in different safe places and you can restore it in the Universal Profile app, or with me.
+  > Reply "yes" or "later".
+- **Attach:** nothing yet.
+- **Expected reply:** "yes" or "later". Default: later. A "yes" is the approval for `up backup export`. If they decline, record it (`up backup list --mark-asked`) and don't ask again until something changes.
+- **Message (the delivery):** `up backup export` → `data.say`, which contains the password:
+  > Here is the backup of my account. Its password is: XXXXX-XXXXX-XXXXX-XXXXX
+  > Keep the file and the password in different safe places (the password in a password manager is ideal). You can restore it in the Universal Profile app or with me.
+- **Attach:** the **one** backup file (`data.path`), by path through the chat's attachment mechanism, in the same message as the text. Never paste, print or open its contents.
+- **Expected reply:** "ok" or a question. Nothing else is needed.
+- **Never:** read, quote or summarise the file; say "JSON", "encrypted with AES", "keystore", "private key" or "seed phrase"; send the password anywhere but the message with the file; offer an unencrypted backup unprompted (if they insist: warn first that anyone with the file controls the account, deliver only because they asked, tell them to delete it afterwards); ask for their own wallet's key, ever; ask again after "later" without a change.
+
+### Restore from a backup (new machine, or the human sends a file)
+
+- **Goal:** the agent and its profiles are back.
+- **Message (ask):** "Send me the backup file and its password, and I'll restore my account from it." (If the file came from the Universal Profile app, same message.)
+- **Attach:** nothing.
+- **Expected reply:** the file as an attachment, and the password (same message or the next).
+- **Message (after `up backup verify`):** one line in plain words: "This backup restores N account(s) and M key(s). Shall I go ahead?" The "yes" is the approval for `up backup import`.
+- **Message (after):** `up backup import` → `data.say`. If an account was refused, say so plainly ("one account in the file isn't really controlled by these keys, so I didn't restore it").
+- **Never:** run the import without their "yes"; repeat the password back; call a wrong password anything but "that password doesn't open the file; please check it"; touch a key that is already in use.
 
 ## J1 · Step 7: name and picture (optional)
 

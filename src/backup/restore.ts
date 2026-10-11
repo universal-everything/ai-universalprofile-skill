@@ -246,6 +246,12 @@ export async function restoreKeys(ctx: VerbContext, keys: OpenedKey[], backend: 
   return results;
 }
 
+/** A label from a file is untrusted text: control characters out, length capped. */
+function cleanLabel(s: string): string {
+  const t = s.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+  return t.length > 80 ? `${t.slice(0, 80)}…` : t;
+}
+
 export interface ProfileWrite {
   address: Address;
   manifest: "restored" | "kept-existing" | "conflict" | "none";
@@ -268,7 +274,7 @@ export async function writeProfileRecords(
           sha256: info.sha256,
           backupDate: info.backupDate,
           at: new Date().toISOString(),
-          ...(analysis.account.name ? { name: analysis.account.name } : {}),
+          ...(analysis.account.name ? { name: cleanLabel(analysis.account.name) } : {}),
           ...(analysis.items[0] ? { initialChainID: analysis.items[0].item.initialChainID } : {}),
           restoredKeys: info.restoredKeys,
           skippedKeys: info.skippedKeys,

@@ -40,7 +40,14 @@ async function run(name: string, raw: Record<string, unknown> = {}, flags: { app
   const ctx = createContext({ home: inHome, flags: { json: true, dryRun: flags.dryRun === true, yes: false, approval: flags.approval } });
   await preloadConfig(ctx);
   const v = getVerb(name)!;
-  return (await v.run(ctx, coerceArgs(v, raw))) as { data: any; text?: string; warnings?: string[] };
+  const result = (await v.run(ctx, coerceArgs(v, raw))) as { data: any; text?: string; warnings?: string[] };
+  survivesRedaction(name, result);
+  return result;
+}
+/** Everything every verb returns goes through redact() before it is shown: nothing but the generated password may change there. */
+function survivesRedaction(name: string, r: { data: any }): void {
+  const shown = JSON.parse(renderResult(name, r as any, true)).data;
+  expect(shown, `${name}: redact() altered the result`).toEqual(JSON.parse(JSON.stringify(r.data)));
 }
 const fail = async (p: Promise<unknown>) => ((await p.then(() => undefined, (e) => e)) as UpError);
 const noKeys = (v: unknown) => {
@@ -52,7 +59,7 @@ const fileOf = (r: { data: any }) => readFileSync(r.data.path, "utf8");
 
 beforeEach(async () => {
   joined = addr(newKey());
-  m1 = fakeManifest({ controller: addr(K.def), label: "one", extra: [{ address: HUMAN_ADMIN, permissions: toBytes32(8n) }], chainIds: [42, 8453] });
+  m1 = fakeManifest({ controller: addr(K.def), label: "one", extra: [{ address: HUMAN_ADMIN, permissions: toBytes32(8n) }], chainIds: [8453, 42] }); // deployed on Base first
   m2 = fakeManifest({ controller: addr(K.def), label: "two", chainIds: [42] });
   home = await seedHome({ keys: [K.def, K.extra, K.prev], candidates: [1], previous: [2], manifests: [m1, m2], joined: [{ address: joined, chains: [42] }] });
 });
@@ -97,9 +104,10 @@ describe("backup export (encrypted)", () => {
     expect(looksLikeAppWriter(text)).toBe(true);
     const f = JSON.parse(text);
     expect(f.accounts).toHaveLength(3);
-    expect(f.accounts.map((a: any) => a.networks.map((n: any) => n.chainID))).toContainEqual([42, 8453]); // LUKSO first
+    expect(f.accounts.map((a: any) => a.networks.map((n: any) => n.chainID))).toContainEqual([42, 8453]); // LUKSO first, whatever the order they were deployed in (Q19)
     expect(f.LSP23CrossChainDeployment.map((l: any) => l.profileAddress).sort()).toEqual([m1.profile, m2.profile].sort());
-    expect(f.LSP23CrossChainDeployment[0].initialChainID).toBe(42);
+    expect(f.LSP23CrossChainDeployment.find((l: any) => l.profileAddress === m1.profile).initialChainID).toBe(8453); // the chain of the earliest deployment
+    expect(f.LSP23CrossChainDeployment.find((l: any) => l.profileAddress === m2.profile).initialChainID).toBe(42);
     expect(r.data.sha256).toBe((await import("node:crypto")).createHash("sha256").update(text).digest("hex"));
     // the keys inside are exactly the agent's, in privateKeyIndex order
     const opened = await decryptSecrets(f.secrets.data, r.data.password);
@@ -180,6 +188,20 @@ describe("backup export (encrypted)", () => {
     expect(r.data.keyCount).toBe(3);
     expect(JSON.parse(fileOf(r)).LSP23CrossChainDeployment).toHaveLength(1);
     expect((await fail(run("backup export", { profiles: ["0x" + "12".repeat(20)] }, { approval: APPROVAL }))).message).toMatch(/no profile .* is known/);
+  });
+
+  it("a profile whose first controller key the agent no longer holds: still written, flagged as not importable by the app (Q10)", async () => {
+    const lost = newKey();
+    const orphan = fakeManifest({ controller: addr(lost), label: "lost-key", chainIds: [999999] });
+    const { updateProfileRecord } = await import("../../../src/core/profile-record.ts");
+    await updateProfileRecord(home, orphan.profile, () => ({ deployment: orphan }));
+    const r = await run("backup export", {}, { approval: APPROVAL });
+    expect(r.data.profiles).toContain(orphan.profile);
+    expect(r.data.appCompatible).toBe(false);
+    expect(r.warnings!.join(" ")).toContain("the app may reject this file");
+    expect(JSON.parse(fileOf(r)).LSP23CrossChainDeployment).toHaveLength(3);
+    expect(JSON.parse(fileOf(r)).accounts.find((a: any) => a.address === orphan.profile).networks[0]).toMatchObject({ chainID: 999999, name: "Unknown chain" }); // Q15: what the app writes for a chain it does not know
+    expect(appReads(fileOf(r)).ok).toBe(false);
   });
 
   it("a key listed but missing from its key store is left out with a warning", async () => {
@@ -278,7 +300,7 @@ describe("backup inspect", () => {
     const r = await run("backup export", { hint: "a hint" }, { approval: APPROVAL });
     const file = JSON.parse(fileOf(r));
     const i = await run("backup inspect", { path: r.data.path });
-    expect(i.data).toMatchObject({ valid: true, version: 2, secrets: { kind: "encrypted", hintPresent: true, hint: "a hint", sizes: { ivBytes: 16, saltBytes: 32 } } });
+    expect(i.data).toMatchObject({ valid: true, version: 2, keyMaterial: { kind: "encrypted", hintPresent: true, hint: "a hint", sizes: { ivBytes: 16, saltBytes: 32 } } });
     expect(i.data.accounts).toHaveLength(3);
     expect(i.data.deployments).toHaveLength(2);
     expect(i.data.deployments.every((d: any) => d.rederivesProfile && d.supported && d.canonicalFactory && d.canRebuildLocalManifest)).toBe(true);
@@ -313,7 +335,7 @@ describe("backup inspect", () => {
   it("an unencrypted file is flagged as exposing its keys, and its key addresses are derived", async () => {
     const r = await run("backup export", { mode: "unencrypted", "explicit-consent": true }, { approval: APPROVAL });
     const i = await run("backup inspect", { path: r.data.path });
-    expect(i.data.secrets).toMatchObject({ kind: "plain-text keys", keyCount: 3, keyAddresses: [addr(K.def), addr(K.prev), addr(K.extra)] });
+    expect(i.data.keyMaterial).toMatchObject({ kind: "plain-text keys", keyCount: 3, keyAddresses: [addr(K.def), addr(K.prev), addr(K.extra)] });
     expect(i.warnings!.join(" ")).toContain("treat those keys as exposed");
     noKeys(i);
   });
@@ -457,6 +479,24 @@ describe("backup import into a fresh machine", () => {
     expect(r.data.profilesResult).toEqual([expect.objectContaining({ address: m1.profile, manifest: "conflict" })]);
     expect(JSON.parse(readFileSync(paths.profile(h, m1.profile), "utf8")).deployment.deployCalldata).toBe(other.deployCalldata);
     expect(r.warnings!.join(" ")).toContain("already has deployment data");
+  });
+
+  it("Q17: only the keys of the profiles being restored, unless --all-keys (the app restores every key in the file)", async () => {
+    const plain = await run("backup export", { mode: "unencrypted", "explicit-consent": true }, { approval: APPROVAL });
+    const f = JSON.parse(fileOf(plain));
+    const strangers = new Set([addr(K.extra), addr(K.prev)]); // keys that no profile in the file lists any more
+    for (const a of f.accounts) for (const n of a.networks) n.controllers = n.controllers.filter((c: any) => !strangers.has(c.address));
+    for (const l of f.LSP23CrossChainDeployment) l.initialControllers = l.initialControllers.filter((c: any) => !strangers.has(c.address));
+    const narrowed = join(mkdtempSync(join(tmpdir(), "up-narrow-")), "narrow.json");
+    writeFileSync(narrowed, JSON.stringify(f, undefined, 2));
+    let h = fresh();
+    const some = await run("backup import", { path: narrowed, offline: true }, offline, h);
+    expect(some.data.keysResult.map((k: any) => k.address)).toEqual([addr(K.def)]);
+    expect(await getBackend("memory").has(addr(K.extra))).toBe(false);
+    h = fresh();
+    const all = await run("backup import", { path: narrowed, offline: true, "all-keys": true }, offline, h);
+    expect(all.data.keysResult.map((k: any) => k.address).sort()).toEqual(allKeys.map(addr).sort());
+    expect(await getBackend("memory").has(addr(K.extra))).toBe(true);
   });
 
   it("--profiles restores only those profiles; an unknown one is refused", async () => {
