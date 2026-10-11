@@ -76,12 +76,9 @@ defineVerb({
   group: "backup",
   summary: "Make a backup file of the agent's profiles and keys that the Universal Profile mobile app can import (LSP-30), encrypted with a password by default.",
   description:
-    "Covers every profile this agent has (all profile records, the default profile, joined profiles) and every key it holds; --profiles narrows the profiles. " +
-    "Mode encrypted (default): the keys are locked with a password: pass the one the human chose (--password, at least 12 characters), or omit it to have a strong one generated, returned once in `data.password` — tell it to the human (`data.say`) together with the file. " +
-    "Mode public: no keys and no password, only the account details; needs no approval. " +
-    "Mode unencrypted: the keys in plain text; needs --explicit-consent and a human --approval; the result carries a loud warning. " +
-    "The file is saved in <UP_HOME>/backups (0700; file 0600) or at --path, never overwriting anything. Send it to the human as a chat attachment (`data.path`); never read or print it. " +
-    "The app's file format uses only 10,000 password-hashing rounds, so the password must be strong: prefer the generated one.",
+    "Covers every profile and every key the agent has (--profiles narrows the profiles). Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). " +
+    "Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. " +
+    "Saved in <UP_HOME>/backups (never overwrites) or at --path. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.",
   risk: "secret",
   params: [
     { name: "path", type: "string", positional: 0, description: "Where to write the file (must not exist; its folder must exist). Default: <UP_HOME>/backups/universal-profiles-backup-YYYY-MM-DD.json." },
@@ -97,7 +94,7 @@ defineVerb({
     const mode = a.mode as BackupMode;
     if (mode !== "encrypted" && (hasPasswordArgs(a) || a.hint)) throw new UpError("BAD_ARGS", `a password or hint only applies to an encrypted backup (this one is ${mode})`);
     if (mode === "unencrypted" && a["explicit-consent"] !== true) {
-      throw new UpError("BAD_ARGS", "an unencrypted backup needs --explicit-consent: it puts the keys in a file anyone can use", { hint: "recommend the encrypted backup first; only if the human insists, repeat with --explicit-consent and their --approval" });
+      throw new UpError("BAD_ARGS", "an unencrypted backup needs --explicit-consent: it puts the keys in a file anyone can use", { hint: "recommend the encrypted backup; only if the human insists, add --explicit-consent and their --approval" });
     }
     const cfg = await ctx.config();
     const only = a.profiles?.length ? await Promise.all((a.profiles as string[]).map((p) => ctx.resolveAddress(p))) : undefined;
@@ -110,8 +107,8 @@ defineVerb({
     const warnings = [...state.warnings];
     if (!state.profiles.length) warnings.push("the agent has no deployed profile yet: the file holds only its keys");
     if (mode !== "public" && built.appIncompatible.length) warnings.push(...built.appIncompatible.map((w) => `the app may reject this file: ${w}`));
-    if (mode === "public" && built.file.LSP23CrossChainDeployment.length) warnings.push("the Universal Profile app cannot import a public file that has deployment data (it needs a key); this file is for this skill and for reference");
-    if (mode === "unencrypted") warnings.push("UNENCRYPTED: this file holds the private keys in plain text. Anyone who gets a copy controls every listed key and what those keys control. Never send it anywhere you would not send a recovery phrase; delete it after use. If it was ever sent through a chat or e-mail, treat the keys as exposed and move the funds");
+    if (mode === "public" && built.file.LSP23CrossChainDeployment.length) warnings.push("the Universal Profile app cannot import a public file that has deployment data (it needs a key)");
+    if (mode === "unencrypted") warnings.push("UNENCRYPTED: this file holds the private keys in plain text. Anyone with a copy controls those keys and what they control. Delete it after use; if it was ever sent through a chat or e-mail, treat the keys as exposed and move the funds");
 
     if (mode !== "public") {
       await ctx.consent({
@@ -175,11 +172,11 @@ defineVerb({
     const what = profiles.length === 1 ? "my account" : profiles.length > 1 ? `my ${profiles.length} accounts` : "my keys";
     const say =
       mode === "encrypted" && choice?.generated
-        ? `Here is the backup of ${what}. Its password is: ${choice.password}\nKeep the file and the password in different safe places (the password in a password manager is ideal). You can restore it in the Universal Profile app or with me.`
+        ? `Here is the backup of ${what}. Its password is: ${choice.password}\nKeep the file and the password in different safe places (a password manager is ideal). You can restore it in the Universal Profile app or with me.`
         : mode === "encrypted"
-          ? `Here is the backup of ${what}. It is locked with the password you chose, so keep that password safe: without it the file cannot be opened. Keep the file and the password in different places. You can restore it in the Universal Profile app or with me.`
+          ? `Here is the backup of ${what}. It is locked with the password you chose; without it the file cannot be opened. Keep the file and the password in different places. You can restore it in the Universal Profile app or with me.`
           : mode === "unencrypted"
-            ? `Here is the backup of ${what}, WITHOUT a password. Anyone who gets this file controls my keys and everything they control, so treat it like your recovery phrase: don't forward it, and delete it once you have used it.`
+            ? `Here is the backup of ${what}, WITHOUT a password. Anyone who gets this file controls my keys and what they control: treat it like a recovery phrase, don't forward it, and delete it after use.`
             : `Here is a copy of the details of ${what}: no keys and no password are in it, so nobody can take control with it. It helps me set ${what === "my keys" ? "up" : "it up"} again, but it cannot restore control on its own${built.appIncompatible.length ? " and the Universal Profile app can't open it" : ""}.`;
     const data: Record<string, unknown> = {
       mode,
@@ -195,13 +192,12 @@ defineVerb({
       ...(mode === "encrypted" ? { kdf: KDF_DESCRIPTION } : {}),
       hintPresent: Boolean(hint),
       ...(choice?.generated ? { password: choice.password, passwordGenerated: true } : {}),
-      delivery: DELIVERY,
       say,
       next: [
         DELIVERY,
-        mode === "encrypted" && choice?.generated ? "Tell the human data.say (it contains the password) in the same message as the attachment, or right after it. Do not repeat the password anywhere else." : "Tell the human data.say with the attachment.",
-        "Do not delete backup files and do not read them. The human decides what to keep.",
-        ...(mode === "unencrypted" ? ["Deliver the file only because the human explicitly asked for it, after they heard the warning in data.say."] : []),
+        mode === "encrypted" && choice?.generated ? "Tell the human data.say (it has the password) with the attachment, and do not repeat the password elsewhere." : "Tell the human data.say with the attachment.",
+        "Do not delete or read backup files. The human decides what to keep.",
+        ...(mode === "unencrypted" ? ["Deliver the file only because the human explicitly asked, after hearing the warning in data.say."] : []),
       ],
     };
     if (choice?.generated) releaseKeys(data, "password");
@@ -233,8 +229,7 @@ defineVerb({
   group: "backup",
   summary: "The backups made on this machine, whether they cover the agent's current keys and profiles, and whether to offer the human a new one (`data.ask`).",
   description:
-    "Reads <UP_HOME>/backups/index.jsonl, checks that each file still exists and is unchanged (no decryption), and compares them with the current keys and profiles. `data.ask` is null or a plain-words question for the human: " +
-    "ask it once, in your own words; then run this again with --mark-asked so it is not asked again until the keys or profiles change. A plain-text backup that still exists is listed so the human can delete it.",
+    "Checks each backup in <UP_HOME>/backups/index.jsonl (still there, unchanged; no decryption) against the current keys and profiles. `data.ask` is null or a question for the human: ask it once in your own words, then run this with --mark-asked. Plain-text backups that still exist are flagged.",
   risk: "local",
   params: [{ name: "mark-asked", type: "boolean", default: false, description: "Record that the human has just been asked about a backup (no question is returned again until something changes)." }],
   async run(ctx, a): Promise<VerbResult> {
@@ -291,8 +286,7 @@ defineVerb({
   group: "backup",
   summary: "Read a backup file (never decrypts it) and show what it contains: profiles, networks, controllers, the deployment data and whether it checks out, and every problem found.",
   description:
-    "Safe to run on any backup file, including one the human sent in chat: it needs no password and prints public data only (addresses, names as quoted text, the password hint if there is one). " +
-    "It re-derives each profile address from the file's deployment data; a mismatch means the file may be forged. It never prints the encrypted data, salt, IV or any key.",
+    "Safe on any backup file, also one the human sent: no password, public data only (addresses, names as quoted text, the password hint). Re-derives each profile address from the file's deployment data; a mismatch means the file may be forged. Never prints encrypted data or any key.",
   risk: "local",
   params: [{ name: "path", type: "string", positional: 0, required: true, description: "Path of the backup file (for a chat attachment, the path the host saved it to)." }],
   async run(ctx, a): Promise<VerbResult> {
@@ -334,7 +328,7 @@ defineVerb({
     const accounts = backup.accounts.map((acc) => ({
       address: acc.address,
       name: safeText(acc.name),
-      networks: acc.networks.map((n) => ({ chainId: n.chainID, network: chainName(ctx, n.chainID), nameInFile: safeText(n.name), controllers: n.controllers.map((c) => ({ address: c.address, name: safeText(c.name), type: safeText(c.type, 40), hasKey: keyedBy(c.privateKeyIndex) })) })),
+      networks: acc.networks.map((n) => ({ chainId: n.chainID, network: chainName(ctx, n.chainID), controllers: n.controllers.map((c) => ({ address: c.address, name: safeText(c.name), type: safeText(c.type, 40), hasKey: keyedBy(c.privateKeyIndex) })) })),
     }));
     const deployments = lsp23.map((it) => ({
       profile: it.item.profileAddress,
@@ -385,7 +379,7 @@ defineVerb({
   group: "backup",
   summary: "Open a backup file in memory with its password and check it: the keys inside (addresses only), which are already here, and with --online whether each profile could be restored.",
   description:
-    "Same checks as backup import, without changing anything. The addresses of the keys are derived from the keys themselves (the file's own claims are not trusted). With --online each profile is checked on its networks the way the app does: a key from the backup that still controls it, or proof in the file that a key created it; a file that claims a profile no key of it controls is flagged as a possible forgery. Prints addresses only.",
+    "The checks of backup import, changing nothing. Key addresses are derived from the keys, never trusted from the file. With --online each profile is checked on its networks the way the app does (a backup key still controls it, or the file proves a key created it). Prints addresses only.",
   risk: "read",
   params: [
     { name: "path", type: "string", positional: 0, required: true, description: "Path of the backup file." },
@@ -430,8 +424,8 @@ defineVerb({
   group: "backup",
   summary: "Restore profiles and keys from a backup file (made by this skill or by the Universal Profile app): keys go into a key store, profiles into the local records. Needs the human's approval.",
   description:
-    "The human sends the file as a chat attachment (the host saves it to a path) and tells the password in chat. Every key's address is derived from the key itself. A profile is restored only if the network shows a key from the backup still controls it, or the file proves (its deployment data re-derives the profile address and names a backup key as first controller) that a key created it; a file that claims someone else's profile is refused. " +
-    "Keys are permanent: nothing is overwritten or deleted. Each new key is recorded before it is stored; a key already here is skipped. Restored keys become additional keys (`up key address`); one becomes the active key only if none was set up. Restores the keys of the selected profiles only, unless --all-keys.",
+    "The human sends the file as a chat attachment (the host saves it to a path) and the password in chat. A profile is restored only if the network shows a backup key still controls it, or the file proves a backup key created it (its deployment data re-derives the profile address); a file claiming someone else's profile is refused. " +
+    "Keys are permanent: none is overwritten or deleted, each new one is recorded before it is stored, one already here is skipped. Restored keys become additional keys; one becomes the active key only if none was set up. Restores the keys of the selected profiles, or all with --all-keys.",
   risk: "secret",
   params: [
     { name: "path", type: "string", positional: 0, required: true, description: "Path of the backup file." },

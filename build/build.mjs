@@ -50,7 +50,8 @@ function vendorRewrite(fromLibDir) {
     name: "vendor-rewrite",
     setup(b) {
       b.onResolve({ filter: VIEM_SPECIFIERS }, () => ({ path: rel("vendor-viem.mjs"), external: true }));
-      b.onResolve({ filter: /^@erc725\/erc725\.js$/ }, () => ({ path: rel("vendor-erc725.mjs"), external: true }));
+      // the schemas subpath too: vendor-erc725.mjs exports them, so app.mjs does not carry a second copy (~10 KB)
+      b.onResolve({ filter: /^@erc725\/erc725\.js(\/schemas)?$/ }, () => ({ path: rel("vendor-erc725.mjs"), external: true }));
       b.onResolve({ filter: /^qrcode$/ }, () => ({ path: rel("vendor-qrcode.mjs"), external: true }));
     },
   };
@@ -91,7 +92,7 @@ await build({
 });
 await build({
   ...common,
-  stdin: { contents: `export { default } from "@erc725/erc725.js";\nexport * from "@erc725/erc725.js";\n`, resolveDir: root, sourcefile: "vendor-erc725.mjs" },
+  stdin: { contents: `export { default } from "@erc725/erc725.js";\nexport * from "@erc725/erc725.js";\nexport * from "@erc725/erc725.js/schemas";\n`, resolveDir: root, sourcefile: "vendor-erc725.mjs" },
   outfile: join(libDir, "vendor-erc725.mjs"),
   plugins: [{ name: "viem-ext", setup(b) { b.onResolve({ filter: VIEM_SPECIFIERS }, () => ({ path: "./vendor-viem.mjs", external: true })); } }],
   banner: { js: banner("Vendored @erc725/erc725.js (Apache-2.0) — https://github.com/ERC725Alliance/erc725.js") },

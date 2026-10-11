@@ -15,7 +15,7 @@ import {
   type Hex,
   type TransactionReceipt,
 } from "viem";
-import selectors from "../../skills/universal-profile/assets/abis/selectors.json" with { type: "json" };
+import { assetJson } from "../core/assets.ts";
 import type { VerbContext } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
 import { loadPolicy, policyAllows } from "../core/policy.ts";
@@ -53,7 +53,7 @@ export interface DecodedCall {
   source?: "abi" | "description" | "bundled-selector" | "value-transfer" | "unknown";
 }
 
-const SELECTORS = selectors as Record<string, string[]>;
+const SELECTORS = assetJson<Record<string, string[]>>("abis", "selectors.json");
 
 /** Decodes calldata with a provided ABI or the bundled selector table (trust label in `source`). */
 export function decodeCalldata(data: Hex, abi?: Abi): DecodedCall {

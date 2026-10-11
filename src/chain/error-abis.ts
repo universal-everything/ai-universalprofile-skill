@@ -1,7 +1,7 @@
 // Union of all custom errors of the LSP/ERC725 contracts + EntryPoint v0.6 +
 // standard Error(string)/Panic(uint256), used to decode reverts on every path.
 import type { Abi } from "viem";
-import errors from "../../skills/universal-profile/assets/abis/errors.json" with { type: "json" };
+import { assetJson } from "../core/assets.ts";
 
 const standard: Abi = [
   { type: "error", name: "Error", inputs: [{ name: "message", type: "string" }] },
@@ -10,4 +10,4 @@ const standard: Abi = [
   { type: "error", name: "SignatureValidationFailed", inputs: [{ name: "aggregator", type: "address" }] },
 ];
 
-export const ERROR_ABIS: Abi[] = [standard, errors as Abi];
+export const ERROR_ABIS: Abi[] = [standard, assetJson<Abi>("abis", "errors.json")];
