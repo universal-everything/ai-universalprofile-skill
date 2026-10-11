@@ -264,7 +264,11 @@ defineVerb({
       next = [`Run up funding suggest --chain ${chainId} and send its text together with the one QR of your gas address ${g.payer} (references/onboarding-ux.md, step 4). At least ${g.suggestedFunding ?? g.missing} ${g.symbol} is needed for the deployment itself.`, "When the gas has arrived, run this dry run again, then ask whether to create the profile.", noWallet];
     } else if (out.status === "deployed") {
       say = `Done! My profile now exists on ${chainName}:\n${m.profile}`;
-      next = ["Send the profile address with its QR (up display address <profile> --chain <id>) and say where money for the profile goes: the profile address, never the gas address.", ...metadataNext];
+      next = [
+        "Send the profile address with its QR (up display address <profile> --chain <id>) and say where money for the profile goes: the profile address, never the gas address.",
+        ...metadataNext,
+        "Later, once, offer the human a backup of the account (a file plus a password they keep safe, restorable in the Universal Profile app): run up backup list; if data.ask is set, ask its question (references/onboarding.md, \"Backup\"). A new key or profile makes it ask again.",
+      ];
     } else if (out.status === "already-deployed") {
       say = `My profile already exists on ${chainName}:\n${m.profile}`;
       next = metadataNext;

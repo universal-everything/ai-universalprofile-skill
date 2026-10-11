@@ -2,6 +2,7 @@
 // Owner per module is recorded in docs/ARCHITECTURE.md.
 import "./setup.ts";
 import "../signer/verbs.ts";
+import "../backup/verbs.ts";
 import "../lsp/verbs.ts";
 import "../exec/verbs.ts";
 import "../relayer/verbs.ts";

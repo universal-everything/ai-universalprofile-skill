@@ -90,6 +90,7 @@ describe("J1: precompute → deploy → verify", () => {
     expect(Object.values(r.data.verified).every(Boolean)).toBe(true);
     expect(r.data.onChainCompute.matches).toBe(true);
     expect(r.warnings?.join()).toMatch(/human-admin/);
+    expect(r.data.next.at(-1)).toMatch(/offer the human a backup .*up backup list/); // a new profile: suggest a backup, once
     expect((await ctx.config()).defaultProfile).toBe(profile);
     const m = JSON.parse(readFileSync(paths.profile(home, profile), "utf8")).deployment;
     expect(m.deployments[String(h.chainId)].txHash).toBe(r.data.txHash);

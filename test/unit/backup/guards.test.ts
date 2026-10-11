@@ -68,7 +68,14 @@ describe("importRecorded: a restored key is listed before it is stored and never
     const address = privateKeyToAddress(pk);
     const mem = new MemoryBackend();
     const order: string[] = [];
-    const spy = { id: "memory", importKey: async (k: any, before: any) => mem.importKey(k, async (a: any) => (await before(a), order.push(`recorded:${(readFileSync(inventoryFile(home), "utf8").match(/restored/g) ?? []).length}`))) };
+    const spy = {
+      id: "memory",
+      importKey: async (k: any, before: any) =>
+        mem.importKey(k, async (a: any) => {
+          await before(a);
+          order.push(`recorded:${(readFileSync(inventoryFile(home), "utf8").match(/restored/g) ?? []).length}`);
+        }),
+    };
     expect(await importRecorded(home, spy as any, pk, "restored from LSP-30 backup 2026-10-10T12:00:00Z")).toBe(address);
     expect(order).toEqual(["recorded:1"]); // the inventory line existed when the store was about to happen
     expect(await mem.has(address)).toBe(true);
