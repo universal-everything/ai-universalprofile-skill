@@ -4,7 +4,7 @@ import { getAddress, type Address } from "viem";
 import { defineVerb } from "../core/verbs.ts";
 import { UpError } from "../core/errors.ts";
 import type { VerbContext } from "../core/types.ts";
-import { chainAddressesOf, readProfileRecord, updateProfileRecord } from "../core/profile-record.ts";
+import { chainAddressesOf, readProfileRecord, updateProfileRecord, type LinkEvidence } from "../core/profile-record.ts";
 import { chainControllerList, controllerFor } from "../signer/select.ts";
 import { INTERFACE_IDS } from "./constants.ts";
 import { loadManifest } from "./lsp23.ts";
@@ -100,7 +100,9 @@ defineVerb({
       await updateProfileRecord(ctx.home, identity, (latest) => {
         const next = { ...chainAddressesOf(latest) };
         delete next[String(chainId)];
-        return { chainAddresses: next };
+        const evidence = { ...(latest.linkEvidence ?? {}) };
+        delete evidence[String(chainId)];
+        return { chainAddresses: next, linkEvidence: evidence };
       });
       return { data: { profile: identity, chainId, linked: null, removedLink: previous, changed: true }, text: `On ${where} your profile is ${identity} again (link to ${previous} removed).` };
     }
@@ -133,7 +135,13 @@ defineVerb({
     };
     await ctx.consent({ verb: "profile link", risk: "admin", chainId, summary, target: address });
     if (ctx.flags.dryRun) return { data: { dryRun: true, ...summary }, text: `DRY RUN: on ${where} your profile would be ${address}.`, warnings };
-    await updateProfileRecord(ctx.home, identity, (latest) => ({ chainAddresses: { ...chainAddressesOf(latest), [String(chainId)]: address } }));
+    // the link keeps what was verified about it: the agent's key controls the linked address (a backup then lists that controller for it)
+    await updateProfileRecord(ctx.home, identity, (latest) => {
+      const evidence = { ...(latest.linkEvidence ?? {}) };
+      if (agentKey && agentIsController === true) evidence[String(chainId)] = { address, controllers: [agentKey], checkedAt: new Date().toISOString() } satisfies LinkEvidence;
+      else delete evidence[String(chainId)];
+      return { chainAddresses: { ...chainAddressesOf(latest), [String(chainId)]: address }, linkEvidence: evidence };
+    });
     return {
       data: { profile: identity, chainId, linked: address, previousLink: previous ?? null, keyManager: km.keyManager, agentKey: agentKey ?? null, agentIsController: agentIsController ?? null, changed: true },
       text: `On ${where} your Universal Profile ${identity} is now the contract ${address} (Key Manager ${km.keyManager}). The agent acts as ${address} there; every other chain keeps ${identity}.`,

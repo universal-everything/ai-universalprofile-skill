@@ -33,6 +33,15 @@ export function containsSecret(text: string): boolean {
   return secrets.some((s) => t.includes(s));
 }
 
+/**
+ * Called by every state-file writer (writeJson, appendLine, the audit log) right before the bytes go
+ * to disk: a text that holds a loaded private key (also spread over separators) is never written.
+ * The error does not repeat any of it.
+ */
+export function assertNothingSecretToWrite(text: string, what = "a state file"): void {
+  if (containsSecret(text) || containsSecret(text.replace(/[^0-9a-z]/gi, ""))) throw new UpError("INTERNAL", `refusing to write ${what}: it would contain the agent's private key; nothing was written. This is a bug in the skill`);
+}
+
 export const WITHHELD_MESSAGE = "output withheld: it contained the agent's private key or a passphrase, which must never be sent to the AI provider. This is a bug in the skill; nothing was revealed.";
 
 /** `text` unchanged, or a key-free replacement when it contains a registered secret. */
@@ -49,18 +58,25 @@ function realOf(p: string): string {
   }
 }
 
-/** Files recorded in the backup index (<UP_HOME>/backups/index.jsonl), as real paths; unreadable index = none. */
+/**
+ * Files recorded in the backup index (<UP_HOME>/backups/index.jsonl), as real paths; unreadable index = none.
+ * Lines are folded in order: a backup entry, a reservation, a commit or an imported file guards its path; a
+ * later `cancelled` event frees it (a write that failed before any file existed must not block an unrelated file there).
+ */
 function indexedBackups(): string[] {
   try {
     const text = readFileSync(resolve(paths.backups(upHome()), "index.jsonl"), "utf8");
-    return text.split("\n").flatMap((l) => {
+    const guarded = new Map<string, boolean>();
+    for (const l of text.split("\n")) {
       try {
-        const f = JSON.parse(l)?.file;
-        return typeof f === "string" ? [resolve(f)] : [];
+        const v = JSON.parse(l);
+        if (typeof v?.file !== "string") continue;
+        guarded.set(resolve(v.file), v.event !== "cancelled");
       } catch {
-        return [];
+        /* a partly written line */
       }
-    });
+    }
+    return [...guarded].filter(([, on]) => on).map(([f]) => f);
   } catch {
     return [];
   }

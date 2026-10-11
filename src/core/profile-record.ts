@@ -49,3 +49,21 @@ export async function profileAddressOn(home: string, identity: Address, chainId:
   const linked = chainAddressesOf(await readProfileRecord(home, identity))[String(chainId)];
   return linked ?? getAddress(identity);
 }
+
+/**
+ * What `profile link` verified about a linked address: the agent's key was a controller of it on that chain.
+ * Kept per chain with the address it was checked for, so a later re-link to another address never inherits it.
+ */
+export interface LinkEvidence {
+  address: Address;
+  controllers: Address[];
+  checkedAt: string;
+}
+
+/** The controllers `profile link` verified for the address linked on `chainId`; nothing when the link changed since. */
+export function linkEvidenceOf(record: Record<string, any>, chainId: number): Address[] {
+  const ev = record?.linkEvidence?.[String(chainId)];
+  const linked = chainAddressesOf(record)[String(chainId)];
+  if (!ev || !linked || typeof ev.address !== "string" || ev.address.toLowerCase() !== linked.toLowerCase() || !Array.isArray(ev.controllers)) return [];
+  return ev.controllers.filter((a: unknown): a is string => typeof a === "string" && isAddress(a, { strict: false })).map((a: string) => getAddress(a));
+}

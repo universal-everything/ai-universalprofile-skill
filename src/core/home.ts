@@ -41,7 +41,9 @@ export async function readJson<T>(file: string, fallback: T): Promise<T> {
 
 export async function writeJson(file: string, value: unknown): Promise<void> {
   const { toJson } = await import("./json.ts");
-  await writeFileAtomic(file, toJson(value) + "\n");
+  const text = toJson(value) + "\n";
+  (await import("./secret-guard.ts")).assertNothingSecretToWrite(text);
+  await writeFileAtomic(file, text);
 }
 
 /**
@@ -95,6 +97,7 @@ export function isJsonObject(v: unknown): v is Record<string, unknown> {
  * stays on its own and never swallows this record.
  */
 export async function appendLine(file: string, line: string): Promise<void> {
+  (await import("./secret-guard.ts")).assertNothingSecretToWrite(line);
   await ensureDir(dirname(file));
   let prefix = "";
   try {

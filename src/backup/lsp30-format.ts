@@ -9,6 +9,7 @@
 // Its messages name the place of a problem ("accounts[0].address"), never the value found there.
 import { getAddress } from "viem";
 import { UpError } from "../core/errors.ts";
+import { PERMISSION_NAMES, type PermissionName } from "../lsp/constants.ts";
 import { canonicalDateTime, KEY_WITHHELD, safeFileText } from "../core/safe-text.ts";
 import type { Address, Hex } from "../core/types.ts";
 import { decodeField, ENCRYPTION_TYPE, type EncryptedData } from "./lsp30-crypto.ts";
@@ -38,7 +39,10 @@ export interface BackupAccount {
 }
 export interface BackupPermissions {
   permissions: Hex;
-  decodedPermissions?: Record<string, boolean>;
+  /** Only LSP6 permission names this skill knows; any other property name of the file is counted in `unrecognisedNames` and dropped. */
+  decodedPermissions?: Partial<Record<PermissionName, boolean>>;
+  /** How many property names of the file's decodedPermissions are not a known LSP6 permission (never kept, never shown). */
+  unrecognisedNames?: number;
   allowedCalls: Hex;
   allowedERC725YDataKeys: Hex;
 }
@@ -149,6 +153,19 @@ export interface ParsedBackup {
   accounts: BackupAccount[];
   lsp23: BackupLsp23Item[];
   secrets: ParsedSecrets;
+}
+
+const KNOWN_PERMISSION_NAMES: ReadonlySet<string> = new Set(PERMISSION_NAMES);
+
+/** The known LSP6 permission names of a file's `decodedPermissions` (boolean values only), and how many other property names it had. */
+function knownPermissionNames(o: Record<string, unknown>): { known: Partial<Record<PermissionName, boolean>>; unrecognised: number } {
+  const known: Partial<Record<PermissionName, boolean>> = {};
+  let unrecognised = 0;
+  for (const [k, v] of Object.entries(o)) {
+    if (KNOWN_PERMISSION_NAMES.has(k) && typeof v === "boolean") known[k as PermissionName] = v;
+    else unrecognised++;
+  }
+  return { known, unrecognised };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -278,8 +295,9 @@ export function parseBackup(text: string): { backup?: ParsedBackup; issues: Issu
       const allowedCalls = hex(p.allowedCalls ?? "0x", `${cat}.addressPermissions.allowedCalls`);
       const allowedKeys = hex(p.allowedERC725YDataKeys ?? "0x", `${cat}.addressPermissions.allowedERC725YDataKeys`);
       if (!ca || !permissions || !allowedCalls || !allowedKeys) return [];
-      const decoded = isObj(p.decodedPermissions) ? (p.decodedPermissions as Record<string, boolean>) : undefined;
-      return [{ address: ca, ...(idx !== undefined ? { privateKeyIndex: idx } : {}), addressPermissions: { permissions, ...(decoded ? { decodedPermissions: decoded } : {}), allowedCalls, allowedERC725YDataKeys: allowedKeys } }];
+      // property names are file text that would be shown and stored: only the known permission names pass, the rest is counted
+      const decoded = isObj(p.decodedPermissions) ? knownPermissionNames(p.decodedPermissions) : undefined;
+      return [{ address: ca, ...(idx !== undefined ? { privateKeyIndex: idx } : {}), addressPermissions: { permissions, ...(decoded ? { decodedPermissions: decoded.known, ...(decoded.unrecognised ? { unrecognisedNames: decoded.unrecognised } : {}) } : {}), allowedCalls, allowedERC725YDataKeys: allowedKeys } }];
     });
     if (!profile || !factory || !calldata) return [];
     return [{ profileAddress: profile, initialChainID: it.initialChainID as number, factoryAddress: factory, deploymentCalldata: calldata, ...(salt ? { salt } : {}), initialControllers }];

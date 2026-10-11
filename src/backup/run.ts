@@ -1,11 +1,12 @@
 // The code behind the backup verbs (declared in verbs.ts; loaded when one of them runs).
 // See verbs.ts for the rules these keep.
-import { readFile, stat } from "node:fs/promises";
+import { lstat, readFile, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import type { Address } from "viem";
 import { UpError } from "../core/errors.ts";
 import { paths } from "../core/home.ts";
 import { releaseKeys } from "../core/json.ts";
+import { assertNoKeyMaterial } from "../core/public-record.ts";
 import { safeFileText } from "../core/safe-text.ts";
 import type { VerbContext, VerbResult } from "../core/types.ts";
 import { chooseBackend, internalBackend } from "../signer/index.ts";
@@ -17,6 +18,7 @@ import {
   analyseAccounts,
   applyImportConfig,
   assertNoKeyIn,
+  assertProfileRecordClean,
   decideProfile,
   localKeyStores,
   openBackup,
@@ -86,13 +88,17 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
   if (mode === "unencrypted" && a["explicit-consent"] !== true) {
     throw new UpError("BAD_ARGS", "an unencrypted backup needs --explicit-consent: it puts the keys in a file anyone can use", { hint: "recommend the encrypted backup; only if the human insists, add --explicit-consent and their --approval" });
   }
+  // the public text of the file (destination, hint, account names) is checked before anything is asked, audited or stored
+  assertNoKeyMaterial("the backup destination or hint", { path: a.path, hint: a.hint });
   const cfg = await ctx.config();
   const only = a.profiles?.length ? await Promise.all((a.profiles as string[]).map((p) => ctx.resolveAddress(p))) : undefined;
   const state = await collectState(ctx, { only, refresh: a.refresh === true });
   if (!state.profiles.length && !state.keys.length) throw new UpError("BAD_ARGS", "there is nothing to back up yet: no profile and no key on this machine", { hint: "set up the profile first (up start)" });
   if (mode !== "public" && !state.keys.length) throw new UpError("NO_SIGNER", "none of the agent's keys is in a key store here, so there are no keys to back up", { hint: "a backup without keys is --mode public" });
   const built = buildBackup(ctx, cfg, state, mode);
+  assertNoKeyMaterial("an account name, alias or label of the backup", built.file);
   const dest = await resolveDestination(ctx.home, a.path);
+  assertNoKeyMaterial("the backup destination", { path: dest });
   const profiles = state.profiles.map((p) => p.address);
   const warnings = [...state.warnings];
   if (!state.profiles.length) warnings.push("the agent has no deployed profile yet: the file holds only its keys");
@@ -101,22 +107,20 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
   if (mode === "unencrypted") warnings.push("UNENCRYPTED: this file holds the private keys in plain text. Anyone with a copy controls those keys and what they control. Delete it after use; if it was ever sent through a chat or e-mail, treat the keys as exposed and move the funds");
 
   if (mode !== "public") {
-    await ctx.consent({
-      verb: "backup export",
-      risk: "secret",
-      summary: {
-        effect: mode === "encrypted" ? "write a backup file with the agent's keys locked by a password" : "write a backup file with the agent's keys in PLAIN TEXT",
-        destination: dest,
-        profiles,
-        chains: built.chains.map((c) => `${chainName(ctx, c)} (${c})`),
-        keyAddresses: built.keys.map((k) => k.address),
-        keyCount: built.keys.length,
-        format: mode === "encrypted" ? `LSP-30 version 2 (${KDF_DESCRIPTION})` : "LSP-30 version 2, keys not encrypted",
-        password: mode === "encrypted" ? (hasPasswordArgs(a) && a["generate-password"] !== true ? "chosen by the human" : "generated (returned to the agent to tell the human)") : "none",
-        note: mode === "encrypted" ? "anyone with the file AND the password controls these keys" : "anyone with the file controls these keys",
-        warnings,
-      },
-    });
+    const summary = {
+      effect: mode === "encrypted" ? "write a backup file with the agent's keys locked by a password" : "write a backup file with the agent's keys in PLAIN TEXT",
+      destination: dest,
+      profiles,
+      chains: built.chains.map((c) => `${chainName(ctx, c)} (${c})`),
+      keyAddresses: built.keys.map((k) => k.address),
+      keyCount: built.keys.length,
+      format: mode === "encrypted" ? `LSP-30 version 2 (${KDF_DESCRIPTION})` : "LSP-30 version 2, keys not encrypted",
+      password: mode === "encrypted" ? (hasPasswordArgs(a) && a["generate-password"] !== true ? "chosen by the human" : "generated (returned to the agent to tell the human)") : "none",
+      note: mode === "encrypted" ? "anyone with the file AND the password controls these keys" : "anyone with the file controls these keys",
+      warnings,
+    };
+    assertNoKeyMaterial("the export confirmation", summary); // it is shown, and written to the audit log
+    await ctx.consent({ verb: "backup export", risk: "secret", summary });
   }
   if (ctx.flags.dryRun) {
     return { data: { dryRun: true, mode, path: dest, profiles, keys: built.keys.map((k) => k.address), chains: built.chains, appCompatible: built.appIncompatible.length === 0 }, text: `Dry run: a ${mode} backup of ${plural(profiles.length, "profile", "profiles")} and ${plural(built.keys.length, "key", "keys")} would be written to ${dest}.`, warnings };
@@ -141,12 +145,27 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
   const text = serializeBackup(file);
   await verifyRoundTrip(text, built, secretKeys, choice?.password);
 
+  // the keys are registered now: the public text is checked once more against them
+  assertNoKeyMaterial("an account name, alias, hint or the destination of the backup", { file: built.file, hint, path: dest });
+
   // the path is reserved in the index BEFORE the file exists, so the file is guarded from other readers from its first
   // byte on (also a custom path) and a full or unwritable index stops the export while nothing is stranded yet
   await appendIndex(ctx.home, { at: new Date().toISOString(), event: "reserved", file: dest }).catch(() => {
     throw new UpError("INTERNAL", "the backups index cannot be written, so no backup was made; nothing was written", { hint: `check that ${paths.backups(ctx.home)} is writable and not full` });
   });
-  const written = await writeBackup(dest, text);
+  let written: Awaited<ReturnType<typeof writeBackup>>;
+  try {
+    written = await writeBackup(dest, text);
+  } catch (e) {
+    // nothing of ours at the path: the reservation is cancelled, so it no longer keeps other readers from a file there.
+    // A file that does exist (an incomplete write) stays guarded.
+    const exists = await lstat(dest).then(() => true, () => false);
+    const ours = exists && !(e instanceof UpError && /already exists/.test(e.message));
+    await appendIndex(ctx.home, { at: new Date().toISOString(), event: ours ? "committed" : "cancelled", file: dest }).catch(() => {});
+    throw e;
+  }
+  await appendIndex(ctx.home, { at: new Date().toISOString(), event: "committed", file: dest }).catch(() => {});
+  if (written.warning) warnings.push(written.warning);
   ctx.log(`${mode} backup written: ${dest}`);
   const fp = fingerprints(state);
   // from here on the file exists (and for an encrypted one the password may exist only in this result): a failure to
@@ -369,6 +388,8 @@ export async function runImport(ctx: VerbContext, a: Record<string, any>): Promi
     for (const w of wanted) if (!analyses.some((x) => sameAddress(x.account.address, w))) throw new UpError("BAD_ARGS", `the backup has no profile ${w}`, { hint: "list them with: up backup inspect <file>" });
     analyses = analyses.filter((x) => wanted.some((w) => sameAddress(w, x.account.address)));
   }
+  // everything that would be stored for these profiles (account, controllers, deployment data, rebuilt manifest) is checked as a whole
+  for (const x of analyses) assertProfileRecordClean(x);
   const decisions: ProfileDecision[] = [];
   for (const x of analyses) decisions.push(await decideProfile(ctx, x, !offline));
   const chosen = analyses.filter((_, i) => decisions[i].restorable);
@@ -408,16 +429,14 @@ export async function runImport(ctx: VerbContext, a: Record<string, any>): Promi
     };
   }
 
-  await ctx.consent({
-    verb: "backup import",
-    risk: "secret",
-    summary: {
-      effect: "restore profiles and keys from a backup file into this agent's key store and records",
-      ...plan,
-      keyStoreNote: "keys are only ever added; none is overwritten or deleted. A key already here is skipped",
-      ...(offline ? { warning: "the check on the networks is skipped: whether the backup's keys control the profiles is not confirmed" } : {}),
-    },
-  });
+  const summary = {
+    effect: "restore profiles and keys from a backup file into this agent's key store and records",
+    ...plan,
+    keyStoreNote: "keys are only ever added; none is overwritten or deleted. A key already here is skipped",
+    ...(offline ? { warning: "the check on the networks is skipped: whether the backup's keys control the profiles is not confirmed" } : {}),
+  };
+  assertNoKeyMaterial("the import confirmation", summary); // it is shown, and written to the audit log
+  await ctx.consent({ verb: "backup import", risk: "secret", summary });
   if (ctx.flags.dryRun) return { data: { dryRun: true, ...plan }, text: `Dry run: ${plural(chosen.length, "profile", "profiles")} and ${plural(keysToRestore.length, "key", "keys")} would be restored from ${plan.file}.` };
 
   const keyResults: KeyResult[] = keysToRestore.length ? await restoreKeys(ctx, keysToRestore, backend, opened.parsed.backupDate, known, activeAddress) : [];

@@ -158,5 +158,7 @@ export async function requireConsent(home: string, flags: Flags, req: ConsentReq
     });
   }
   await ensureDir(home);
-  await appendFile(paths.audit(home), toJson({ at: new Date().toISOString(), decision, approval: flags.approval, ...block }, false) + "\n", { mode: 0o600 });
+  const line = toJson({ at: new Date().toISOString(), decision, approval: flags.approval, ...block }, false) + "\n";
+  (await import("./secret-guard.ts")).assertNothingSecretToWrite(line, "the audit log");
+  await appendFile(paths.audit(home), line, { mode: 0o600 });
 }

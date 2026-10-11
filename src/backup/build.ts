@@ -16,7 +16,7 @@ import { readdir } from "node:fs/promises";
 import { getAddress, isAddress, type Address } from "viem";
 import { UpError } from "../core/errors.ts";
 import { paths } from "../core/home.ts";
-import { chainAddressesOf, readProfileRecord } from "../core/profile-record.ts";
+import { chainAddressesOf, linkEvidenceOf, readProfileRecord } from "../core/profile-record.ts";
 import type { UpConfig, VerbContext } from "../core/types.ts";
 import { hasCode } from "../lsp/read.ts";
 import { verifyManifest, type DeploymentManifest } from "../lsp/lsp23.ts";
@@ -49,6 +49,8 @@ export interface ProfileState {
   controllers: Record<number, EstablishedController[]>;
   /** Networks known only from an imported backup, not seen on a network from here. */
   unverifiedChains: number[];
+  /** Networks found only by --refresh (not kept in the profile record): they do not count for freshness. */
+  refreshedChains: number[];
 }
 
 export interface EstablishedController {
@@ -125,6 +127,7 @@ function establishedFor(chainId: number, manifest: DeploymentManifest | undefine
   for (const c of record.joined?.chains ?? []) if (c?.chainId === chainId && c.authorised !== false) add(c.controller ?? record.joined?.controller, "joined");
   const st = record.status?.chains?.[String(chainId)];
   if (st?.isController === true) add(st.controller, "checked");
+  for (const a of record.linkEvidence?.controllers ?? []) add(a, "checked");
   for (const a of onChain) add(a, "chain");
   for (const c of importedChainsOf(record)) if (c.chainId === chainId) for (const a of c.controllers) add(a, "imported");
   return out;
@@ -157,12 +160,13 @@ export async function collectProfiles(ctx: VerbContext, cfg: UpConfig, warnings:
     const imported = importedChainsOf(record);
     let chainIds = deployedChains(manifest, record).filter((c) => !linkedChains.has(c));
     const onChain: Record<number, Address[]> = {};
+    const refreshedChains: number[] = [];
     if (opts.refresh) {
       // best effort: chains the config lists but the record says nothing about, and the controllers found on chain
       for (const c of new Set([...chainIds, ...(cfg.chains ?? [])].filter((x) => !linkedChains.has(x)))) {
         try {
           if (!(await withTimeout(hasCode(ctx, c, id), REFRESH_TIMEOUT_MS))) continue;
-          if (!chainIds.includes(c)) chainIds.push(c);
+          if (!chainIds.includes(c)) (chainIds.push(c), refreshedChains.push(c));
           onChain[c] = (await withTimeout(readControllers(ctx, c, id), REFRESH_TIMEOUT_MS)).controllers.map((x) => x.address);
         } catch (e) {
           warnings.push(`could not refresh ${id} on chain ${c}: ${(e as Error).message}`);
@@ -179,11 +183,26 @@ export async function collectProfiles(ctx: VerbContext, cfg: UpConfig, warnings:
     const importedInitial = Number.isInteger(record.imported?.initialChainID) ? (record.imported.initialChainID as number) : chainIds[0];
     const unverifiedChains = importedHere.filter((c) => !c.verified && !recorded.some((d) => d.chainId === c.chainId)).map((c) => c.chainId);
     if (unverifiedChains.length) warnings.push(`the networks ${unverifiedChains.join(", ")} of ${id} come from an imported backup and were not confirmed on a network from here`);
-    if (chainIds.length) out.push({ address: id, name: aliasOf(id), chainIds, ...(manifest && (recorded.length || importedHere.length) ? { manifest, initialChainId: first ?? importedInitial } : {}), onChain, controllers, unverifiedChains });
+    if (chainIds.length) out.push({ address: id, name: aliasOf(id), chainIds, ...(manifest && (recorded.length || importedHere.length) ? { manifest, initialChainId: first ?? importedInitial } : {}), onChain, controllers, unverifiedChains, refreshedChains });
     else if (!linkedChains.size) warnings.push(`the profile ${id} is not deployed or joined anywhere yet; nothing to back up for it`);
+    // a linked address is its own account in the file: its controllers come from what was verified for THAT address
+    // (the link check, a status snapshot of it) and, with --refresh, from the linked address on its chain
     for (const [chain, address] of Object.entries(linked)) {
       const c = Number(chain);
-      out.push({ address, name: aliasOf(address), chainIds: [c], onChain: {}, controllers: { [c]: establishedFor(c, undefined, undefined, { status: record.status }, []) }, unverifiedChains: [] });
+      const snap = record.status?.chains?.[chain];
+      const own = snap && (typeof snap.profile !== "string" || !isAddress(snap.profile, { strict: false }) || sameAddress(snap.profile, address)) ? snap : undefined;
+      const found: Address[] = [];
+      if (opts.refresh) {
+        try {
+          if (await withTimeout(hasCode(ctx, c, address), REFRESH_TIMEOUT_MS)) {
+            found.push(...(await withTimeout(readControllers(ctx, c, address), REFRESH_TIMEOUT_MS)).controllers.map((x) => x.address));
+          }
+        } catch (e) {
+          warnings.push(`could not refresh the linked address ${address} (profile ${id}) on chain ${c}: ${(e as Error).message}`);
+        }
+      }
+      const evidence = { controllers: linkEvidenceOf(record, c) };
+      out.push({ address, name: aliasOf(address), chainIds: [c], onChain: { [c]: found }, controllers: { [c]: establishedFor(c, undefined, undefined, { status: own ? { chains: { [chain]: own } } : undefined, linkEvidence: evidence }, found) }, unverifiedChains: [], refreshedChains: [] });
     }
   }
   return out;
@@ -197,10 +216,21 @@ export async function collectState(ctx: VerbContext, opts: { only?: Address[]; r
   return { keys, profiles, warnings };
 }
 
+/**
+ * One profile as a backup has to cover it: its address, its networks and the controllers established on each, normalised
+ * (lower case, sorted, no duplicates). What only --refresh found (a network, a controller read from the chain) is left out:
+ * it is not kept anywhere, so a list without --refresh could never match it.
+ */
+function profileLine(p: ProfileState): string {
+  const chains = [...new Set(p.chainIds.filter((c) => !(p.refreshedChains ?? []).includes(c)))].sort((a, b) => a - b);
+  const perChain = chains.map((c) => `${c}:${[...new Set((p.controllers[c] ?? []).filter((e) => e.source !== "chain").map((e) => e.address.toLowerCase()))].sort().join(",")}`);
+  return `${p.address.toLowerCase()}|${perChain.join(";")}`;
+}
+
 /** Fingerprints: what a backup has to cover to be current. `profiles` ignores keys (a public backup covers only that). */
 export function fingerprints(state: Pick<LocalState, "keys" | "profiles">): { full: string; profiles: string } {
   const addrs = (xs: { address: string }[]) => xs.map((x) => x.address.toLowerCase()).sort();
-  const profilePart = ["profiles", ...addrs(state.profiles), "deployments", ...state.profiles.flatMap((p) => (p.manifest ? [sha256Hex(p.manifest.deployCalldata.toLowerCase())] : [])).sort()];
+  const profilePart = ["profiles", ...state.profiles.map(profileLine).sort(), "deployments", ...state.profiles.flatMap((p) => (p.manifest ? [sha256Hex(p.manifest.deployCalldata.toLowerCase())] : [])).sort()];
   return { full: sha256Hex(["keys", ...addrs(state.keys), ...profilePart].join("\n")), profiles: sha256Hex(profilePart.join("\n")) };
 }
 

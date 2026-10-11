@@ -199,3 +199,103 @@ describe("a deployment whose permissions are empty is no proof (finding 4)", () 
     expect(await verdict(a)).toBe("restorable-with-warning");
   });
 });
+
+describe("held controllers are scoped per network (second review, finding 3)", () => {
+  const OTHER = "0x" + "5e".repeat(20);
+  /** `known`: a network that lists my key; `elsewhere`: networks that list only a controller whose key is not held. */
+  const split = (known: number, ...elsewhere: number[]) =>
+    analyse((f) => {
+      f.accounts[0].networks = [
+        { chainID: known, name: "n", controllers: [{ address: me, type: "Device", name: "k" }] },
+        ...elsewhere.map((chainID) => ({ chainID, name: "n", controllers: [{ address: OTHER, type: "Device", name: "someone else" }] })),
+      ];
+    });
+
+  it("a key listed only on network A makes unknown network B no candidate, with A undeployed the profile is not restorable", async () => {
+    reach({ [KNOWN]: { code: false } });
+    const a = await split(KNOWN, UNKNOWN);
+    expect(a.heldByChain.get(KNOWN)).toEqual([me]);
+    expect(a.heldByChain.get(UNKNOWN)).toEqual([]);
+    expect((await decideChain(ctx, a, UNKNOWN)).status).toBe("no-controlling-key");
+    expect((await decideChain(ctx, a, KNOWN)).status).toBe("not-deployed");
+    const d = await decideProfile(ctx, a, true);
+    expect(d.verdict).toBe("no-controlling-key");
+    expect(d.restorable).toBe(false);
+  });
+
+  it("the same with the node unreachable on A: only A has a held controller, so only A is tolerated", async () => {
+    reach({ [KNOWN]: { code: "throws" } });
+    const a = await split(KNOWN, UNKNOWN);
+    const d = await decideProfile(ctx, a, true);
+    expect(d.chains.map((c) => [c.chainId, c.status])).toEqual([[KNOWN, "unverified"], [UNKNOWN, "no-controlling-key"]]);
+    expect(d.verdict).toBe("unverified");
+    expect(d.restorable).toBe(true); // network A is plausible and lists a held key
+  });
+
+  it("a network that lists a held key and controls wins over networks that list none", async () => {
+    reach({ [KNOWN]: { permissions: 1n } });
+    expect((await decideProfile(ctx, await split(KNOWN, UNKNOWN), true)).verdict).toBe("restorable");
+  });
+
+  it("the deployment data's initial controllers count for the deployment's own network only", async () => {
+    const a = await analyse((f) => {
+      f.accounts[0].networks = [{ chainID: UNKNOWN, name: "n", controllers: [{ address: OTHER, type: "Device", name: "x" }] }];
+      f.LSP23CrossChainDeployment[0].initialChainID = KNOWN;
+    });
+    expect(a.heldByChain.get(UNKNOWN)).toEqual([]);
+    expect(await verdict(a)).toBe("no-controlling-key");
+  });
+
+  it("offline: a network without a held controller listed for it never counts, one with it is trusted", async () => {
+    const a = await split(KNOWN, UNKNOWN);
+    const d = await decideProfile(ctx, a, false);
+    expect(d.chains.map((c) => [c.chainId, c.status])).toEqual([[KNOWN, "unverified"], [UNKNOWN, "no-controlling-key"]]);
+    expect(d.restorable).toBe(true);
+    const onlyElsewhere = await analyse((f) => {
+      f.accounts[0].networks = [{ chainID: KNOWN, name: "n", controllers: [{ address: OTHER, type: "Device", name: "x" }] }];
+      f.LSP23CrossChainDeployment[0].initialControllers = [];
+      f.LSP23CrossChainDeployment[0].initialChainID = UNKNOWN;
+    });
+    expect((await decideProfile(ctx, onlyElsewhere, false)).restorable).toBe(false);
+  });
+});
+
+describe("only a defined permission bit proves anything or controls (second review, finding 4)", () => {
+  const BIT31 = `0x${"00".repeat(28)}80000000` as Hex;
+  const withPermission = (value: Hex) =>
+    analyse((f) => {
+      const e = editedDeployment(manifest, (k, v) => {
+        const i = k.findIndex((x) => x.toLowerCase() === (DATA_KEYS.AddressPermissionsPermissionsPrefix + me.slice(2)).toLowerCase());
+        v[i] = value;
+        return [k, v];
+      });
+      f.accounts[0].address = e.profile;
+      f.LSP23CrossChainDeployment[0].profileAddress = e.profile;
+      f.LSP23CrossChainDeployment[0].deploymentCalldata = e.calldata;
+    });
+
+  it("a calldata whose only permission is undefined bit 31 is no proof: no rebuilt manifest, not restorable with a warning", async () => {
+    reach({ [KNOWN]: { permissions: 0n } });
+    const a = await withPermission(BIT31);
+    expect(a.items[0].decoded.rederives).toBe(true);
+    expect(a.items[0].decoded.initialControllers.find((c) => c.address === me)).toMatchObject({ permissionsValid: true, hasPermissions: false });
+    expect(a.proof).toBe(false);
+    expect(a.items[0].manifest).toBeUndefined();
+    expect(a.items[0].reason).toMatch(/no controller in the calldata has permissions/);
+    expect(await verdict(a)).toBe("impersonation-blocked");
+  });
+
+  it("bit 31 next to a defined bit still proves it (the defined bit counts)", async () => {
+    reach({ [KNOWN]: { permissions: 0n } });
+    const a = await withPermission(`0x${"00".repeat(28)}80000001` as Hex);
+    expect(a.proof).toBe(true);
+    expect(await verdict(a)).toBe("restorable-with-warning");
+  });
+
+  it("on the network a key whose only bit is undefined does not control", async () => {
+    reach({ [KNOWN]: { permissions: 1n << 31n } });
+    expect(await verdict(await analyse())).toBe("restorable-with-warning"); // the calldata proves it; the network does not
+    reach({ [KNOWN]: { permissions: 1n << 31n } });
+    expect(await verdict(await analyse((f) => (f.LSP23CrossChainDeployment = [])))).toBe("impersonation-blocked");
+  });
+});

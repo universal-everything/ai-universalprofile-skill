@@ -122,12 +122,13 @@ describe("backup export (encrypted)", () => {
     expect(f.secrets).not.toHaveProperty("passwordHint");
   });
 
-  it("reserves the path, then appends one public index line; no password, hint or key in either", async () => {
+  it("reserves the path, commits it, then appends one public index line; no password, hint or key in any", async () => {
     const r = await run("backup export", { hint: "the usual one" }, { approval: APPROVAL });
     const lines = readFileSync(join(paths.backups(home), "index.jsonl"), "utf8").trim().split("\n");
-    expect(lines).toHaveLength(2);
+    expect(lines).toHaveLength(3);
     expect(JSON.parse(lines[0])).toMatchObject({ event: "reserved", file: r.data.path });
-    const e = JSON.parse(lines[1]);
+    expect(JSON.parse(lines[1])).toMatchObject({ event: "committed", file: r.data.path });
+    const e = JSON.parse(lines[2]);
     expect(e).toMatchObject({ file: r.data.path, sha256: r.data.sha256, mode: "encrypted", encrypted: true, hintPresent: true, appCompatible: true });
     expect(e.keys).toEqual(r.data.keys);
     expect(r.data.indexed).toBe(true);

@@ -9,7 +9,7 @@
 import { decodeAbiParameters, decodeFunctionData, getAddress, isAddress, type Address, type Hex } from "viem";
 import { LSP } from "../chain/registry.ts";
 import { LSP23_ABI } from "../lsp/abis.ts";
-import { DATA_KEYS } from "../lsp/constants.ts";
+import { DATA_KEYS, PERMISSION_NAMES, PERMISSIONS } from "../lsp/constants.ts";
 import { computeERC1167Addresses, manifestFromPlan, verifyManifest, type DeploymentManifest, type Lsp23Plan } from "../lsp/lsp23.ts";
 import { decodePermissions } from "../lsp/permissions.ts";
 import type { BackupInitialController, BackupLsp23Item } from "./lsp30-format.ts";
@@ -23,7 +23,7 @@ export interface DecodedInitialController {
   permissions: Hex;
   /** A 32-byte value that is a plain permission set (no bit above the lowest 32). */
   permissionsValid: boolean;
-  /** Valid and not zero: the controller can actually do something. Only such a controller proves anything. */
+  /** Valid and with at least one defined permission bit: the controller can actually do something. Only such a controller proves anything. */
   hasPermissions: boolean;
   allowedCalls: Hex;
   allowedERC725YDataKeys: Hex;
@@ -54,6 +54,13 @@ const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase(
 const ZERO_PERMISSIONS = `0x${"00".repeat(32)}` as Hex;
 /** A bytes32 permission value whose upper 28 bytes are zero: LSP6 permissions are a few low bits, anything else is not one. */
 const PERMISSION_VALUE = /^0x0{56}[0-9a-f]{8}$/i;
+/** Every bit the skill's permission table defines (LSP6 and the 4337 extension): undefined bits (24 to 31) give a controller nothing. */
+const DEFINED_PERMISSION_BITS = PERMISSION_NAMES.reduce((m, n) => m | PERMISSIONS[n], 0n);
+
+/** True when the value sets at least one DEFINED permission bit: only such a controller can actually do something. */
+export function hasDefinedPermission(value: bigint): boolean {
+  return (value & DEFINED_PERMISSION_BITS) !== 0n;
+}
 
 function addressFromKey(key: Hex, prefix: Hex): Address | undefined {
   return key.toLowerCase().startsWith(prefix.toLowerCase()) && key.length === 66 ? getAddress(`0x${key.slice(26)}`) : undefined;
@@ -93,7 +100,7 @@ export function decodeDeployment(item: Pick<BackupLsp23Item, "profileAddress" | 
     const k = addressFromKey(key, DATA_KEYS.AddressPermissionsAllowedERC725YDataKeysPrefix);
     if (p) {
       const permissionsValid = PERMISSION_VALUE.test(value);
-      perms.set(p, { address: p, permissions: permissionsValid ? (value.toLowerCase() as Hex) : ZERO_PERMISSIONS, permissionsValid, hasPermissions: permissionsValid && BigInt(value) !== 0n, allowedCalls: "0x", allowedERC725YDataKeys: "0x", isUrd: false });
+      perms.set(p, { address: p, permissions: permissionsValid ? (value.toLowerCase() as Hex) : ZERO_PERMISSIONS, permissionsValid, hasPermissions: permissionsValid && hasDefinedPermission(BigInt(value)), allowedCalls: "0x", allowedERC725YDataKeys: "0x", isUrd: false });
     }
     else if (c) calls.set(c, value);
     else if (k) dataKeys.set(k, value);
@@ -157,12 +164,17 @@ export function initialControllersFor(dec: DecodedDeployment, keyIndexOf: (a: Ad
 /**
  * Names that the file's `decodedPermissions` lists but the permissions value does not set, or the
  * other way round (Q7: informational, recomputed from the value). Empty when consistent or absent.
+ * Only known LSP6 permission names are ever named; property names the file made up are reported as a
+ * count, never echoed (they are file text).
  */
-export function permissionMismatch(c: { permissions: Hex; decodedPermissions?: Record<string, boolean> }): string[] {
+export function permissionMismatch(c: { permissions: Hex; decodedPermissions?: Record<string, boolean>; unrecognisedNames?: number }): string[] {
   if (!c.decodedPermissions) return [];
+  const known = new Set<string>(PERMISSION_NAMES);
   const real = new Set<string>(decodePermissions(c.permissions).names);
-  const listed = new Set(Object.entries(c.decodedPermissions).filter(([, v]) => v === true).map(([k]) => k));
-  return [...new Set([...real, ...listed])].filter((n) => real.has(n) !== listed.has(n));
+  const entries = Object.entries(c.decodedPermissions);
+  const listed = new Set(entries.filter(([k, v]) => v === true && known.has(k)).map(([k]) => k));
+  const unrecognised = (c.unrecognisedNames ?? 0) + entries.filter(([k]) => !known.has(k)).length;
+  return [...[...new Set([...real, ...listed])].filter((n) => real.has(n) !== listed.has(n)), ...(unrecognised ? [`${unrecognised} unrecognised permission name${unrecognised === 1 ? "" : "s"} (not shown)`] : [])];
 }
 
 /**

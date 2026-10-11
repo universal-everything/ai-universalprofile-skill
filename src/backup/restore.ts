@@ -6,8 +6,9 @@ import { basename } from "node:path";
 import { getAddress, isAddress, type Address } from "viem";
 import { UpError } from "../core/errors.ts";
 import { updateProfileRecord } from "../core/profile-record.ts";
+import { assertNoKeyMaterial, textHoldsKey } from "../core/public-record.ts";
 import { containsSecret } from "../core/secret-guard.ts";
-import { KEY_WITHHELD, looksLikeKey, safeFileText } from "../core/safe-text.ts";
+import { KEY_WITHHELD, safeFileText } from "../core/safe-text.ts";
 import type { SignerBackend, UpConfig, VerbContext } from "../core/types.ts";
 import { verifyManifest, type DeploymentManifest } from "../lsp/lsp23.ts";
 import { readControllerPermissions } from "../lsp/profile.ts";
@@ -18,7 +19,7 @@ import { readInventory } from "../signer/inventory.ts";
 import { chainControllerList } from "../signer/select.ts";
 import { decryptSecrets, openKey, type OpenedKey } from "./lsp30-crypto.ts";
 import { parseBackup, type BackupAccount, type BackupLsp23Item, type Issue, type ParsedBackup } from "./lsp30-format.ts";
-import { decodeDeployment, manifestFromBackup, permissionMismatch, type DecodedDeployment } from "./lsp23-decode.ts";
+import { decodeDeployment, hasDefinedPermission, manifestFromBackup, permissionMismatch, type DecodedDeployment } from "./lsp23-decode.ts";
 
 // ---------------------------------------------------------------------------
 // Opening
@@ -69,9 +70,7 @@ export async function openBackup(text: string, password: string | undefined): Pr
 }
 
 /** True when `text` holds a private key this process has loaded (also spread over separators) or is key-shaped. */
-export function holdsKey(text: string): boolean {
-  return containsSecret(text) || containsSecret(text.replace(/[^0-9a-z]/gi, "")) || looksLikeKey(text);
-}
+export const holdsKey = textHoldsKey;
 
 /**
  * Every free-text field of the file is public data that is shown, audited and stored. After the keys are
@@ -127,8 +126,10 @@ export interface AccountAnalysis {
   account: BackupAccount;
   chains: number[];
   items: ItemAnalysis[];
-  /** Addresses listed as controllers (networks and initial controllers) whose key is in the file or on this machine. */
+  /** Addresses listed as controllers (networks and initial controllers) whose key is in the file or on this machine, over all networks. */
   heldControllers: Address[];
+  /** The same per network: only the controllers the file lists FOR that network (its entry, and the deployment data for its initial network). A key listed on one network says nothing about another. */
+  heldByChain: Map<number, Address[]>;
   /** File keys that belong to this profile: referenced by index or by address. */
   fileKeys: OpenedKey[];
   /** The calldata proves a held key is a genuine initial controller of this profile (it re-derives the address and gives that key permissions). */
@@ -154,12 +155,27 @@ export function analyseAccounts(opened: OpenedBackup, localKeys: ReadonlySet<str
     for (const n of account.networks) for (const c of n.controllers) (listed.add(c.address.toLowerCase()), c.privateKeyIndex !== undefined && indices.add(c.privateKeyIndex));
     for (const it of items) for (const c of it.item.initialControllers) (listed.add(c.address.toLowerCase()), c.privateKeyIndex !== undefined && indices.add(c.privateKeyIndex));
     const heldControllers = [...listed].filter((a) => held.has(a)).map((a) => getAddress(a));
+    const heldByChain = new Map<number, Address[]>();
     const fileKeys = opened.keys.filter((k) => indices.has(k.index) || listed.has(k.address.toLowerCase()));
     const proof = items.some((it) => it.decoded.rederives && it.decoded.initialControllers.some((c) => !c.isUrd && c.hasPermissions && held.has(c.address.toLowerCase())));
     const forged = items.some((i) => i.decoded.supported && !i.decoded.rederives);
     const chains = [...new Set([...account.networks.map((n) => n.chainID), ...(account.networks.length ? [] : items.map((i) => i.item.initialChainID))])];
-    return { account, chains, items, heldControllers, fileKeys, proof, forged };
+    for (const chainId of chains) {
+      const here = new Set<string>();
+      for (const n of account.networks) if (n.chainID === chainId) for (const c of n.controllers) here.add(c.address.toLowerCase());
+      for (const it of items) if (it.item.initialChainID === chainId) for (const c of it.item.initialControllers) here.add(c.address.toLowerCase());
+      heldByChain.set(chainId, [...here].filter((a) => held.has(a)).map((a) => getAddress(a)));
+    }
+    return { account, chains, items, heldControllers, heldByChain, fileKeys, proof, forged };
   });
+}
+
+/**
+ * Everything of a profile that an import would store (account, controllers, deployment data, the manifest rebuilt from it)
+ * is checked as a whole for key material before anything is written; the profile is refused, with no echo, when it holds some.
+ */
+export function assertProfileRecordClean(x: AccountAnalysis): void {
+  assertNoKeyMaterial(`the backup's data for the profile ${x.account.address}`, { account: x.account, items: x.items.map((i) => ({ item: i.item, manifest: i.manifest })) });
 }
 
 export type ChainStatus = "controls" | "restorable-with-warning" | "unverified" | "unknown-network" | "not-deployed" | "no-controlling-key" | "impersonation-blocked";
@@ -177,7 +193,8 @@ export interface ChainDecision {
  * never make the file trusted. Only a held key that is plausibly a controller is given the benefit of an unreachable or unknown network.
  */
 export async function decideChain(ctx: VerbContext, a: AccountAnalysis, chainId: number): Promise<ChainDecision> {
-  if (!a.heldControllers.length) return { chainId, status: "no-controlling-key" };
+  const candidates = a.heldByChain.get(chainId) ?? [];
+  if (!candidates.length) return { chainId, status: "no-controlling-key" };
   const forged = a.forged && !a.proof;
   const open = (status: "unverified" | "unknown-network", note: string): ChainDecision =>
     forged ? { chainId, status: "impersonation-blocked", note: "the deployment data in the file does not create this profile and the network cannot confirm that a backup key controls it" } : { chainId, status, note };
@@ -192,10 +209,10 @@ export async function decideChain(ctx: VerbContext, a: AccountAnalysis, chainId:
     return open("unverified", "the network could not be reached");
   }
   let inconclusive = false;
-  for (const key of a.heldControllers) {
+  for (const key of candidates) {
     try {
       const info = await readControllerPermissions(ctx, chainId, a.account.address, key);
-      if (info.permissions.value !== 0n) return { chainId, status: "controls" };
+      if (hasDefinedPermission(info.permissions.value)) return { chainId, status: "controls" };
     } catch {
       inconclusive = true;
     }
@@ -221,8 +238,14 @@ export interface ProfileDecision {
 export async function decideProfile(ctx: VerbContext, a: AccountAnalysis, online: boolean): Promise<ProfileDecision> {
   const address = a.account.address;
   if (!online) {
-    const verdict: ProfileVerdict = !a.heldControllers.length ? "no-controlling-key" : a.forged && !a.proof ? "impersonation-blocked" : "unverified";
-    return { address, verdict, restorable: verdict === "unverified", chains: a.chains.map((chainId) => ({ chainId, status: (verdict === "unverified" ? "unverified" : verdict === "no-controlling-key" ? "no-controlling-key" : "impersonation-blocked") as ChainStatus, note: "not checked on the network" })) };
+    // per network: a network with no held controller listed for it never counts; the rest is trusted after the calldata checks
+    const chains: ChainDecision[] = a.chains.map((chainId) => ({
+      chainId,
+      status: (a.heldByChain.get(chainId)?.length ? (a.forged && !a.proof ? "impersonation-blocked" : "unverified") : "no-controlling-key") as ChainStatus,
+      note: "not checked on the network",
+    }));
+    const verdict: ProfileVerdict = chains.some((c) => c.status === "unverified") ? "unverified" : chains.some((c) => c.status === "impersonation-blocked") ? "impersonation-blocked" : "no-controlling-key";
+    return { address, verdict, restorable: verdict === "unverified", chains };
   }
   const chains: ChainDecision[] = [];
   for (const c of a.chains) chains.push(await decideChain(ctx, a, c));
@@ -388,6 +411,8 @@ export async function writeProfileRecords(
           status = "restored";
         }
       } else if (manifest && cur) status = cur.deployCalldata?.toLowerCase() === manifest.deployCalldata.toLowerCase() ? "kept-existing" : "conflict";
+      // the whole public record, as it is about to be stored (lsp3, calldata, data values, names, every field)
+      assertNoKeyMaterial(`the record of the profile ${analysis.account.address}`, patch);
       return patch;
     });
     out.push({ address: analysis.account.address, manifest: status, chains: analysis.chains });
@@ -397,6 +422,7 @@ export async function writeProfileRecords(
 
 /** Config changes of an import: default profile if none, chains the registry knows, the active key only if none is configured. */
 export async function applyImportConfig(ctx: VerbContext, change: { defaultProfile?: Address; chains: number[]; active?: { address: Address; backend: string } }): Promise<{ chainsAdded: number[]; unknownChains: number[]; activeSet: boolean; defaultProfileSet: boolean }> {
+  assertNoKeyMaterial("the configuration change", change);
   const known: number[] = [];
   const unknownChains: number[] = [];
   for (const c of change.chains) {

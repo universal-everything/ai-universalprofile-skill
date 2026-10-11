@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { UpError } from "../core/errors.ts";
+import { assertNoKeyMaterial } from "../core/public-record.ts";
 import { appendLine, ensureDir, paths } from "../core/home.ts";
 import { assertNotKeyMaterialPath } from "../core/secret-guard.ts";
 import { writeNewFileExclusive } from "../signer/verbs.ts";
@@ -36,9 +37,13 @@ export interface IndexEntry {
   appCompatible: boolean;
 }
 
+/**
+ * `reserved`: a path about to receive a backup (guarded from other readers from then on);
+ * `committed`: the file was written; `cancelled`: it was not (the path is free again). The newest event of a path wins.
+ */
 export interface IndexEvent {
   at: string;
-  event: "asked" | "import" | "reserved";
+  event: "asked" | "import" | "reserved" | "committed" | "cancelled";
   fingerprint?: string;
   kind?: string;
   file?: string;
@@ -48,6 +53,7 @@ export interface IndexEvent {
 }
 
 export async function appendIndex(home: string, entry: IndexEntry | IndexEvent): Promise<void> {
+  assertNoKeyMaterial("a backups index line", entry);
   await ensureDir(backupsDir(home));
   await appendLine(indexFile(home), JSON.stringify(entry));
 }
@@ -102,9 +108,9 @@ export async function resolveDestination(home: string, given?: string): Promise<
 }
 
 /** Writes a new backup file (0600, exclusive). Returns its sha256. */
-export async function writeBackup(file: string, content: string): Promise<{ sha256: string; size: number }> {
-  await writeNewFileExclusive(file, content);
-  return { sha256: sha256Hex(content), size: Buffer.byteLength(content) };
+export async function writeBackup(file: string, content: string): Promise<{ sha256: string; size: number; warning?: string }> {
+  const { warning } = await writeNewFileExclusive(file, content);
+  return { sha256: sha256Hex(content), size: Buffer.byteLength(content), ...(warning ? { warning } : {}) };
 }
 
 /**

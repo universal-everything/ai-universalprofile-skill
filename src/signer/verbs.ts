@@ -413,7 +413,12 @@ export const MIN_PASSPHRASE_LENGTH = 12;
 const PASSPHRASE_HINT =
   "a human must run this in their own terminal (never via chat): read -rs UP_BACKUP_PASSPHRASE && export UP_BACKUP_PASSPHRASE && up key backup --encrypted --explicit-consent --path <file> --approval \"<your words>\"; unset UP_BACKUP_PASSPHRASE";
 
-export async function writeNewFileExclusive(file: string, content: string): Promise<void> {
+/**
+ * Writes a new file (0600), never over an existing one. Returns a warning when the file was published but the
+ * temporary file could not be removed: the file is complete and usable, so that is not an error (callers that hand
+ * out a password for it must still hand it out).
+ */
+export async function writeNewFileExclusive(file: string, content: string): Promise<{ warning?: string }> {
   const dir = dirname(file);
   const tmp = join(dir, `.${basename(file)}.${randomBytes(6).toString("hex")}.tmp`);
   await writeFile(tmp, content, { mode: 0o600, flag: "wx" });
@@ -433,9 +438,17 @@ export async function writeNewFileExclusive(file: string, content: string): Prom
       }
       if (process.platform !== "win32") await chmod(file, 0o600).catch(() => {});
     }
-  } finally {
-    await rm(tmp, { force: true });
+  } catch (e) {
+    await rm(tmp, { force: true }).catch(() => {}); // nothing was published: the original error is the one to report
+    throw e;
   }
+  // published from here on
+  try {
+    await rm(tmp, { force: true });
+  } catch (e) {
+    return { warning: `the file was written, but the temporary copy ${tmp} could not be removed (${(e as NodeJS.ErrnoException).code ?? "error"}); it holds the same content and can be deleted by hand` };
+  }
+  return {};
 }
 
 export const keyBackupVerb = defineVerb({
@@ -496,11 +509,12 @@ export const keyBackupVerb = defineVerb({
     // Prove the backup restores before writing it.
     const check = await decryptKeystoreV3(ks, passphrase);
     if (check !== key) throw new UpError("INTERNAL", "backup verification failed; nothing was written");
-    await writeNewFileExclusive(file, JSON.stringify(ks, null, 2) + "\n");
+    const written = await writeNewFileExclusive(file, JSON.stringify(ks, null, 2) + "\n");
     ctx.log(`encrypted key backup written: ${file}`);
     return {
       data: { path: file, address: c.address, format: "keystore-v3", kdf, verified: true },
       text: `Encrypted backup of ${c.address} written to ${file} (Ethereum keystore v3). Keep the passphrase somewhere else — the file alone cannot be opened, the file plus passphrase controls the key.`,
+      ...(written.warning ? { warnings: [written.warning] } : {}),
     };
   },
 });
