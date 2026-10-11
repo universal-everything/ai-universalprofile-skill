@@ -68,6 +68,12 @@ describe("J1: precompute → deploy → verify", () => {
     const nonce = await h.request("eth_getTransactionCount", [signer.address, "latest"]);
     const r = await run(dctx, "account deploy", { seed, candidate: 2 });
     expect(r.data.status).toBe("dry-run");
+    // the agent sends and pays; the human is asked for nothing but a yes
+    expect(r.data.sentBy).toBe(signer.address);
+    expect(r.data.say).toMatch(/I send and pay this myself from my gas address/);
+    expect(r.data.say).not.toMatch(/sign (it|the deployment) in your wallet|which wallet/i);
+    expect(r.data.next.join(" ")).toMatch(/Never ask the human to sign/);
+    expect(r.text).toMatch(/sent and paid by the agent's key/);
     expect(r.data.profile).toBe(profile);
     expect(await h.request("eth_getCode", [profile, "latest"])).toBe("0x");
     expect(await h.request("eth_getTransactionCount", [signer.address, "latest"])).toBe(nonce);

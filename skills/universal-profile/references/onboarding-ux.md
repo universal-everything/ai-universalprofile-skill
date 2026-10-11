@@ -80,7 +80,7 @@ Each step below has: **Goal** · **Message** (adapt the wording, keep the conten
 ## J1 · Step 5: create the profile
 
 - **Goal:** the profile exists on each funded network.
-- **Message before:** "Thanks, the gas arrived on LUKSO. Shall I create my profile there now? It uses about <cost from the dry run, in dollars> of the gas you sent." Expected reply: yes. (Their "yes" is the approval.)
+- **Message before:** run the deployment as a dry run first and use its `data.say`: either "Everything is ready to create my profile on LUKSO. I send and pay this myself from my gas address … Shall I create it now?" or, if the gas has not arrived, the funding request of step 4 (`data.next`). Expected reply: yes. (Their "yes" is the approval.) **You** send the deployment; the human never signs, never picks a wallet app, never pays it.
 - **Message after:** "Done! My profile now exists on LUKSO:" then the profile address on its own line, its profile link, and one line per network still waiting for gas.
 - **Attach:** after success, the profile address QR.
 - **Never:** ask the human to sign or confirm in a wallet; create before the gas has arrived; retry silently after a failure.
@@ -143,4 +143,5 @@ Each step below has: **Goal** · **Message** (adapt the wording, keep the conten
 - A wide picture cropped by the chat app so only one option was visible: always use the one picture from `account precompute` (it is narrow, one row per option).
 - Full 42-character addresses in a numbered list, broken over three lines each: use the short form in lists.
 - Suggesting a testnet, a MetaMask contract call, or that the human signs the deployment.
+- After a successful dry run: "You'll sign the deployment in your wallet. Which wallet app do you use?" Wrong: the agent's own key sends and pays the deployment; the human only sent gas. Use the dry run's `data.say`.
 - Calling the gas address "my wallet" or "my account".

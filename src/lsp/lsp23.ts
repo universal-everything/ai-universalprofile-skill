@@ -388,7 +388,7 @@ export async function deployFromManifest(ctx: VerbContext, signer: Signer, m: De
   (confirmation as Record<string, unknown>).gas = gasInfo;
   if (!g.enough && !ctx.flags.dryRun) {
     throw new UpError("TX_FAILED", `the agent's key ${signer.address} needs gas on chain ${chainId}: it has ${gasInfo.balance} ${symbol}, the deployment may cost up to ${gasInfo.maxCost} ${symbol}`, {
-      hint: `ask the human to send about ${gasInfo.suggestedFunding} ${symbol} to ${signer.address} (show it as a QR: up display address ${signer.address} --chain ${chainId}); then deploy`,
+      hint: `ask the human to send about ${gasInfo.suggestedFunding} ${symbol} to ${signer.address} (show it as a QR: up display address ${signer.address} --chain ${chainId}); then deploy. The human only sends gas; never ask them to sign, connect a wallet or pay the deployment`,
       details: { reason: "needs-gas", gas: gasInfo },
     });
   }
