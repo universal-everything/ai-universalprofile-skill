@@ -6,7 +6,7 @@
 //
 // The registry lives only in this process's memory, like the signer itself; it is never
 // serialised, logged or written anywhere.
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { UpError } from "./errors.ts";
 import { paths, upHome } from "./home.ts";
@@ -41,11 +41,39 @@ export function guardOutput(text: string, json: boolean): string {
   return json ? JSON.stringify({ ok: false, error: { code: "INTERNAL", message: WITHHELD_MESSAGE } }) : `✗ INTERNAL: ${WITHHELD_MESSAGE}`;
 }
 
+function realOf(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+/** Files recorded in the backup index (<UP_HOME>/backups/index.jsonl), as real paths; unreadable index = none. */
+function indexedBackups(): string[] {
+  try {
+    const text = readFileSync(resolve(paths.backups(upHome()), "index.jsonl"), "utf8");
+    return text.split("\n").flatMap((l) => {
+      try {
+        const f = JSON.parse(l)?.file;
+        return typeof f === "string" ? [resolve(f)] : [];
+      } catch {
+        return [];
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Refuses user-supplied file paths inside the skill's key store (`<UP_HOME>/keys`) or that look
- * like key files, so no verb can read a key file and echo, parse or upload its contents.
+ * like key files, so no verb can read a key file and echo, parse or upload its contents. Backup
+ * files (<UP_HOME>/backups, universal-profiles-backup-*.json, files named in the backup index)
+ * are refused too, except for the backup verbs, which read them through their own reader
+ * (`allowBackups`).
  */
-export function assertNotKeyMaterialPath(file: string, what = "file"): void {
+export function assertNotKeyMaterialPath(file: string, what = "file", opts: { allowBackups?: boolean } = {}): void {
   let real = resolve(file);
   try {
     real = realpathSync(real);
@@ -62,6 +90,18 @@ export function assertNotKeyMaterialPath(file: string, what = "file"): void {
   const inside = (dir: string) => real === dir || real.startsWith(dir + sep);
   if (inside(keysDir) || inside(keysReal) || /\.(key|cred|dpapi)$/i.test(real) || /(^|[\\/])keystore[^\\/]*\.json$/i.test(real)) {
     throw new UpError("BAD_ARGS", `refusing to read ${what} from the key store or a key file`, { hint: "key files are only ever used inside the skill for signing; pass a different file" });
+  }
+  if (!opts.allowBackups) {
+    const backupsDir = resolve(paths.backups(upHome()));
+    let backupsReal = backupsDir;
+    try {
+      backupsReal = realpathSync(backupsDir);
+    } catch {
+      /* no backups yet */
+    }
+    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real)) {
+      throw new UpError("BAD_ARGS", `refusing to read ${what} from the backups or a backup file`, { hint: "backup files hold encrypted (or, if asked for, plain) keys; only the backup verbs open them. Never read or send a backup file's contents" });
+    }
   }
 }
 

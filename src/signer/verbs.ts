@@ -21,7 +21,7 @@ import { getAddress, isAddress } from "viem";
 import { UpError } from "../core/errors.ts";
 import { existsSync } from "node:fs";
 import { ensureDir, paths, readJsonStrict, writeJsonWithBackup } from "../core/home.ts";
-import type { Address, UpConfig, VerbContext, VerbResult } from "../core/types.ts";
+import type { Address, Hex, SignerBackend, UpConfig, VerbContext, VerbResult } from "../core/types.ts";
 import { defineVerb } from "../core/verbs.ts";
 import { readConfigFile } from "../core/context.ts";
 import { inventoryFile, readInventory, recordKey } from "./inventory.ts";
@@ -61,7 +61,7 @@ export async function readCandidates(home: string): Promise<CandidateKey[]> {
 }
 
 /** Read-modify-write of candidates.json (call under withKeyLock). Unknown entries are kept as they are; the old file is kept as .bak. */
-async function updateCandidates(home: string, fn: (list: unknown[]) => unknown[]): Promise<void> {
+export async function updateCandidates(home: string, fn: (list: unknown[]) => unknown[]): Promise<void> {
   await writeJsonWithBackup(candidatesFile(home), fn(await readCandidatesRaw(home)), Array.isArray);
 }
 
@@ -81,17 +81,17 @@ function sameKey(a: string | undefined, b: string | undefined): boolean {
 }
 
 /**
- * Creates a key in `backend`, recording it in the append-only recovery inventory
- * (keys/inventory.jsonl) BEFORE it is stored: the key is generated, its public record is
- * appended, then it is stored. If the record cannot be written, nothing is stored; if storing
- * fails, a follow-up line marks the record "not stored". So a stored key is always listed.
+ * Stores a key through `store`, recording it in the append-only recovery inventory
+ * (keys/inventory.jsonl) BEFORE it is stored: the key's public record is appended, then it is
+ * stored. If the record cannot be written, nothing is stored; if storing fails, a follow-up line
+ * marks the record "not stored". So a stored key is always listed.
  */
-async function createRecorded(home: string, backend: { id: string; create(beforeStore?: (address: Address) => Promise<void>): Promise<Address> }): Promise<Address> {
+async function storeRecorded(home: string, backendId: string, store: (beforeStore: (address: Address) => Promise<void>) => Promise<Address>, note?: string): Promise<Address> {
   let recorded: Address | undefined;
   try {
-    return await backend.create(async (address) => {
+    return await store(async (address) => {
       try {
-        await recordKey(home, { address, backend: backend.id });
+        await recordKey(home, { address, backend: backendId, ...(note ? { note } : {}) });
       } catch (e) {
         throw new UpError("INTERNAL", `could not record the new key in ${inventoryFile(home)} (${(e as Error).message}); no key was created`, { hint: "fix the state directory (keys/), then retry" });
       }
@@ -100,11 +100,23 @@ async function createRecorded(home: string, backend: { id: string; create(before
   } catch (e) {
     if (recorded) {
       const d = (e as UpError)?.details as { kept?: boolean; problem?: string } | undefined;
-      const note = d?.kept ? `kept after ${d.problem ?? "a failed check"}` : "creation failed; not stored";
-      await recordKey(home, { address: recorded, backend: backend.id, note, ...(d?.kept ? {} : { notStored: true }) }).catch(() => {});
+      const why = d?.kept ? `kept after ${d.problem ?? "a failed check"}` : "creation failed; not stored";
+      await recordKey(home, { address: recorded, backend: backendId, note: why, ...(d?.kept ? {} : { notStored: true }) }).catch(() => {});
     }
     throw e;
   }
+}
+
+/** Creates a key in `backend` and records it in the recovery inventory before it is stored (see storeRecorded). */
+async function createRecorded(home: string, backend: { id: string; create(beforeStore?: (address: Address) => Promise<void>): Promise<Address> }): Promise<Address> {
+  return storeRecorded(home, backend.id, (before) => backend.create(before));
+}
+
+/** Stores an existing key (from a backup file) in `backend`, recorded in the recovery inventory first, with a note. */
+export async function importRecorded(home: string, backend: { id: string; importKey?: SignerBackend["importKey"] }, privateKey: Hex, note: string): Promise<Address> {
+  const importKey = backend.importKey;
+  if (!importKey) throw new UpError("NOT_SUPPORTED", `the ${backend.id} key store cannot import a key`, { hint: "choose another key store with --backend (up key backend lists them)" });
+  return storeRecorded(home, backend.id, (before) => importKey.call(backend, privateKey, before), note);
 }
 
 function requireController(cfg: UpConfig): NonNullable<UpConfig["controller"]> {
@@ -195,14 +207,14 @@ function perChainLines(ctx: VerbContext, cfg: UpConfig): string[] {
   return own.length ? [`Own key per chain (used there instead of the default): ${own.map((c) => `${chainText(ctx, c.chainId)} → ${c.address} (${c.backend})`).join("; ")}`] : [];
 }
 
-type KeptKind = "additional" | "previous" | "recovered";
-type KeptKey = { address: Address; backend: string; kind: KeptKind; chainId?: number; note?: string };
+export type KeptKind = "additional" | "previous" | "recovered";
+export type KeptKey = { address: Address; backend: string; kind: KeptKind; chainId?: number; note?: string };
 
 /**
  * Keys the agent keeps besides the ones in use: previous keys, additional keys not used yet, and
  * keys only the recovery inventory knows (created, but their bookkeeping failed). Public data only.
  */
-async function keptKeys(home: string, cfg: UpConfig): Promise<KeptKey[]> {
+export async function keptKeys(home: string, cfg: UpConfig): Promise<KeptKey[]> {
   const inUse = [cfg.controller?.address, ...chainControllerList(cfg).map((k) => k.address)];
   const out: KeptKey[] = [];
   const add = (k: { address: string; backend: string; chainId?: number; note?: string }, kind: KeptKind) => {
@@ -401,7 +413,7 @@ export const MIN_PASSPHRASE_LENGTH = 12;
 const PASSPHRASE_HINT =
   "a human must run this in their own terminal (never via chat): read -rs UP_BACKUP_PASSPHRASE && export UP_BACKUP_PASSPHRASE && up key backup --encrypted --explicit-consent --path <file> --approval \"<your words>\"; unset UP_BACKUP_PASSPHRASE";
 
-async function writeNewFileExclusive(file: string, content: string): Promise<void> {
+export async function writeNewFileExclusive(file: string, content: string): Promise<void> {
   const dir = dirname(file);
   const tmp = join(dir, `.${basename(file)}.${randomBytes(6).toString("hex")}.tmp`);
   await writeFile(tmp, content, { mode: 0o600, flag: "wx" });

@@ -130,6 +130,7 @@ export async function handleMcpMessage(msg: any): Promise<unknown | undefined> {
 }
 
 export async function runMcpServer(): Promise<void> {
+  process.env.UP_MCP_SERVER = "1"; // standard input carries the protocol: verbs must not read it (backup --password-stdin)
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
   const pending = new Set<Promise<void>>();
   rl.on("line", (line) => {

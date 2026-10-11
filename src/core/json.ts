@@ -47,13 +47,25 @@ function maskUrl(s: string): string {
   }
 }
 
+const released = new WeakMap<object, Set<string>>();
+
+/**
+ * Marks keys of a result object as meant to be output (the generated backup password, which the
+ * agent must hand to the human). redact() leaves exactly these keys of exactly this object alone;
+ * nothing else changes, and private keys stay covered by the output guard (secret-guard.ts).
+ */
+export function releaseKeys<T extends object>(obj: T, ...keys: string[]): T {
+  released.set(obj, new Set([...(released.get(obj) ?? []), ...keys]));
+  return obj;
+}
+
 /** Deep-redact secret-shaped fields before output (defence in depth; verbs never put secrets in results). */
 export function redact<T>(value: T, inSecretContainer = false): T {
   if (Array.isArray(value)) return value.map((v) => redact(v, inSecretContainer)) as T;
   if (value && typeof value === "object" && !(value instanceof Uint8Array)) {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (typeof v === "string" && (inSecretContainer || SECRET_KEY.test(k))) out[k] = "[redacted]";
+      if (typeof v === "string" && (inSecretContainer || SECRET_KEY.test(k)) && !released.get(value as object)?.has(k)) out[k] = "[redacted]";
       else out[k] = redact(v, SECRET_CONTAINER.test(k));
     }
     return out as T;

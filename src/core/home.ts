@@ -123,5 +123,6 @@ export const paths = {
   cache: (home: string, ...p: string[]) => join(home, "cache", ...p),
   media: (home: string) => join(home, "media"),
   keys: (home: string) => join(home, "keys"),
+  backups: (home: string) => join(home, "backups"),
   audit: (home: string) => join(home, "audit.log"),
 };
