@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 015aa1d73e3e (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 28558cd0bed8 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -8929,7 +8929,7 @@ async function deployFromManifest(ctx, signer, m, chainId, verb = "account deplo
   confirmation.gas = gasInfo;
   if (!g.enough && !ctx.flags.dryRun) {
     throw new UpError("TX_FAILED", `the agent's key ${signer.address} needs gas on chain ${chainId}: it has ${gasInfo.balance} ${symbol}, the deployment may cost up to ${gasInfo.maxCost} ${symbol}`, {
-      hint: `ask the human to send about ${gasInfo.suggestedFunding} ${symbol} to ${signer.address} (show it as a QR: up display address ${signer.address} --chain ${chainId}); then deploy`,
+      hint: `ask the human to send about ${gasInfo.suggestedFunding} ${symbol} to ${signer.address} (show it as a QR: up display address ${signer.address} --chain ${chainId}); then deploy. The human only sends gas; never ask them to sign, connect a wallet or pay the deployment`,
       details: { reason: "needs-gas", gas: gasInfo }
     });
   }
@@ -9312,7 +9312,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "015aa1d73e3e" : "source";
+var SOURCE = true ? "28558cd0bed8" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -13125,10 +13125,45 @@ defineVerb({
       }
       if (getAddress26(m.controller) === signer.address && !(m.extraControllers ?? []).length) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
     }
-    const next = out.status === "deployed" && chainId === metadataHooks().defaultChainId && !m.lsp3 ? ["ask the human whether they want a profile name, description, profile picture and background image (all optional, can be done later): up profile metadata set --dry-run, then with their approval"] : void 0;
+    const metadataNext = out.status === "deployed" && chainId === metadataHooks().defaultChainId && !m.lsp3 ? ["ask the human whether they want a profile name, description, profile picture and background image (all optional, can be done later): up profile metadata set --dry-run, then with their approval"] : [];
+    const chainName6 = (() => {
+      try {
+        return ctx.registry.chain(chainId).name;
+      } catch {
+        return `chain ${chainId}`;
+      }
+    })();
+    const g = out.gas;
+    const noWallet = `Never ask the human to sign, connect a wallet, pick a wallet app or pay the deployment: your key ${signer.address} sends and pays it.`;
+    let say;
+    let next;
+    if (out.status === "dry-run" && g && g.enough) {
+      say = `Everything is ready to create my profile on ${chainName6}. I send and pay this myself from my gas address (it uses at most ${g.maxCost} ${g.symbol} of the ${g.balance} ${g.symbol} there), so you don't need to sign anything. Shall I create it now?`;
+      next = ['When they agree: run the same command without --dry-run, with --approval "<their words>".', noWallet];
+    } else if (out.status === "dry-run" && g) {
+      say = `To create my profile on ${chainName6} I need a little gas on my gas address first. You only send a small amount once; you don't sign or approve anything else.`;
+      next = [`Run up funding suggest --chain ${chainId} and send its text together with the one QR of your gas address ${g.payer} (references/onboarding-ux.md, step 4). At least ${g.suggestedFunding ?? g.missing} ${g.symbol} is needed for the deployment itself.`, "When the gas has arrived, run this dry run again, then ask whether to create the profile.", noWallet];
+    } else if (out.status === "deployed") {
+      say = `Done! My profile now exists on ${chainName6}:
+${m.profile}`;
+      next = ["Send the profile address with its QR (up display address <profile> --chain <id>) and say where money for the profile goes: the profile address, never the gas address.", ...metadataNext];
+    } else if (out.status === "already-deployed") {
+      say = `My profile already exists on ${chainName6}:
+${m.profile}`;
+      next = metadataNext;
+    }
     return {
-      data: { ...out, manifestSaved: out.status !== "dry-run", next },
-      text: [`${out.status === "dry-run" ? "DRY RUN — " : ""}profile ${m.profile} (${out.status}) on chain ${chainId}`, `key manager ${m.keyManager}`, out.txHash ? `tx ${out.txHash}` : "", out.verified ? `checks: ${Object.entries(out.verified).map(([k, v]) => `${k}=${v ? "ok" : "FAIL"}`).join(", ")}` : "", ...next ? [`next: ${next[0]}`] : []].filter(Boolean).join("\n"),
+      data: { ...out, manifestSaved: out.status !== "dry-run", sentBy: signer.address, ...say ? { say } : {}, next: next?.length ? next : void 0 },
+      text: [
+        `${out.status === "dry-run" ? "DRY RUN — " : ""}profile ${m.profile} (${out.status}) on chain ${chainId}`,
+        `key manager ${m.keyManager}`,
+        `sent and paid by the agent's key ${signer.address}; the human signs nothing`,
+        g ? `gas: up to ${g.maxCost} ${g.symbol}; the agent's key holds ${g.balance} ${g.symbol}${g.enough ? "" : ` (not enough: needs about ${g.suggestedFunding ?? g.missing} ${g.symbol} more)`}` : "",
+        out.txHash ? `tx ${out.txHash}` : "",
+        out.verified ? `checks: ${Object.entries(out.verified).map(([k, v]) => `${k}=${v ? "ok" : "FAIL"}`).join(", ")}` : "",
+        say ? `say: ${say}` : "",
+        ...(next ?? []).map((n) => `next: ${n}`)
+      ].filter(Boolean).join("\n"),
       warnings
     };
   }
