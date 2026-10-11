@@ -123,19 +123,38 @@ describe("path reservations (finding 8)", () => {
     expect(() => assertNotKeyMaterialPath(dest)).not.toThrow();
   });
 
-  it("a reservation (and a commit) guards the path; a cancel frees it; a newer reservation guards it again", async () => {
+  it("a reservation guards the path; its cancel frees it; a newer reservation guards it again", async () => {
     const dest = customPath();
     writeFileSync(dest, JSON.stringify({ shopping: ["milk"] }));
     const at = new Date().toISOString();
     expect(() => assertNotKeyMaterialPath(dest)).not.toThrow();
     await appendIndex(home, { at, event: "reserved", file: dest });
     expect(() => assertNotKeyMaterialPath(dest)).toThrow(/backups or a backup file/);
-    await appendIndex(home, { at, event: "committed", file: dest });
-    expect(() => assertNotKeyMaterialPath(dest)).toThrow(/backups or a backup file/);
     await appendIndex(home, { at, event: "cancelled", file: dest });
     expect(() => assertNotKeyMaterialPath(dest)).not.toThrow();
     await appendIndex(home, { at, event: "reserved", file: dest });
     expect(() => assertNotKeyMaterialPath(dest)).toThrow(/backups or a backup file/);
+  });
+
+  it("a written (committed) backup stays guarded for good; concurrent reservations are counted", async () => {
+    const dest = customPath();
+    writeFileSync(dest, "{}");
+    const at = new Date().toISOString();
+    // reserve A, reserve B, commit A, cancel B: A's file exists, so the path stays guarded
+    await appendIndex(home, { at, event: "reserved", file: dest });
+    await appendIndex(home, { at, event: "reserved", file: dest });
+    await appendIndex(home, { at, event: "committed", file: dest });
+    await appendIndex(home, { at, event: "cancelled", file: dest });
+    expect(() => assertNotKeyMaterialPath(dest)).toThrow(/backups or a backup file/);
+    const other = customPath();
+    writeFileSync(other, "{}");
+    // two open reservations, one cancelled: still guarded until the second is cancelled too
+    await appendIndex(home, { at, event: "reserved", file: other });
+    await appendIndex(home, { at, event: "reserved", file: other });
+    await appendIndex(home, { at, event: "cancelled", file: other });
+    expect(() => assertNotKeyMaterialPath(other)).toThrow(/backups or a backup file/);
+    await appendIndex(home, { at, event: "cancelled", file: other });
+    expect(() => assertNotKeyMaterialPath(other)).not.toThrow();
   });
 
   it("a cancel for one path frees only that path", async () => {

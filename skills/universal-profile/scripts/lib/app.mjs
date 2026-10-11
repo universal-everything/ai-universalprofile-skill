@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint b543146cb414 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 5115054de027 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -326,16 +326,20 @@ function realOf(p) {
 function indexedBackups() {
   try {
     const text = readFileSync(resolve(paths.backups(upHome()), "index.jsonl"), "utf8");
-    const guarded = /* @__PURE__ */ new Map();
+    const written = /* @__PURE__ */ new Set();
+    const open4 = /* @__PURE__ */ new Map();
     for (const l of text.split("\n")) {
       try {
         const v = JSON.parse(l);
         if (typeof v?.file !== "string") continue;
-        guarded.set(resolve(v.file), v.event !== "cancelled");
+        const f = resolve(v.file);
+        if (v.event === "reserved") open4.set(f, (open4.get(f) ?? 0) + 1);
+        else if (v.event === "cancelled") open4.set(f, Math.max(0, (open4.get(f) ?? 0) - 1));
+        else written.add(f);
       } catch {
       }
     }
-    return [...guarded].filter(([, on]) => on).map(([f]) => f);
+    return [.../* @__PURE__ */ new Set([...written, ...[...open4].filter(([, n]) => n > 0).map(([f]) => f)])];
   } catch {
     return [];
   }
@@ -7491,7 +7495,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "b543146cb414" : "source";
+var SOURCE = true ? "5115054de027" : "source";
 
 // src/chain/discovery.ts
 init_assets();

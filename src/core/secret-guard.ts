@@ -66,17 +66,23 @@ function realOf(p: string): string {
 function indexedBackups(): string[] {
   try {
     const text = readFileSync(resolve(paths.backups(upHome()), "index.jsonl"), "utf8");
-    const guarded = new Map<string, boolean>();
+    // per path: written files stay guarded for good; open reservations are counted, so a cancelled
+    // reservation never frees a path that another (concurrent) export reserved or wrote
+    const written = new Set<string>();
+    const open = new Map<string, number>();
     for (const l of text.split("\n")) {
       try {
         const v = JSON.parse(l);
         if (typeof v?.file !== "string") continue;
-        guarded.set(resolve(v.file), v.event !== "cancelled");
+        const f = resolve(v.file);
+        if (v.event === "reserved") open.set(f, (open.get(f) ?? 0) + 1);
+        else if (v.event === "cancelled") open.set(f, Math.max(0, (open.get(f) ?? 0) - 1));
+        else written.add(f); // a backup entry, a commit or an imported file
       } catch {
         /* a partly written line */
       }
     }
-    return [...guarded].filter(([, on]) => on).map(([f]) => f);
+    return [...new Set([...written, ...[...open].filter(([, n]) => n > 0).map(([f]) => f)])];
   } catch {
     return [];
   }
