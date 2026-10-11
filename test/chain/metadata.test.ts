@@ -111,7 +111,8 @@ describe("J1: a freshly deployed profile is offered profile metadata", () => {
     const r = await run(ctx, "account deploy", { seed: pre.data.seed, candidate: 0 });
     expect(r.data.status).toBe("deployed");
     profile = r.data.profile;
-    expect(r.data.next[0]).toMatch(/profile name, description, profile picture and background image/);
+    expect(r.data.next.join("\n")).toMatch(/profile name, description, profile picture and background image/);
+    expect(r.data.say).toMatch(/^Done! My profile now exists on/);
     expect(r.text).toMatch(/up profile metadata set/);
     expect(await lsp3Raw()).toBe("0x");
   });
