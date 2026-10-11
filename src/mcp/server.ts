@@ -13,6 +13,7 @@ import { asUpError, UpError } from "../core/errors.ts";
 import { redact, replacer } from "../core/json.ts";
 import { skillDir } from "../core/assets.ts";
 import { VERSION } from "../version.ts";
+import { WITHHELD_MESSAGE, containsSecret } from "../core/secret-guard.ts";
 
 const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
@@ -28,7 +29,10 @@ function serialised<T>(fn: () => Promise<T>): Promise<T> {
 const cancelled = new Set<string | number>();
 
 function send(msg: unknown) {
-  process.stdout.write(JSON.stringify(msg, replacer) + "\n");
+  const line = JSON.stringify(msg, replacer);
+  // Never send key material to the client (the AI provider): replace the whole result.
+  const id = (msg as { id?: unknown })?.id;
+  process.stdout.write((containsSecret(line) ? JSON.stringify({ jsonrpc: "2.0", id: id ?? null, error: { code: -32603, message: WITHHELD_MESSAGE } }) : line) + "\n");
 }
 
 function referenceFiles(): { uri: string; name: string; path: string }[] {

@@ -30,6 +30,7 @@ import type { TrustLabel } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
 import { bundledAbi, findBundled } from "./bundled.ts";
 import { canonicalSignature, humanSignature, selectorOf, topicOf, type AbiError } from "./signature.ts";
+import { assertNotKeyMaterialPath } from "../core/secret-guard.ts";
 
 export interface AbiSource {
   abi: Abi;
@@ -86,11 +87,13 @@ export function parseAbiInput(input: unknown): AbiSource {
   const b = !s.includes("(") ? findBundled(s) : undefined;
   if (b) return { abi: bundledAbi(b.name), source: `bundled:${b.name}`, trust: "bundled" };
   if (/\.json$/i.test(s) && existsSync(s) && statSync(s).isFile()) {
+    assertNotKeyMaterialPath(s, "an ABI");
     let parsed: unknown;
     try {
       parsed = JSON.parse(readFileSync(s, "utf8"));
-    } catch (e) {
-      throw new UpError("BAD_ARGS", `ABI file ${s} is not valid JSON: ${(e as Error).message}`);
+    } catch {
+      // never quote the parser message: it can contain the file's content
+      throw new UpError("BAD_ARGS", `ABI file ${s} is not valid JSON`);
     }
     return { abi: validateJsonAbi(parsed, `ABI file ${s}`), source: `file:${s}`, trust: "user" };
   }

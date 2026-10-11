@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 6256b7880db4 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 015aa1d73e3e (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -966,16 +966,16 @@ var init_jwt = __esm({
 function isCid(s) {
   return typeof s === "string" && /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{50,120}|z[1-9A-HJ-NP-Za-km-z]{40,120})$/.test(s);
 }
-function excerpt(s, secrets = []) {
+function excerpt(s, secrets2 = []) {
   let t = s;
-  for (const x of secrets) if (x && x.length >= 4) t = t.split(x).join("[redacted]");
+  for (const x of secrets2) if (x && x.length >= 4) t = t.split(x).join("[redacted]");
   return t.replace(/[^\x20-\x7e]+/g, " ").replace(/Bearer\s+\S+/gi, "Bearer [redacted]").trim().slice(0, 200);
 }
 function secretsOf(headers) {
   return headers.authorization ? [headers.authorization, headers.authorization.replace(/^\S+\s+/, "")] : [];
 }
 async function postFile(provider, label, url, headers, file2, opts, extra) {
-  const secrets = secretsOf(headers);
+  const secrets2 = secretsOf(headers);
   const form = new FormData();
   form.append("file", new Blob([file2.bytes], { type: file2.mimeType }), file2.filename);
   extra?.(form);
@@ -987,7 +987,7 @@ async function postFile(provider, label, url, headers, file2, opts, extra) {
     res = await f(url, { method: "POST", redirect: "error", headers: { accept: "application/json", "user-agent": "universal-profile-skill", ...headers }, body: form, signal: ctrl.signal });
   } catch (e) {
     clearTimeout(timer);
-    const why = e?.name === "AbortError" ? "timeout" : excerpt(String(e?.message ?? e), secrets);
+    const why = e?.name === "AbortError" ? "timeout" : excerpt(String(e?.message ?? e), secrets2);
     throw new UpError("IPFS_ERROR", `upload to ${label} failed: ${why}`, { hint: "check the connection (egress to the upload host must be allowed) and retry; nothing was written on-chain", details: { reason: "upload-failed", provider } });
   }
   try {
@@ -999,7 +999,7 @@ async function postFile(provider, label, url, headers, file2, opts, extra) {
       });
     }
     if (res.status < 200 || res.status >= 300) {
-      throw new UpError("IPFS_ERROR", `upload to ${label} failed with HTTP ${res.status}${text ? `: ${excerpt(text, secrets)}` : ""}`, { hint: "retry later or choose another provider (up config set ipfs-provider …); nothing was written on-chain", details: { reason: "upload-failed", provider, status: res.status } });
+      throw new UpError("IPFS_ERROR", `upload to ${label} failed with HTTP ${res.status}${text ? `: ${excerpt(text, secrets2)}` : ""}`, { hint: "retry later or choose another provider (up config set ipfs-provider …); nothing was written on-chain", details: { reason: "upload-failed", provider, status: res.status } });
     }
     return text;
   } finally {
@@ -1010,11 +1010,11 @@ function cidFrom(provider, label, value) {
   if (!isCid(value)) throw new UpError("IPFS_ERROR", `${label} returned no valid CID`, { hint: "the provider answered unexpectedly; retry or choose another provider", details: { reason: "invalid-response", provider } });
   return { cid: value, url: `ipfs://${value}`, provider };
 }
-function parseJson(provider, label, text, secrets) {
+function parseJson(provider, label, text, secrets2) {
   try {
     return JSON.parse(text);
   } catch {
-    throw new UpError("IPFS_ERROR", `${label} returned no JSON: ${excerpt(text, secrets).slice(0, 80)}`, { hint: "retry or choose another provider", details: { reason: "invalid-response", provider } });
+    throw new UpError("IPFS_ERROR", `${label} returned no JSON: ${excerpt(text, secrets2).slice(0, 80)}`, { hint: "retry or choose another provider", details: { reason: "invalid-response", provider } });
   }
 }
 function universalProfileProvider(o) {
@@ -3711,6 +3711,58 @@ var init_bundled = __esm({
   }
 });
 
+// src/core/secret-guard.ts
+import { realpathSync } from "node:fs";
+import { resolve as resolve2, sep } from "node:path";
+function forms(secret) {
+  const s = secret.trim().toLowerCase();
+  const plain = s.startsWith("0x") ? s.slice(2) : s;
+  return [.../* @__PURE__ */ new Set([plain, JSON.stringify(plain).slice(1, -1)])];
+}
+function registerSecret(secret) {
+  if (!secret || secret.trim().length < 8) return;
+  for (const f of forms(secret)) if (!secrets.includes(f)) secrets.push(f);
+}
+function containsSecret(text) {
+  if (!secrets.length || !text) return false;
+  const t = text.toLowerCase();
+  return secrets.some((s) => t.includes(s));
+}
+function guardOutput(text, json2) {
+  if (!containsSecret(text)) return text;
+  return json2 ? JSON.stringify({ ok: false, error: { code: "INTERNAL", message: WITHHELD_MESSAGE } }) : `✗ INTERNAL: ${WITHHELD_MESSAGE}`;
+}
+function assertNotKeyMaterialPath(file2, what = "file") {
+  let real = resolve2(file2);
+  try {
+    real = realpathSync(real);
+  } catch {
+  }
+  const keysDir = resolve2(paths.keys(upHome()));
+  let keysReal = keysDir;
+  try {
+    keysReal = realpathSync(keysDir);
+  } catch {
+  }
+  const inside = (dir) => real === dir || real.startsWith(dir + sep);
+  if (inside(keysDir) || inside(keysReal) || /\.(key|cred|dpapi)$/i.test(real) || /(^|[\\/])keystore[^\\/]*\.json$/i.test(real)) {
+    throw new UpError("BAD_ARGS", `refusing to read ${what} from the key store or a key file`, { hint: "key files are only ever used inside the skill for signing; pass a different file" });
+  }
+}
+function safeWords(words) {
+  return words.map((w) => /[0-9a-f]{32,}/i.test(w) ? "<hidden>" : w.length > 64 ? `${w.slice(0, 32)}…` : w).join(" ");
+}
+var secrets, WITHHELD_MESSAGE;
+var init_secret_guard = __esm({
+  "src/core/secret-guard.ts"() {
+    "use strict";
+    init_errors();
+    init_home();
+    secrets = [];
+    WITHHELD_MESSAGE = "output withheld: it contained the agent's private key or a passphrase, which must never be sent to the AI provider. This is a bug in the skill; nothing was revealed.";
+  }
+});
+
 // src/abi/codec.ts
 import { existsSync as existsSync5, readFileSync as readFileSync3, statSync } from "node:fs";
 import {
@@ -3766,11 +3818,12 @@ function parseAbiInput(input) {
   const b = !s.includes("(") ? findBundled(s) : void 0;
   if (b) return { abi: bundledAbi(b.name), source: `bundled:${b.name}`, trust: "bundled" };
   if (/\.json$/i.test(s) && existsSync5(s) && statSync(s).isFile()) {
+    assertNotKeyMaterialPath(s, "an ABI");
     let parsed;
     try {
       parsed = JSON.parse(readFileSync3(s, "utf8"));
-    } catch (e) {
-      throw new UpError("BAD_ARGS", `ABI file ${s} is not valid JSON: ${e.message}`);
+    } catch {
+      throw new UpError("BAD_ARGS", `ABI file ${s} is not valid JSON`);
     }
     return { abi: validateJsonAbi(parsed, `ABI file ${s}`), source: `file:${s}`, trust: "user" };
   }
@@ -4115,6 +4168,7 @@ var init_codec = __esm({
     init_errors();
     init_bundled();
     init_signature();
+    init_secret_guard();
     KEYWORD = /^\s*(function|event|error|constructor|struct|fallback|receive)\b/;
     UNIT_DECIMALS = { wei: 0, gwei: 9, ether: 18, eth: 18 };
     PANIC = {
@@ -4643,18 +4697,18 @@ function resolveSystemBinary(name, exists = existsSync6) {
   }
   return null;
 }
-function scrub(text, secrets = []) {
+function scrub(text, secrets2 = []) {
   let t = text;
-  for (const s of secrets) {
+  for (const s of secrets2) {
     if (!s) continue;
     const bare = s.startsWith("0x") ? s.slice(2) : s;
     if (bare.length >= 8) t = t.split(bare).join("[redacted]").split(bare.toLowerCase()).join("[redacted]").split(bare.toUpperCase()).join("[redacted]");
   }
   return t.replace(HEX_SECRET, "[redacted]").replace(B64_BLOB, "[redacted]");
 }
-function stderrSummary(r, secrets = []) {
+function stderrSummary(r, secrets2 = []) {
   const line = r.stderr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 2).join(" | ");
-  const s = scrub(line, secrets);
+  const s = scrub(line, secrets2);
   return s.length > 300 ? s.slice(0, 300) + "…" : s;
 }
 function keystoreService() {
@@ -4672,7 +4726,7 @@ var init_proc = __esm({
     SECRET_ENV_VARS = ["UP_TEST_EPHEMERAL_KEY", "UP_BACKUP_PASSPHRASE"];
     INJECTION_ENV = /^(LD_PRELOAD|LD_AUDIT|LD_LIBRARY_PATH|DYLD_.*)$/;
     SYSTEM_BIN_DIRS = ["/usr/bin", "/bin", "/usr/sbin", "/sbin", "/run/current-system/sw/bin"];
-    runProcess = (cmd, args, opts = {}) => new Promise((resolve6) => {
+    runProcess = (cmd, args, opts = {}) => new Promise((resolve7) => {
       const out = [];
       const err = [];
       let settled = false;
@@ -4681,7 +4735,7 @@ var init_proc = __esm({
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        resolve6(r);
+        resolve7(r);
       };
       let child;
       try {
@@ -4693,7 +4747,7 @@ var init_proc = __esm({
         });
       } catch (e) {
         const code = e.code;
-        return resolve6({ code: null, stdout: Buffer.alloc(0), stderr: "", error: { code: code === "ENOENT" ? "ENOENT" : code === "EACCES" ? "EACCES" : "SPAWN", message: `cannot start ${cmd}` } });
+        return resolve7({ code: null, stdout: Buffer.alloc(0), stderr: "", error: { code: code === "ENOENT" ? "ENOENT" : code === "EACCES" ? "EACCES" : "SPAWN", message: `cannot start ${cmd}` } });
       }
       const timer = setTimeout(() => {
         timedOut = true;
@@ -4943,7 +4997,10 @@ function normalizePrivateKey(raw) {
 function generateKey() {
   for (let i = 0; i < 8; i++) {
     const k = generatePrivateKey();
-    if (isValidPrivateKey(k)) return k.toLowerCase();
+    if (isValidPrivateKey(k)) {
+      registerSecret(k);
+      return k.toLowerCase();
+    }
   }
   throw new UpError("INTERNAL", "could not generate a valid secp256k1 key");
 }
@@ -4962,6 +5019,7 @@ function intendedValidatorDigest(validator, data) {
 }
 function createLocalSigner(privateKey, protection, expectedAddress) {
   assertValidPrivateKey(privateKey);
+  registerSecret(privateKey);
   const account = privateKeyToAccount(privateKey);
   if (expectedAddress && account.address.toLowerCase() !== expectedAddress.toLowerCase()) {
     throw new UpError("SIGNER_LOCKED", `the key stored for ${getAddress4(expectedAddress)} in ${protection.backend} belongs to a different address`, {
@@ -5006,6 +5064,7 @@ var init_local_signer = __esm({
   "src/signer/local-signer.ts"() {
     "use strict";
     init_errors();
+    init_secret_guard();
     SECP256K1_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
   }
 });
@@ -5030,6 +5089,7 @@ var init_base = __esm({
     "use strict";
     init_errors();
     init_local_signer();
+    init_secret_guard();
     KeyBackend = class {
       async create(beforeStore) {
         return this.storeVerified(generateKey(), beforeStore);
@@ -5058,6 +5118,7 @@ var init_base = __esm({
         const id = storageId(address);
         const raw = await this.readSecret(id);
         const key = normalizePrivateKey(raw);
+        registerSecret(key);
         assertValidPrivateKey(key);
         if (addressOf(key).toLowerCase() !== id) {
           throw new UpError("SIGNER_LOCKED", `the key stored for ${getAddress5(address)} in ${this.id} belongs to a different address`, {
@@ -5223,10 +5284,10 @@ var init_linux_secret_service = __esm({
         }
         throw new UpError("SIGNER_LOCKED", `the desktop keyring is not reachable without prompting (${state})`, { hint: "run inside your logged-in desktop session; run: up key backend" });
       }
-      mapError(r, action, secrets = []) {
+      mapError(r, action, secrets2 = []) {
         if (r.error?.code === "ENOENT") return new UpError("SIGNER_BACKEND_UNAVAILABLE", "secret-tool not found (package libsecret-tools)", { hint: "run: up key backend" });
         if (r.error?.code === "TIMEOUT") return new UpError("SIGNER_LOCKED", `the desktop keyring did not answer when trying to ${action} it (an unlock dialog may be waiting)`, { hint: "unlock the keyring in your desktop session" });
-        const detail = stderrSummary(r, secrets) || `exit ${r.code}`;
+        const detail = stderrSummary(r, secrets2) || `exit ${r.code}`;
         if (/locked|cancel|dismiss/i.test(r.stderr)) return new UpError("SIGNER_LOCKED", `the desktop keyring refused to ${action} it (${detail})`, { hint: "unlock the keyring in your desktop session" });
         return new UpError("SIGNER_LOCKED", `could not ${action} the desktop keyring (${detail})`, { hint: "run: up key backend" });
       }
@@ -5346,8 +5407,8 @@ var init_linux_systemd_creds = __esm({
         if (!b) throw new UpError("SIGNER_BACKEND_UNAVAILABLE", "systemd-creds not found in the system directories", { hint: "run: up key backend" });
         return b;
       }
-      mapError(r, action, secrets = []) {
-        const detail = stderrSummary(r, secrets) || r.error?.message || `exit ${r.code}`;
+      mapError(r, action, secrets2 = []) {
+        const detail = stderrSummary(r, secrets2) || r.error?.message || `exit ${r.code}`;
         if (r.error?.code === "ENOENT") return new UpError("SIGNER_BACKEND_UNAVAILABLE", "systemd-creds not found", { hint: "run: up key backend" });
         if (r.error?.code === "TIMEOUT") return new UpError("SIGNER_LOCKED", `systemd-creds did not answer (${action})`, { hint: "check that systemd-creds.socket is running: systemctl status systemd-creds.socket" });
         if (action === "encrypt") return new UpError("SIGNER_BACKEND_UNAVAILABLE", `systemd-creds could not encrypt the key (${detail})`, { hint: "run: up key backend" });
@@ -5454,8 +5515,8 @@ var init_macos_keychain = __esm({
       assertPlatform() {
         if (this.platform !== "darwin") throw new UpError("SIGNER_BACKEND_UNAVAILABLE", "the macos-keychain backend only works on macOS", { hint: "run: up key backend" });
       }
-      mapError(r, action, secrets = []) {
-        const detail = stderrSummary(r, secrets);
+      mapError(r, action, secrets2 = []) {
+        const detail = stderrSummary(r, secrets2);
         if (r.error?.code === "ENOENT") return new UpError("SIGNER_BACKEND_UNAVAILABLE", `${SECURITY_BIN} not found`, { hint: "run: up key backend" });
         if (r.error?.code === "TIMEOUT") {
           return new UpError("SIGNER_LOCKED", `macOS keychain did not answer when trying to ${action} it (a system dialog may be waiting)`, { hint: LOCKED_HINT });
@@ -5744,10 +5805,10 @@ function wslAutomountRoot(wslConf) {
   }
   return "/mnt/";
 }
-function psError(r, secrets) {
+function psError(r, secrets2) {
   const m = /UPERR:([A-Za-z0-9_.]+:[0-9A-F]{8})/.exec(r.stderr);
   if (m) return m[1].replace(/:([0-9A-F]{8})$/, " (HRESULT 0x$1)");
-  return stderrSummary(r, secrets) || r.error?.message || `exit ${r.code}`;
+  return stderrSummary(r, secrets2) || r.error?.message || `exit ${r.code}`;
 }
 var PS_PRELUDE, PS_ERR, SCOPE, PS_PROTECT, PS_UNPROTECT, PS_CANARY, WindowsDpapiBackend;
 var init_windows_dpapi = __esm({
@@ -5885,12 +5946,12 @@ var init_windows_dpapi = __esm({
         const ok = this.mode === "windows" ? this.platform === "win32" : this.platform === "linux" && (await this.envFn()).wsl;
         if (!ok) throw new UpError("SIGNER_BACKEND_UNAVAILABLE", `the ${this.id} backend is not available on this system`, { hint: "run: up key backend" });
       }
-      mapError(r, action, secrets = []) {
+      mapError(r, action, secrets2 = []) {
         if (r.error?.code === "ENOENT") {
           return new UpError("SIGNER_BACKEND_UNAVAILABLE", this.mode === "wsl" ? "powershell.exe is not reachable from WSL (interop disabled?)" : "Windows PowerShell not found", { hint: "run: up key backend" });
         }
         if (r.error?.code === "TIMEOUT") return new UpError("SIGNER_LOCKED", `PowerShell did not finish the DPAPI ${action} step`, { hint: "run: up key backend" });
-        const detail = psError(r, secrets);
+        const detail = psError(r, secrets2);
         if (action === "protect") return new UpError("SIGNER_BACKEND_UNAVAILABLE", `DPAPI could not protect the key (${detail})`, { hint: "DPAPI needs an interactive Windows logon (not key-based SSH / S4U); run: up key backend" });
         return new UpError("SIGNER_LOCKED", `DPAPI could not unlock the controller key (${detail})`, {
           hint: "DPAPI user keys are only available in an interactive Windows logon of the same user (not key-based SSH / S4U); if the Windows password was reset by an administrator it cannot be read: restore the key from its backup (up key backup file), or a co-owner or admin wallet adds a new additional key for the agent on each network (the old key stays listed, never deleted)"
@@ -5964,9 +6025,9 @@ __export(signer_exports, {
   selectAutoBackend: () => selectAutoBackend,
   setBackendsForTests: () => setBackendsForTests
 });
-import { realpathSync, readFileSync as readFileSync6 } from "node:fs";
+import { realpathSync as realpathSync2, readFileSync as readFileSync6 } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve as resolve2 } from "node:path";
+import { resolve as resolve3 } from "node:path";
 import { getAddress as getAddress7, isAddress as isAddress4 } from "./vendor-viem.mjs";
 function createDefaultBackends() {
   return [
@@ -6078,10 +6139,10 @@ function custodyWarnings(backendId, home = upHome()) {
   const out = [];
   if (backendId === "protected-file") out.push(PROTECTED_FILE_WARNING);
   if (HOME_STORED_BACKENDS.has(backendId)) {
-    const abs = resolve2(home);
+    const abs = resolve3(home);
     let real = abs;
     try {
-      real = realpathSync(abs);
+      real = realpathSync2(abs);
     } catch {
     }
     let procMounts = null;
@@ -6093,7 +6154,7 @@ function custodyWarnings(backendId, home = upHome()) {
     }
     let tmp;
     try {
-      tmp = realpathSync(tmpdir());
+      tmp = realpathSync2(tmpdir());
     } catch {
       tmp = tmpdir();
     }
@@ -9251,7 +9312,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "6256b7880db4" : "source";
+var SOURCE = true ? "015aa1d73e3e" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -9722,12 +9783,13 @@ defineVerb({
 });
 
 // src/signer/verbs.ts
+init_secret_guard();
 init_errors();
 init_home();
 init_verbs();
 import { chmod as chmod2, link as link2, lstat as lstat2, open as open3, rm as rm4, stat as stat4, writeFile as writeFile4 } from "node:fs/promises";
 import { randomBytes as randomBytes6 } from "node:crypto";
-import { basename, dirname as dirname3, isAbsolute, join as join9, resolve as resolve3 } from "node:path";
+import { basename, dirname as dirname3, isAbsolute, join as join9, resolve as resolve4 } from "node:path";
 import { getAddress as getAddress12, isAddress as isAddress9 } from "./vendor-viem.mjs";
 import { existsSync as existsSync14 } from "node:fs";
 
@@ -10371,11 +10433,12 @@ var keyBackupVerb = defineVerb({
     const c = explicitChain(args) ? controllerFor(cfgNow, ctx.chainId(args.chain)) ?? requireController(cfgNow) : requireController(cfgNow);
     const raw = typeof args.path === "string" ? args.path.trim() : "";
     if (!raw) throw new UpError("BAD_ARGS", "--path is required");
-    const file2 = isAbsolute(raw) ? raw : resolve3(raw);
+    const file2 = isAbsolute(raw) ? raw : resolve4(raw);
     const parent = await stat4(dirname3(file2)).catch(() => null);
     if (!parent?.isDirectory()) throw new UpError("BAD_ARGS", `directory ${dirname3(file2)} does not exist`);
     if (await lstat2(file2).then(() => true, () => false)) throw new UpError("BAD_ARGS", `${file2} already exists; refusing to overwrite it`);
     const passphrase = process.env.UP_BACKUP_PASSPHRASE;
+    registerSecret(passphrase);
     if (!passphrase) throw new UpError("BAD_ARGS", "no backup passphrase: UP_BACKUP_PASSPHRASE is not set", { hint: PASSPHRASE_HINT });
     if (passphrase.length < MIN_PASSPHRASE_LENGTH) throw new UpError("BAD_ARGS", `the backup passphrase must have at least ${MIN_PASSPHRASE_LENGTH} characters`, { hint: PASSPHRASE_HINT });
     const backend = internalBackend(c.backend);
@@ -11821,6 +11884,7 @@ init_auto();
 init_errors();
 init_assets();
 init_transport();
+init_secret_guard();
 import { readFileSync as readFileSync8, existsSync as existsSync15 } from "node:fs";
 import { join as join10 } from "node:path";
 import { encodeFunctionData as encodeFunctionData10, getAddress as getAddress21, isAddress as isAddress13, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
@@ -11857,7 +11921,13 @@ function loadAbi(spec) {
     return { abi: Array.isArray(j) ? j : j.abi, source: "inline" };
   }
   if (existsSync15(s)) {
-    const j = JSON.parse(readFileSync8(s, "utf8"));
+    assertNotKeyMaterialPath(s, "an ABI");
+    let j;
+    try {
+      j = JSON.parse(readFileSync8(s, "utf8"));
+    } catch {
+      throw new UpError("BAD_ARGS", `ABI file ${s} is not valid JSON`);
+    }
     return { abi: Array.isArray(j) ? j : j.abi, source: `file:${s}` };
   }
   const base = s.replace(/\.json$/i, "");
@@ -12206,7 +12276,7 @@ defineVerb({
 
 // src/lsp/verbs-account.ts
 import { randomBytes as randomBytes8 } from "node:crypto";
-import { isAbsolute as isAbsolute3, resolve as resolve5 } from "node:path";
+import { isAbsolute as isAbsolute3, resolve as resolve6 } from "node:path";
 import { getAddress as getAddress26, isAddress as isAddress15 } from "./vendor-viem.mjs";
 init_verbs();
 init_errors();
@@ -12228,7 +12298,7 @@ init_errors();
 init_json();
 init_safe_fetch();
 import { readFile as readFile7, stat as stat5 } from "node:fs/promises";
-import { basename as basename2, isAbsolute as isAbsolute2, resolve as resolve4 } from "node:path";
+import { basename as basename2, isAbsolute as isAbsolute2, resolve as resolve5 } from "node:path";
 import { getAddress as getAddress25 } from "./vendor-viem.mjs";
 
 // src/display/image-info.ts
@@ -12689,6 +12759,7 @@ async function resolveProfileUrl(chainId, address, opts = {}) {
 }
 
 // src/lsp/metadata.ts
+init_secret_guard();
 var METADATA_DEFAULT_CHAIN_ID = LUKSO_MAINNET;
 var hooks = { defaultChainId: METADATA_DEFAULT_CHAIN_ID };
 function metadataHooks() {
@@ -12745,7 +12816,7 @@ async function readSource(input, what, opts) {
     }
   }
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s) || /^data:/i.test(s)) throw new UpError("BAD_ARGS", `unsupported image source ${/^data:/i.test(s) ? "data: URI" : label}`, { hint: "pass a local file path, an https:// URL or an ipfs:// URL" });
-  const file2 = isAbsolute2(s) ? s : resolve4(process.cwd(), s);
+  const file2 = isAbsolute2(s) ? s : resolve5(process.cwd(), s);
   let st;
   try {
     st = await stat5(file2);
@@ -12753,6 +12824,7 @@ async function readSource(input, what, opts) {
     throw new UpError("BAD_ARGS", `file not found: ${s}`, { hint: "pass the path of the saved image file (e.g. the chat attachment saved to disk)" });
   }
   if (!st.isFile()) throw new UpError("BAD_ARGS", `${s} is not a file`);
+  assertNotKeyMaterialPath(file2, "a picture");
   if (st.size > MAX_FILE_BYTES) throw tooBig(st.size);
   if (st.size === 0) throw new UpError("BAD_ARGS", `${s} is empty`);
   return { bytes: new Uint8Array(await readFile7(file2)), source: "file", display: basename2(file2) };
@@ -13086,7 +13158,7 @@ defineVerb({
     const m = await loadManifest(ctx.home, profile);
     if (!m) throw new UpError("BAD_ARGS", `no deployment manifest stored for ${profile}`);
     if (a.out) {
-      const file2 = isAbsolute3(a.out) ? a.out : resolve5(process.cwd(), a.out);
+      const file2 = isAbsolute3(a.out) ? a.out : resolve6(process.cwd(), a.out);
       await writeFileAtomic(file2, toJson(m) + "\n");
       return { data: { file: file2, profile }, text: `manifest written to ${file2}` };
     }
@@ -19989,6 +20061,7 @@ function renderError(verb, e, json2) {
 
 // src/cli/main.ts
 init_errors();
+init_secret_guard();
 function helpFor(v) {
   const pos = v.params.filter((p) => p.positional !== void 0).sort((a, b) => a.positional - b.positional);
   const usage = `up ${v.name}${pos.map((p) => p.required ? ` <${p.name}>` : ` [${p.name}]`).join("")} [options]`;
@@ -20029,7 +20102,8 @@ async function runCli(argv) {
   }
   const m = matchVerb(words);
   if (!m) {
-    process.stdout.write(renderError(words.join(" "), new UpError("UNKNOWN_VERB", `unknown verb "${words.join(" ")}"`, { hint: "run: up help" }), json2) + "\n");
+    const shown = safeWords(words);
+    process.stdout.write(guardOutput(renderError(shown, new UpError("UNKNOWN_VERB", `unknown verb "${shown}"`, { hint: "run: up help" }), json2), json2) + "\n");
     return 2;
   }
   const { verb, rest } = m;
@@ -20051,7 +20125,7 @@ async function runCli(argv) {
     const args = coerceArgs(verb, raw);
     const ctx = createContext({
       flags: { json: json2, dryRun: args["dry-run"] === true, yes: args.yes === true, approval: args.approval, chain: args.chain, profile: args.profile },
-      log: (msg) => process.stderr.write(`· ${msg}
+      log: (msg) => process.stderr.write(`· ${guardOutput(msg, false)}
 `)
     });
     await preloadConfig(ctx);
@@ -20059,11 +20133,11 @@ async function runCli(argv) {
       await ctx.refreshConfig?.();
       return verb.run(ctx, args);
     });
-    process.stdout.write(renderResult(verb.name, result, json2) + "\n");
+    process.stdout.write(guardOutput(renderResult(verb.name, result, json2), json2) + "\n");
     return 0;
   } catch (e) {
     const err = asUpError(e);
-    process.stdout.write(renderError(verb.name, err, json2) + "\n");
+    process.stdout.write(guardOutput(renderError(verb.name, err, json2), json2) + "\n");
     return err.code === "BAD_ARGS" ? 2 : 1;
   }
 }
@@ -20077,6 +20151,7 @@ init_lock();
 init_errors();
 init_json();
 init_assets();
+init_secret_guard();
 var PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 var writeQueue = Promise.resolve();
 function serialised(fn) {
@@ -20086,7 +20161,9 @@ function serialised(fn) {
 }
 var cancelled = /* @__PURE__ */ new Set();
 function send(msg) {
-  process.stdout.write(JSON.stringify(msg, replacer) + "\n");
+  const line = JSON.stringify(msg, replacer);
+  const id = msg?.id;
+  process.stdout.write((containsSecret(line) ? JSON.stringify({ jsonrpc: "2.0", id: id ?? null, error: { code: -32603, message: WITHHELD_MESSAGE } }) : line) + "\n");
 }
 function referenceFiles() {
   const dir = join13(skillDir(), "references");
@@ -20203,7 +20280,7 @@ async function runMcpServer() {
     pending.add(p);
     p.finally(() => pending.delete(p));
   });
-  await new Promise((resolve6) => rl.on("close", resolve6));
+  await new Promise((resolve7) => rl.on("close", resolve7));
   await Promise.allSettled([...pending]);
 }
 

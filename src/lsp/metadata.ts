@@ -24,6 +24,7 @@ import { chainLabel, onChain } from "./multichain.ts";
 import { getData } from "./profile.ts";
 import { hasCode } from "./read.ts";
 import { LUKSO_MAINNET } from "./profile-url.ts";
+import { assertNotKeyMaterialPath } from "../core/secret-guard.ts";
 
 // ---------------------------------------------------------------------------
 // metadata chain (product rule) + test hooks
@@ -149,6 +150,7 @@ async function readSource(input: string, what: string, opts: { gateway: string; 
     throw new UpError("BAD_ARGS", `file not found: ${s}`, { hint: "pass the path of the saved image file (e.g. the chat attachment saved to disk)" });
   }
   if (!st.isFile()) throw new UpError("BAD_ARGS", `${s} is not a file`);
+  assertNotKeyMaterialPath(file, "a picture"); // never upload a key file to IPFS
   if (st.size > MAX_FILE_BYTES) throw tooBig(st.size);
   if (st.size === 0) throw new UpError("BAD_ARGS", `${s} is empty`);
   return { bytes: new Uint8Array(await readFile(file)), source: "file", display: basename(file) };

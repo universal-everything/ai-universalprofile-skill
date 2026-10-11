@@ -9,6 +9,7 @@ import { encodeFunctionData, getAddress, isAddress, parseAbiItem, parseUnits, to
 import { UpError } from "../core/errors.ts";
 import { assetsDir } from "../core/assets.ts";
 import { OPERATION, type ExecCall, type OperationType } from "./transport.ts";
+import { assertNotKeyMaterialPath } from "../core/secret-guard.ts";
 
 export interface CallInput {
   to?: string;
@@ -56,7 +57,14 @@ export function loadAbi(spec: string | Abi): { abi: Abi; source: string } {
     return { abi: (Array.isArray(j) ? j : j.abi) as Abi, source: "inline" };
   }
   if (existsSync(s)) {
-    const j = JSON.parse(readFileSync(s, "utf8"));
+    assertNotKeyMaterialPath(s, "an ABI");
+    let j: any;
+    try {
+      j = JSON.parse(readFileSync(s, "utf8"));
+    } catch {
+      // never quote the parser message: it can contain the file's content
+      throw new UpError("BAD_ARGS", `ABI file ${s} is not valid JSON`);
+    }
     return { abi: (Array.isArray(j) ? j : j.abi) as Abi, source: `file:${s}` };
   }
   const base = s.replace(/\.json$/i, "");

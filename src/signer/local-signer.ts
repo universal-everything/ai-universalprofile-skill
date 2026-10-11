@@ -10,6 +10,7 @@ import { concat, getAddress, isAddress, isHex, keccak256 } from "viem";
 import type { LocalAccount, TransactionSerializable, TypedDataDefinition } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { UpError } from "../core/errors.ts";
+import { registerSecret } from "../core/secret-guard.ts";
 import type { Address, Hex, ProtectionInfo, Signer } from "../core/types.ts";
 
 /** secp256k1 group order n. A private key must satisfy 0 < k < n. */
@@ -36,7 +37,10 @@ export function normalizePrivateKey(raw: string): Hex {
 export function generateKey(): Hex {
   for (let i = 0; i < 8; i++) {
     const k = generatePrivateKey();
-    if (isValidPrivateKey(k)) return k.toLowerCase() as Hex;
+    if (isValidPrivateKey(k)) {
+      registerSecret(k);
+      return k.toLowerCase() as Hex;
+    }
   }
   throw new UpError("INTERNAL", "could not generate a valid secp256k1 key"); // practically unreachable (p ≈ 2^-128)
 }
@@ -66,6 +70,7 @@ export function intendedValidatorDigest(validator: Address, data: Hex): Hex {
  */
 export function createLocalSigner(privateKey: Hex, protection: ProtectionInfo, expectedAddress?: Address): Signer {
   assertValidPrivateKey(privateKey);
+  registerSecret(privateKey); // never let it reach any output (core/secret-guard.ts)
   const account = privateKeyToAccount(privateKey);
   if (expectedAddress && account.address.toLowerCase() !== expectedAddress.toLowerCase()) {
     throw new UpError("SIGNER_LOCKED", `the key stored for ${getAddress(expectedAddress)} in ${protection.backend} belongs to a different address`, {

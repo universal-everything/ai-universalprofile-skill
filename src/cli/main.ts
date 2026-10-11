@@ -7,6 +7,7 @@ import { renderError, renderResult } from "../core/output.ts";
 import { UpError, asUpError } from "../core/errors.ts";
 import type { VerbDef } from "../core/types.ts";
 import { VERSION } from "../version.ts";
+import { guardOutput, safeWords } from "../core/secret-guard.ts";
 
 function helpFor(v: VerbDef): string {
   const pos = v.params.filter((p) => p.positional !== undefined).sort((a, b) => a.positional! - b.positional!);
@@ -49,7 +50,8 @@ export async function runCli(argv: string[]): Promise<number> {
   }
   const m = matchVerb(words);
   if (!m) {
-    process.stdout.write(renderError(words.join(" "), new UpError("UNKNOWN_VERB", `unknown verb "${words.join(" ")}"`, { hint: "run: up help" }), json) + "\n");
+    const shown = safeWords(words); // never echo something that may be a key
+    process.stdout.write(guardOutput(renderError(shown, new UpError("UNKNOWN_VERB", `unknown verb "${shown}"`, { hint: "run: up help" }), json), json) + "\n");
     return 2;
   }
   const { verb, rest } = m;
@@ -71,7 +73,7 @@ export async function runCli(argv: string[]): Promise<number> {
     const args = coerceArgs(verb, raw);
     const ctx = createContext({
       flags: { json, dryRun: args["dry-run"] === true, yes: args.yes === true, approval: args.approval, chain: args.chain, profile: args.profile },
-      log: (msg) => process.stderr.write(`· ${msg}\n`),
+      log: (msg) => process.stderr.write(`· ${guardOutput(msg, false)}\n`),
     });
     await preloadConfig(ctx);
     const result = verb.risk === "local" || verb.risk === "read" ? await verb.run(ctx, args) : await withLock(ctx.home, "write", async () => {
@@ -79,11 +81,11 @@ export async function runCli(argv: string[]): Promise<number> {
           await ctx.refreshConfig?.();
           return verb.run(ctx, args);
         });
-    process.stdout.write(renderResult(verb.name, result, json) + "\n");
+    process.stdout.write(guardOutput(renderResult(verb.name, result, json), json) + "\n");
     return 0;
   } catch (e) {
     const err = asUpError(e);
-    process.stdout.write(renderError(verb.name, err, json) + "\n");
+    process.stdout.write(guardOutput(renderError(verb.name, err, json), json) + "\n");
     return err.code === "BAD_ARGS" ? 2 : 1;
   }
 }

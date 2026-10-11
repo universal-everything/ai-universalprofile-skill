@@ -45,8 +45,9 @@ mkdirSync(join(mirror, "abi"), { recursive: true });
 // ---------------------------------------------------------------------------
 // 1) Mirror deployments/
 // ---------------------------------------------------------------------------
-const provenance = { repository: `https://github.com/${REPO}`, commit: COMMIT, path: "deployments/", mirroredAt: now, files: {} };
-for (const f of ["DEPLOYED_CHAINS.md", "README.md", "chains-mainnet.json", "chains-testnet.json"]) {
+const provenance = { repository: `https://github.com/${REPO}`, commit: COMMIT, path: "deployments/", mirroredAt: now, files: {}, excluded: { "README.md": { reason: "upstream operator deployment recipes that handle raw private keys (DEPLOYER_PK, --private-key); not shipped to agents", url: RAW("deployments/README.md") } } };
+// README.md is not mirrored: it is an operator recipe that handles raw deployer private keys, which agents must never see.
+for (const f of ["DEPLOYED_CHAINS.md", "chains-mainnet.json", "chains-testnet.json"]) {
   const txt = await getDeploymentFile(f);
   writeFileSync(join(mirror, f), txt);
   provenance.files[f] = { sha256: sha256(txt), bytes: Buffer.byteLength(txt), url: RAW(`deployments/${f}`) };

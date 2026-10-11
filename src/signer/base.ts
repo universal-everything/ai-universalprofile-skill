@@ -8,6 +8,7 @@ import { getAddress } from "viem";
 import { UpError } from "../core/errors.ts";
 import type { Address, BackendProbe, Hex, ProtectionInfo, Signer, SignerBackend } from "../core/types.ts";
 import { addressOf, assertValidPrivateKey, createLocalSigner, generateKey, normalizePrivateKey, storageId } from "./local-signer.ts";
+import { registerSecret } from "../core/secret-guard.ts";
 
 export abstract class KeyBackend implements SignerBackend {
   abstract readonly id: string;
@@ -56,6 +57,7 @@ export abstract class KeyBackend implements SignerBackend {
     const id = storageId(address);
     const raw = await this.readSecret(id);
     const key = normalizePrivateKey(raw);
+    registerSecret(key); // never let it reach any output (core/secret-guard.ts)
     assertValidPrivateKey(key);
     if (addressOf(key).toLowerCase() !== id) {
       throw new UpError("SIGNER_LOCKED", `the key stored for ${getAddress(address)} in ${this.id} belongs to a different address`, {

@@ -14,6 +14,7 @@
 // protection descriptions). The private key never leaves the backend except
 // in-process for signing and for the passphrase-encrypted keystore backup.
 import { chmod, link, lstat, open, rm, stat, writeFile } from "node:fs/promises";
+import { registerSecret } from "../core/secret-guard.ts";
 import { randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { getAddress, isAddress } from "viem";
@@ -453,6 +454,7 @@ export const keyBackupVerb = defineVerb({
     if (await lstat(file).then(() => true, () => false)) throw new UpError("BAD_ARGS", `${file} already exists; refusing to overwrite it`);
 
     const passphrase = process.env.UP_BACKUP_PASSPHRASE;
+    registerSecret(passphrase);
     if (!passphrase) throw new UpError("BAD_ARGS", "no backup passphrase: UP_BACKUP_PASSPHRASE is not set", { hint: PASSPHRASE_HINT });
     if (passphrase.length < MIN_PASSPHRASE_LENGTH) throw new UpError("BAD_ARGS", `the backup passphrase must have at least ${MIN_PASSPHRASE_LENGTH} characters`, { hint: PASSPHRASE_HINT });
 
