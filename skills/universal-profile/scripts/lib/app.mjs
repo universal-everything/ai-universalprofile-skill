@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint df7b3a08cd71 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint b543146cb414 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -281,6 +281,124 @@ var init_json = __esm({
   }
 });
 
+// src/core/secret-guard.ts
+var secret_guard_exports = {};
+__export(secret_guard_exports, {
+  WITHHELD_MESSAGE: () => WITHHELD_MESSAGE,
+  assertNotKeyMaterialPath: () => assertNotKeyMaterialPath,
+  assertNothingSecretToWrite: () => assertNothingSecretToWrite,
+  clearSecretsForTests: () => clearSecretsForTests,
+  containsSecret: () => containsSecret,
+  guardOutput: () => guardOutput,
+  registerSecret: () => registerSecret,
+  safeWords: () => safeWords
+});
+import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from "node:fs";
+import { resolve, sep } from "node:path";
+function forms(secret) {
+  const s = secret.trim().toLowerCase();
+  const plain = s.startsWith("0x") ? s.slice(2) : s;
+  return [.../* @__PURE__ */ new Set([plain, JSON.stringify(plain).slice(1, -1)])];
+}
+function registerSecret(secret) {
+  if (!secret || secret.trim().length < 8) return;
+  for (const f of forms(secret)) if (!secrets.includes(f)) secrets.push(f);
+}
+function containsSecret(text) {
+  if (!secrets.length || !text) return false;
+  const t = text.toLowerCase();
+  return secrets.some((s) => t.includes(s));
+}
+function assertNothingSecretToWrite(text, what = "a state file") {
+  if (containsSecret(text) || containsSecret(text.replace(/[^0-9a-z]/gi, ""))) throw new UpError("INTERNAL", `refusing to write ${what}: it would contain the agent's private key; nothing was written. This is a bug in the skill`);
+}
+function guardOutput(text, json2) {
+  if (!containsSecret(text)) return text;
+  return json2 ? JSON.stringify({ ok: false, error: { code: "INTERNAL", message: WITHHELD_MESSAGE } }) : `✗ INTERNAL: ${WITHHELD_MESSAGE}`;
+}
+function realOf(p) {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+function indexedBackups() {
+  try {
+    const text = readFileSync(resolve(paths.backups(upHome()), "index.jsonl"), "utf8");
+    const guarded = /* @__PURE__ */ new Map();
+    for (const l of text.split("\n")) {
+      try {
+        const v = JSON.parse(l);
+        if (typeof v?.file !== "string") continue;
+        guarded.set(resolve(v.file), v.event !== "cancelled");
+      } catch {
+      }
+    }
+    return [...guarded].filter(([, on]) => on).map(([f]) => f);
+  } catch {
+    return [];
+  }
+}
+function startsLikeBackup(file2) {
+  let fd;
+  try {
+    fd = openSync(file2, "r");
+    if (!fstatSync(fd).isFile()) return false;
+    const buf = Buffer.alloc(160);
+    const n = readSync(fd, buf, 0, buf.length, 0);
+    return /^\uFEFF?\s*\{\s*"version"\s*:\s*2\s*,\s*"backupDate"\s*:/.test(buf.subarray(0, n).toString("utf8"));
+  } catch {
+    return false;
+  } finally {
+    if (fd !== void 0) closeSync(fd);
+  }
+}
+function assertNotKeyMaterialPath(file2, what = "file", opts = {}) {
+  let real = resolve(file2);
+  try {
+    real = realpathSync(real);
+  } catch {
+  }
+  const keysDir = resolve(paths.keys(upHome()));
+  let keysReal = keysDir;
+  try {
+    keysReal = realpathSync(keysDir);
+  } catch {
+  }
+  const inside = (dir) => real === dir || real.startsWith(dir + sep);
+  if (inside(keysDir) || inside(keysReal) || /\.(key|cred|dpapi)$/i.test(real) || /(^|[\\/])keystore[^\\/]*\.json$/i.test(real)) {
+    throw new UpError("BAD_ARGS", `refusing to read ${what} from the key store or a key file`, { hint: "key files are only ever used inside the skill for signing; pass a different file" });
+  }
+  if (!opts.allowBackups) {
+    const backupsDir = resolve(paths.backups(upHome()));
+    let backupsReal = backupsDir;
+    try {
+      backupsReal = realpathSync(backupsDir);
+    } catch {
+    }
+    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real) || startsLikeBackup(real)) {
+      throw new UpError("BAD_ARGS", `refusing to read ${what} from the backups or a backup file`, { hint: "backup files hold encrypted (or, if asked for, plain) keys; only the backup verbs open them. Never read or send a backup file's contents" });
+    }
+  }
+}
+function safeWords(words) {
+  return words.map((w) => /[0-9a-f]{32,}/i.test(w) ? "<hidden>" : w.length > 64 ? `${w.slice(0, 32)}…` : w).join(" ");
+}
+function clearSecretsForTests() {
+  secrets.length = 0;
+}
+var secrets, WITHHELD_MESSAGE;
+var init_secret_guard = __esm({
+  "src/core/secret-guard.ts"() {
+    "use strict";
+    init_errors();
+    init_home();
+    secrets = [];
+    WITHHELD_MESSAGE = "output withheld: it contained the agent's private key or a passphrase, which must never be sent to the AI provider. This is a bug in the skill; nothing was revealed.";
+  }
+});
+
 // src/core/home.ts
 var home_exports = {};
 __export(home_exports, {
@@ -330,7 +448,9 @@ async function readJson(file2, fallback) {
 }
 async function writeJson(file2, value) {
   const { toJson: toJson2 } = await Promise.resolve().then(() => (init_json(), json_exports));
-  await writeFileAtomic(file2, toJson2(value) + "\n");
+  const text = toJson2(value) + "\n";
+  (await Promise.resolve().then(() => (init_secret_guard(), secret_guard_exports))).assertNothingSecretToWrite(text);
+  await writeFileAtomic(file2, text);
 }
 async function readJsonStrict(file2, fallback) {
   let text;
@@ -367,6 +487,7 @@ function isJsonObject(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 async function appendLine(file2, line) {
+  (await Promise.resolve().then(() => (init_secret_guard(), secret_guard_exports))).assertNothingSecretToWrite(line);
   await ensureDir(dirname(file2));
   let prefix = "";
   try {
@@ -471,7 +592,9 @@ async function requireConsent(home, flags, req) {
     });
   }
   await ensureDir(home);
-  await appendFile2(paths.audit(home), toJson({ at: (/* @__PURE__ */ new Date()).toISOString(), decision, approval: flags.approval, ...block }, false) + "\n", { mode: 384 });
+  const line = toJson({ at: (/* @__PURE__ */ new Date()).toISOString(), decision, approval: flags.approval, ...block }, false) + "\n";
+  (await Promise.resolve().then(() => (init_secret_guard(), secret_guard_exports))).assertNothingSecretToWrite(line, "the audit log");
+  await appendFile2(paths.audit(home), line, { mode: 384 });
 }
 var VALUE_MOVING_SIGNATURES, VALUE_MOVING_SELECTORS, ALWAYS_HUMAN_VERBS, DEFAULT_POLICY;
 var init_policy = __esm({
@@ -527,12 +650,12 @@ var init_policy = __esm({
 });
 
 // src/core/assets.ts
-import { existsSync as existsSync2, readFileSync } from "node:fs";
-import { dirname as dirname2, join as join2, resolve } from "node:path";
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+import { dirname as dirname2, join as join2, resolve as resolve2 } from "node:path";
 import { fileURLToPath } from "node:url";
 function assetsDir() {
   if (cached) return cached;
-  if (process.env.UP_ASSETS_DIR) return cached = resolve(process.env.UP_ASSETS_DIR);
+  if (process.env.UP_ASSETS_DIR) return cached = resolve2(process.env.UP_ASSETS_DIR);
   const here = dirname2(fileURLToPath(import.meta.url));
   const candidates = [
     join2(here, "..", "..", "assets"),
@@ -548,7 +671,7 @@ function skillDir() {
 }
 function assetJson(...rel) {
   const file2 = join2(assetsDir(), ...rel);
-  if (!jsonCache.has(file2)) jsonCache.set(file2, JSON.parse(readFileSync(file2, "utf8")));
+  if (!jsonCache.has(file2)) jsonCache.set(file2, JSON.parse(readFileSync2(file2, "utf8")));
   return jsonCache.get(file2);
 }
 var cached, jsonCache;
@@ -765,12 +888,12 @@ __export(registry_exports, {
   createRegistry: () => createRegistry,
   loadOverlay: () => loadOverlay
 });
-import { readFileSync as readFileSync2, existsSync as existsSync3 } from "node:fs";
+import { readFileSync as readFileSync3, existsSync as existsSync3 } from "node:fs";
 function loadOverlay(home) {
   const f = paths.cache(home, "registry", "overlay.json");
   if (!existsSync3(f)) return {};
   try {
-    return JSON.parse(readFileSync2(f, "utf8"));
+    return JSON.parse(readFileSync3(f, "utf8"));
   } catch {
     return {};
   }
@@ -2027,118 +2150,6 @@ var init_bundled = __esm({
       "hyperlane.warpRoutes.USDC.router": "HyperlaneTokenRouter",
       "hyperlane.warpRoutes.USDC.ethereumCollateral": "ERC20"
     };
-  }
-});
-
-// src/core/secret-guard.ts
-var secret_guard_exports = {};
-__export(secret_guard_exports, {
-  WITHHELD_MESSAGE: () => WITHHELD_MESSAGE,
-  assertNotKeyMaterialPath: () => assertNotKeyMaterialPath,
-  clearSecretsForTests: () => clearSecretsForTests,
-  containsSecret: () => containsSecret,
-  guardOutput: () => guardOutput,
-  registerSecret: () => registerSecret,
-  safeWords: () => safeWords
-});
-import { closeSync, fstatSync, openSync, readFileSync as readFileSync3, readSync, realpathSync } from "node:fs";
-import { resolve as resolve2, sep } from "node:path";
-function forms(secret) {
-  const s = secret.trim().toLowerCase();
-  const plain = s.startsWith("0x") ? s.slice(2) : s;
-  return [.../* @__PURE__ */ new Set([plain, JSON.stringify(plain).slice(1, -1)])];
-}
-function registerSecret(secret) {
-  if (!secret || secret.trim().length < 8) return;
-  for (const f of forms(secret)) if (!secrets.includes(f)) secrets.push(f);
-}
-function containsSecret(text) {
-  if (!secrets.length || !text) return false;
-  const t = text.toLowerCase();
-  return secrets.some((s) => t.includes(s));
-}
-function guardOutput(text, json2) {
-  if (!containsSecret(text)) return text;
-  return json2 ? JSON.stringify({ ok: false, error: { code: "INTERNAL", message: WITHHELD_MESSAGE } }) : `✗ INTERNAL: ${WITHHELD_MESSAGE}`;
-}
-function realOf(p) {
-  try {
-    return realpathSync(p);
-  } catch {
-    return p;
-  }
-}
-function indexedBackups() {
-  try {
-    const text = readFileSync3(resolve2(paths.backups(upHome()), "index.jsonl"), "utf8");
-    return text.split("\n").flatMap((l) => {
-      try {
-        const f = JSON.parse(l)?.file;
-        return typeof f === "string" ? [resolve2(f)] : [];
-      } catch {
-        return [];
-      }
-    });
-  } catch {
-    return [];
-  }
-}
-function startsLikeBackup(file2) {
-  let fd;
-  try {
-    fd = openSync(file2, "r");
-    if (!fstatSync(fd).isFile()) return false;
-    const buf = Buffer.alloc(160);
-    const n = readSync(fd, buf, 0, buf.length, 0);
-    return /^\uFEFF?\s*\{\s*"version"\s*:\s*2\s*,\s*"backupDate"\s*:/.test(buf.subarray(0, n).toString("utf8"));
-  } catch {
-    return false;
-  } finally {
-    if (fd !== void 0) closeSync(fd);
-  }
-}
-function assertNotKeyMaterialPath(file2, what = "file", opts = {}) {
-  let real = resolve2(file2);
-  try {
-    real = realpathSync(real);
-  } catch {
-  }
-  const keysDir = resolve2(paths.keys(upHome()));
-  let keysReal = keysDir;
-  try {
-    keysReal = realpathSync(keysDir);
-  } catch {
-  }
-  const inside = (dir) => real === dir || real.startsWith(dir + sep);
-  if (inside(keysDir) || inside(keysReal) || /\.(key|cred|dpapi)$/i.test(real) || /(^|[\\/])keystore[^\\/]*\.json$/i.test(real)) {
-    throw new UpError("BAD_ARGS", `refusing to read ${what} from the key store or a key file`, { hint: "key files are only ever used inside the skill for signing; pass a different file" });
-  }
-  if (!opts.allowBackups) {
-    const backupsDir = resolve2(paths.backups(upHome()));
-    let backupsReal = backupsDir;
-    try {
-      backupsReal = realpathSync(backupsDir);
-    } catch {
-    }
-    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real) || startsLikeBackup(real)) {
-      throw new UpError("BAD_ARGS", `refusing to read ${what} from the backups or a backup file`, { hint: "backup files hold encrypted (or, if asked for, plain) keys; only the backup verbs open them. Never read or send a backup file's contents" });
-    }
-  }
-}
-function safeWords(words) {
-  return words.map((w) => /[0-9a-f]{32,}/i.test(w) ? "<hidden>" : w.length > 64 ? `${w.slice(0, 32)}…` : w).join(" ");
-}
-function clearSecretsForTests() {
-  secrets.length = 0;
-}
-var secrets, WITHHELD_MESSAGE;
-var init_secret_guard = __esm({
-  "src/core/secret-guard.ts"() {
-    "use strict";
-    init_errors();
-    init_home();
-    secrets = [];
-    WITHHELD_MESSAGE = "output withheld: it contained the agent's private key or a passphrase, which must never be sent to the AI provider. This is a bug in the skill; nothing was revealed.";
   }
 });
 
@@ -4826,6 +4837,7 @@ var init_token_guard = __esm({
 var profile_record_exports = {};
 __export(profile_record_exports, {
   chainAddressesOf: () => chainAddressesOf,
+  linkEvidenceOf: () => linkEvidenceOf,
   profileAddressOn: () => profileAddressOn,
   readProfileRecord: () => readProfileRecord,
   updateProfileRecord: () => updateProfileRecord,
@@ -4858,6 +4870,12 @@ function chainAddressesOf(record) {
 async function profileAddressOn(home, identity, chainId) {
   const linked = chainAddressesOf(await readProfileRecord(home, identity))[String(chainId)];
   return linked ?? getAddress9(identity);
+}
+function linkEvidenceOf(record, chainId) {
+  const ev = record?.linkEvidence?.[String(chainId)];
+  const linked = chainAddressesOf(record)[String(chainId)];
+  if (!ev || !linked || typeof ev.address !== "string" || ev.address.toLowerCase() !== linked.toLowerCase() || !Array.isArray(ev.controllers)) return [];
+  return ev.controllers.filter((a) => typeof a === "string" && isAddress6(a, { strict: false })).map((a) => getAddress9(a));
 }
 var init_profile_record = __esm({
   "src/core/profile-record.ts"() {
@@ -7473,7 +7491,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "df7b3a08cd71" : "source";
+var SOURCE = true ? "b543146cb414" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -8603,9 +8621,17 @@ async function writeNewFileExclusive(file2, content) {
       if (process.platform !== "win32") await chmod2(file2, 384).catch(() => {
       });
     }
-  } finally {
-    await rm4(tmp, { force: true });
+  } catch (e) {
+    await rm4(tmp, { force: true }).catch(() => {
+    });
+    throw e;
   }
+  try {
+    await rm4(tmp, { force: true });
+  } catch (e) {
+    return { warning: `the file was written, but the temporary copy ${tmp} could not be removed (${e.code ?? "error"}); it holds the same content and can be deleted by hand` };
+  }
+  return {};
 }
 var keyBackupVerb = defineVerb({
   name: "key backup",
@@ -8656,11 +8682,12 @@ var keyBackupVerb = defineVerb({
     const ks = await encryptKeystoreV3(key, passphrase);
     const check = await decryptKeystoreV3(ks, passphrase);
     if (check !== key) throw new UpError("INTERNAL", "backup verification failed; nothing was written");
-    await writeNewFileExclusive(file2, JSON.stringify(ks, null, 2) + "\n");
+    const written = await writeNewFileExclusive(file2, JSON.stringify(ks, null, 2) + "\n");
     ctx.log(`encrypted key backup written: ${file2}`);
     return {
       data: { path: file2, address: c.address, format: "keystore-v3", kdf, verified: true },
-      text: `Encrypted backup of ${c.address} written to ${file2} (Ethereum keystore v3). Keep the passphrase somewhere else — the file alone cannot be opened, the file plus passphrase controls the key.`
+      text: `Encrypted backup of ${c.address} written to ${file2} (Ethereum keystore v3). Keep the passphrase somewhere else — the file alone cannot be opened, the file plus passphrase controls the key.`,
+      ...written.warning ? { warnings: [written.warning] } : {}
     };
   }
 });
@@ -11384,7 +11411,9 @@ defineVerb({
       await updateProfileRecord(ctx.home, identity, (latest) => {
         const next = { ...chainAddressesOf(latest) };
         delete next[String(chainId)];
-        return { chainAddresses: next };
+        const evidence = { ...latest.linkEvidence ?? {} };
+        delete evidence[String(chainId)];
+        return { chainAddresses: next, linkEvidence: evidence };
       });
       return { data: { profile: identity, chainId, linked: null, removedLink: previous, changed: true }, text: `On ${where} your profile is ${identity} again (link to ${previous} removed).` };
     }
@@ -11416,7 +11445,12 @@ defineVerb({
     };
     await ctx.consent({ verb: "profile link", risk: "admin", chainId, summary, target: address });
     if (ctx.flags.dryRun) return { data: { dryRun: true, ...summary }, text: `DRY RUN: on ${where} your profile would be ${address}.`, warnings };
-    await updateProfileRecord(ctx.home, identity, (latest) => ({ chainAddresses: { ...chainAddressesOf(latest), [String(chainId)]: address } }));
+    await updateProfileRecord(ctx.home, identity, (latest) => {
+      const evidence = { ...latest.linkEvidence ?? {} };
+      if (agentKey && agentIsController === true) evidence[String(chainId)] = { address, controllers: [agentKey], checkedAt: (/* @__PURE__ */ new Date()).toISOString() };
+      else delete evidence[String(chainId)];
+      return { chainAddresses: { ...chainAddressesOf(latest), [String(chainId)]: address }, linkEvidence: evidence };
+    });
     return {
       data: { profile: identity, chainId, linked: address, previousLink: previous ?? null, keyManager: km.keyManager, agentKey: agentKey ?? null, agentIsController: agentIsController ?? null, changed: true },
       text: `On ${where} your Universal Profile ${identity} is now the contract ${address} (Key Manager ${km.keyManager}). The agent acts as ${address} there; every other chain keeps ${identity}.`,
@@ -18161,6 +18195,42 @@ init_errors();
 init_home();
 init_json();
 init_profile_record();
+
+// src/core/public-record.ts
+var public_record_exports = {};
+__export(public_record_exports, {
+  assertNoKeyMaterial: () => assertNoKeyMaterial,
+  holdsKeyMaterial: () => holdsKeyMaterial,
+  textHoldsKey: () => textHoldsKey
+});
+init_errors();
+init_secret_guard();
+var TEXT_FIELDS = /* @__PURE__ */ new Set(["name", "type", "hint", "passwordHint", "encryptionType", "backupDate", "file", "path", "destination", "alias", "label", "note", "effect", "say", "message", "chain", "network"]);
+var PURE_HEX = /^(0x)?[0-9a-f]*$/i;
+var MAX_DEPTH = 24;
+function textHoldsKey(text) {
+  return containsSecret(text) || containsSecret(text.replace(/[^0-9a-z]/gi, "")) || looksLikeKey(text);
+}
+function holdsKeyMaterial(value) {
+  const seen = /* @__PURE__ */ new Set();
+  const walk = (v, field, depth) => {
+    if (typeof v === "string") {
+      if (PURE_HEX.test(v) && !TEXT_FIELDS.has(field)) return containsSecret(v);
+      return textHoldsKey(v);
+    }
+    if (v === null || typeof v !== "object") return false;
+    if (seen.has(v) || depth > MAX_DEPTH) return false;
+    seen.add(v);
+    if (Array.isArray(v)) return v.some((x) => walk(x, field, depth + 1));
+    return Object.entries(v).some(([k, x]) => textHoldsKey(k) || walk(x, k, depth + 1));
+  };
+  return walk(value, "", 0);
+}
+function assertNoKeyMaterial(what, value) {
+  if (holdsKeyMaterial(value)) throw new UpError("BAD_ARGS", `${what} holds private key material (or text shaped like it); nothing was changed`, { hint: "rename or replace it" });
+}
+
+// app.ts
 init_secret_guard();
 init_abis();
 init_constants();
@@ -18174,22 +18244,23 @@ init_select();
 export {
   registry_exports as $s0,
   errors_exports as $s1,
-  permissions_exports as $s10,
-  profile_exports as $s11,
-  read_exports as $s12,
-  signer_exports as $s13,
-  inventory_exports as $s14,
-  local_signer_exports as $s15,
-  select_exports as $s16,
-  verbs_exports2 as $s17,
+  lsp23_exports as $s10,
+  permissions_exports as $s11,
+  profile_exports as $s12,
+  read_exports as $s13,
+  signer_exports as $s14,
+  inventory_exports as $s15,
+  local_signer_exports as $s16,
+  select_exports as $s17,
+  verbs_exports2 as $s18,
   home_exports as $s2,
   json_exports as $s3,
   profile_record_exports as $s4,
-  safe_text_exports as $s5,
-  secret_guard_exports as $s6,
-  abis_exports as $s7,
-  constants_exports as $s8,
-  lsp23_exports as $s9,
+  public_record_exports as $s5,
+  safe_text_exports as $s6,
+  secret_guard_exports as $s7,
+  abis_exports as $s8,
+  constants_exports as $s9,
   GLOBAL_PARAMS,
   allVerbs,
   handleMcpMessage,

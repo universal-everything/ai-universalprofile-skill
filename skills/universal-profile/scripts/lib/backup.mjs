@@ -1,44 +1,46 @@
 // Universal Profile skill — backup verbs (loaded on demand by app.mjs)
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint df7b3a08cd71 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
-import { $s0, $s1, $s2, $s3, $s4, $s5, $s6, $s7, $s8, $s9, $s10, $s11, $s12, $s13, $s14, $s15, $s16, $s17 } from "./app.mjs";
+// Built from source fingerprint b543146cb414 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+import { $s0, $s1, $s2, $s3, $s4, $s5, $s6, $s7, $s8, $s9, $s10, $s11, $s12, $s13, $s14, $s15, $s16, $s17, $s18 } from "./app.mjs";
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
 
 // src/backup/run.ts
-import { readFile as readFile2, stat as stat2 } from "node:fs/promises";
+import { lstat as lstat2, readFile as readFile2, stat as stat2 } from "node:fs/promises";
 import { basename as basename2 } from "node:path";
 const { UpError: UpError7 } = $s1;
 const { paths: paths3 } = $s2;
 const { releaseKeys } = $s3;
-const { safeFileText: safeFileText3 } = $s5;
-const { chooseBackend, internalBackend: internalBackend3 } = $s13;
+const { assertNoKeyMaterial: assertNoKeyMaterial3 } = $s5;
+const { safeFileText: safeFileText3 } = $s6;
+const { chooseBackend, internalBackend: internalBackend3 } = $s14;
 
 // src/backup/build.ts
 import { readdir } from "node:fs/promises";
 import { getAddress as getAddress4, isAddress as isAddress2 } from "./vendor-viem.mjs";
 const { UpError: UpError4 } = $s1;
 const { paths: paths2 } = $s2;
-const { chainAddressesOf, readProfileRecord } = $s4;
-const { hasCode } = $s12;
-const { verifyManifest: verifyManifest2 } = $s9;
-const { readControllers } = $s11;
-const { internalBackend } = $s13;
-const { chainControllerList, controllerFor } = $s16;
-const { keptKeys } = $s17;
+const { chainAddressesOf, linkEvidenceOf, readProfileRecord } = $s4;
+const { hasCode } = $s13;
+const { verifyManifest: verifyManifest2 } = $s10;
+const { readControllers } = $s12;
+const { internalBackend } = $s14;
+const { chainControllerList, controllerFor } = $s17;
+const { keptKeys } = $s18;
 
 // src/backup/lsp30-format.ts
 import { getAddress as getAddress2 } from "./vendor-viem.mjs";
 const { UpError: UpError2 } = $s1;
-const { canonicalDateTime, KEY_WITHHELD, safeFileText } = $s5;
+const { PERMISSION_NAMES } = $s9;
+const { canonicalDateTime, KEY_WITHHELD, safeFileText } = $s6;
 
 // src/backup/lsp30-crypto.ts
 import { createCipheriv, createDecipheriv, pbkdf2, randomBytes } from "node:crypto";
 import { getAddress } from "./vendor-viem.mjs";
 const { UpError } = $s1;
-const { registerSecret } = $s6;
-const { addressOf, isValidPrivateKey, normalizePrivateKey } = $s15;
+const { registerSecret } = $s7;
+const { addressOf, isValidPrivateKey, normalizePrivateKey } = $s16;
 var ENCRYPTION_TYPE = "Key from PBKDF2. Encrypted with AES-GCM.";
 var KDF_DESCRIPTION = "PBKDF2-HMAC-SHA256 (10,000 iterations), AES-256-GCM";
 var APP_ITERATIONS = 1e4;
@@ -199,6 +201,16 @@ function appIncompatibilities(f) {
   });
   return out;
 }
+var KNOWN_PERMISSION_NAMES = new Set(PERMISSION_NAMES);
+function knownPermissionNames(o) {
+  const known = {};
+  let unrecognised = 0;
+  for (const [k, v] of Object.entries(o)) {
+    if (KNOWN_PERMISSION_NAMES.has(k) && typeof v === "boolean") known[k] = v;
+    else unrecognised++;
+  }
+  return { known, unrecognised };
+}
 var isObj2 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var HEX_BYTES = /^0x([0-9a-fA-F]{2})*$/;
 var isNonNegInt = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
@@ -312,8 +324,8 @@ function parseBackup(text) {
       const allowedCalls = hex(p.allowedCalls ?? "0x", `${cat}.addressPermissions.allowedCalls`);
       const allowedKeys = hex(p.allowedERC725YDataKeys ?? "0x", `${cat}.addressPermissions.allowedERC725YDataKeys`);
       if (!ca || !permissions || !allowedCalls || !allowedKeys) return [];
-      const decoded = isObj2(p.decodedPermissions) ? p.decodedPermissions : void 0;
-      return [{ address: ca, ...idx !== void 0 ? { privateKeyIndex: idx } : {}, addressPermissions: { permissions, ...decoded ? { decodedPermissions: decoded } : {}, allowedCalls, allowedERC725YDataKeys: allowedKeys } }];
+      const decoded = isObj2(p.decodedPermissions) ? knownPermissionNames(p.decodedPermissions) : void 0;
+      return [{ address: ca, ...idx !== void 0 ? { privateKeyIndex: idx } : {}, addressPermissions: { permissions, ...decoded ? { decodedPermissions: decoded.known, ...decoded.unrecognised ? { unrecognisedNames: decoded.unrecognised } : {} } : {}, allowedCalls, allowedERC725YDataKeys: allowedKeys } }];
     });
     if (!profile || !factory || !calldata) return [];
     return [{ profileAddress: profile, initialChainID: it.initialChainID, factoryAddress: factory, deploymentCalldata: calldata, ...salt ? { salt } : {}, initialControllers }];
@@ -359,16 +371,20 @@ function parseBackup(text) {
 // src/backup/lsp23-decode.ts
 import { decodeAbiParameters, decodeFunctionData, getAddress as getAddress3, isAddress } from "./vendor-viem.mjs";
 const { LSP } = $s0;
-const { LSP23_ABI } = $s7;
-const { DATA_KEYS } = $s8;
-const { computeERC1167Addresses, manifestFromPlan, verifyManifest } = $s9;
-const { decodePermissions } = $s10;
+const { LSP23_ABI } = $s8;
+const { DATA_KEYS, PERMISSION_NAMES: PERMISSION_NAMES2, PERMISSIONS } = $s9;
+const { computeERC1167Addresses, manifestFromPlan, verifyManifest } = $s10;
+const { decodePermissions } = $s11;
 var DEPLOY_ERC1167_PROXIES = "0x6a66a753";
 var DEPLOY_CONTRACTS = "0x17ad46a8";
 var unsupported = (reason) => ({ supported: false, reason, rederives: false, canonicalFactory: false, initialControllers: [] });
 var sameAddress = (a, b) => a.toLowerCase() === b.toLowerCase();
 var ZERO_PERMISSIONS = `0x${"00".repeat(32)}`;
 var PERMISSION_VALUE = /^0x0{56}[0-9a-f]{8}$/i;
+var DEFINED_PERMISSION_BITS = PERMISSION_NAMES2.reduce((m, n) => m | PERMISSIONS[n], 0n);
+function hasDefinedPermission(value) {
+  return (value & DEFINED_PERMISSION_BITS) !== 0n;
+}
 function addressFromKey(key, prefix) {
   return key.toLowerCase().startsWith(prefix.toLowerCase()) && key.length === 66 ? getAddress3(`0x${key.slice(26)}`) : void 0;
 }
@@ -404,7 +420,7 @@ function decodeDeployment(item) {
     const k = addressFromKey(key, DATA_KEYS.AddressPermissionsAllowedERC725YDataKeysPrefix);
     if (p) {
       const permissionsValid = PERMISSION_VALUE.test(value);
-      perms.set(p, { address: p, permissions: permissionsValid ? value.toLowerCase() : ZERO_PERMISSIONS, permissionsValid, hasPermissions: permissionsValid && BigInt(value) !== 0n, allowedCalls: "0x", allowedERC725YDataKeys: "0x", isUrd: false });
+      perms.set(p, { address: p, permissions: permissionsValid ? value.toLowerCase() : ZERO_PERMISSIONS, permissionsValid, hasPermissions: permissionsValid && hasDefinedPermission(BigInt(value)), allowedCalls: "0x", allowedERC725YDataKeys: "0x", isUrd: false });
     } else if (c) calls.set(c, value);
     else if (k) dataKeys.set(k, value);
     else if (key.toLowerCase() === DATA_KEYS.LSP1UniversalReceiverDelegate.toLowerCase() && value.length === 42 && isAddress(value, { strict: false })) urd = getAddress3(value);
@@ -460,9 +476,12 @@ function initialControllersFor(dec, keyIndexOf) {
 }
 function permissionMismatch(c) {
   if (!c.decodedPermissions) return [];
+  const known = new Set(PERMISSION_NAMES2);
   const real = new Set(decodePermissions(c.permissions).names);
-  const listed = new Set(Object.entries(c.decodedPermissions).filter(([, v]) => v === true).map(([k]) => k));
-  return [.../* @__PURE__ */ new Set([...real, ...listed])].filter((n) => real.has(n) !== listed.has(n));
+  const entries = Object.entries(c.decodedPermissions);
+  const listed = new Set(entries.filter(([k, v]) => v === true && known.has(k)).map(([k]) => k));
+  const unrecognised = (c.unrecognisedNames ?? 0) + entries.filter(([k]) => !known.has(k)).length;
+  return [...[.../* @__PURE__ */ new Set([...real, ...listed])].filter((n) => real.has(n) !== listed.has(n)), ...unrecognised ? [`${unrecognised} unrecognised permission name${unrecognised === 1 ? "" : "s"} (not shown)`] : []];
 }
 function manifestFromBackup(item, dec, heldKeys) {
   if (!dec.supported || !dec.plan) return { reason: dec.reason ?? "the deployment data has no Universal Receiver Delegate" };
@@ -493,9 +512,10 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 const { UpError: UpError3 } = $s1;
+const { assertNoKeyMaterial } = $s5;
 const { appendLine, ensureDir, paths } = $s2;
-const { assertNotKeyMaterialPath } = $s6;
-const { writeNewFileExclusive } = $s17;
+const { assertNotKeyMaterialPath } = $s7;
+const { writeNewFileExclusive } = $s18;
 var sha256Hex = (data) => createHash("sha256").update(data).digest("hex");
 function backupsDir(home) {
   return paths.backups(home);
@@ -504,6 +524,7 @@ function indexFile(home) {
   return join(backupsDir(home), "index.jsonl");
 }
 async function appendIndex(home, entry) {
+  assertNoKeyMaterial("a backups index line", entry);
   await ensureDir(backupsDir(home));
   await appendLine(indexFile(home), JSON.stringify(entry));
 }
@@ -550,8 +571,8 @@ async function resolveDestination(home, given) {
   return file;
 }
 async function writeBackup(file, content) {
-  await writeNewFileExclusive(file, content);
-  return { sha256: sha256Hex(content), size: Buffer.byteLength(content) };
+  const { warning } = await writeNewFileExclusive(file, content);
+  return { sha256: sha256Hex(content), size: Buffer.byteLength(content), ...warning ? { warning } : {} };
 }
 async function readBackupFile(given) {
   if (!given?.trim()) throw new UpError3("BAD_ARGS", "give the path of a backup file");
@@ -619,6 +640,7 @@ function establishedFor(chainId, manifest, dec, record, onChain) {
   for (const c of record.joined?.chains ?? []) if (c?.chainId === chainId && c.authorised !== false) add(c.controller ?? record.joined?.controller, "joined");
   const st = record.status?.chains?.[String(chainId)];
   if (st?.isController === true) add(st.controller, "checked");
+  for (const a of record.linkEvidence?.controllers ?? []) add(a, "checked");
   for (const a of onChain) add(a, "chain");
   for (const c of importedChainsOf(record)) if (c.chainId === chainId) for (const a of c.controllers) add(a, "imported");
   return out;
@@ -648,11 +670,12 @@ async function collectProfiles(ctx, cfg, warnings, opts = {}) {
     const imported = importedChainsOf(record);
     let chainIds = deployedChains(manifest, record).filter((c) => !linkedChains.has(c));
     const onChain = {};
+    const refreshedChains = [];
     if (opts.refresh) {
       for (const c of new Set([...chainIds, ...cfg.chains ?? []].filter((x) => !linkedChains.has(x)))) {
         try {
           if (!await withTimeout(hasCode(ctx, c, id), REFRESH_TIMEOUT_MS)) continue;
-          if (!chainIds.includes(c)) chainIds.push(c);
+          if (!chainIds.includes(c)) chainIds.push(c), refreshedChains.push(c);
           onChain[c] = (await withTimeout(readControllers(ctx, c, id), REFRESH_TIMEOUT_MS)).controllers.map((x) => x.address);
         } catch (e) {
           warnings.push(`could not refresh ${id} on chain ${c}: ${e.message}`);
@@ -669,11 +692,24 @@ async function collectProfiles(ctx, cfg, warnings, opts = {}) {
     const importedInitial = Number.isInteger(record.imported?.initialChainID) ? record.imported.initialChainID : chainIds[0];
     const unverifiedChains = importedHere.filter((c) => !c.verified && !recorded.some((d) => d.chainId === c.chainId)).map((c) => c.chainId);
     if (unverifiedChains.length) warnings.push(`the networks ${unverifiedChains.join(", ")} of ${id} come from an imported backup and were not confirmed on a network from here`);
-    if (chainIds.length) out.push({ address: id, name: aliasOf(id), chainIds, ...manifest && (recorded.length || importedHere.length) ? { manifest, initialChainId: first ?? importedInitial } : {}, onChain, controllers, unverifiedChains });
+    if (chainIds.length) out.push({ address: id, name: aliasOf(id), chainIds, ...manifest && (recorded.length || importedHere.length) ? { manifest, initialChainId: first ?? importedInitial } : {}, onChain, controllers, unverifiedChains, refreshedChains });
     else if (!linkedChains.size) warnings.push(`the profile ${id} is not deployed or joined anywhere yet; nothing to back up for it`);
     for (const [chain, address] of Object.entries(linked)) {
       const c = Number(chain);
-      out.push({ address, name: aliasOf(address), chainIds: [c], onChain: {}, controllers: { [c]: establishedFor(c, void 0, void 0, { status: record.status }, []) }, unverifiedChains: [] });
+      const snap = record.status?.chains?.[chain];
+      const own = snap && (typeof snap.profile !== "string" || !isAddress2(snap.profile, { strict: false }) || sameAddress2(snap.profile, address)) ? snap : void 0;
+      const found = [];
+      if (opts.refresh) {
+        try {
+          if (await withTimeout(hasCode(ctx, c, address), REFRESH_TIMEOUT_MS)) {
+            found.push(...(await withTimeout(readControllers(ctx, c, address), REFRESH_TIMEOUT_MS)).controllers.map((x) => x.address));
+          }
+        } catch (e) {
+          warnings.push(`could not refresh the linked address ${address} (profile ${id}) on chain ${c}: ${e.message}`);
+        }
+      }
+      const evidence = { controllers: linkEvidenceOf(record, c) };
+      out.push({ address, name: aliasOf(address), chainIds: [c], onChain: { [c]: found }, controllers: { [c]: establishedFor(c, void 0, void 0, { status: own ? { chains: { [chain]: own } } : void 0, linkEvidence: evidence }, found) }, unverifiedChains: [], refreshedChains: [] });
     }
   }
   return out;
@@ -685,9 +721,14 @@ async function collectState(ctx, opts = {}) {
   const profiles = await collectProfiles(ctx, cfg, warnings, opts);
   return { keys, profiles, warnings };
 }
+function profileLine(p) {
+  const chains = [...new Set(p.chainIds.filter((c) => !(p.refreshedChains ?? []).includes(c)))].sort((a, b) => a - b);
+  const perChain = chains.map((c) => `${c}:${[...new Set((p.controllers[c] ?? []).filter((e) => e.source !== "chain").map((e) => e.address.toLowerCase()))].sort().join(",")}`);
+  return `${p.address.toLowerCase()}|${perChain.join(";")}`;
+}
 function fingerprints(state) {
   const addrs = (xs) => xs.map((x) => x.address.toLowerCase()).sort();
-  const profilePart = ["profiles", ...addrs(state.profiles), "deployments", ...state.profiles.flatMap((p) => p.manifest ? [sha256Hex(p.manifest.deployCalldata.toLowerCase())] : []).sort()];
+  const profilePart = ["profiles", ...state.profiles.map(profileLine).sort(), "deployments", ...state.profiles.flatMap((p) => p.manifest ? [sha256Hex(p.manifest.deployCalldata.toLowerCase())] : []).sort()];
   return { full: sha256Hex(["keys", ...addrs(state.keys), ...profilePart].join("\n")), profiles: sha256Hex(profilePart.join("\n")) };
 }
 function chainName(ctx, id) {
@@ -819,15 +860,16 @@ import { basename } from "node:path";
 import { getAddress as getAddress5, isAddress as isAddress3 } from "./vendor-viem.mjs";
 const { UpError: UpError6 } = $s1;
 const { updateProfileRecord } = $s4;
-const { containsSecret } = $s6;
-const { KEY_WITHHELD: KEY_WITHHELD2, looksLikeKey, safeFileText: safeFileText2 } = $s5;
-const { verifyManifest: verifyManifest3 } = $s9;
-const { readControllerPermissions } = $s11;
-const { hasCode: hasCode2 } = $s12;
-const { internalBackend: internalBackend2 } = $s13;
-const { readCandidates, importRecorded, updateCandidates, withKeyLock } = $s17;
-const { readInventory } = $s14;
-const { chainControllerList: chainControllerList2 } = $s16;
+const { assertNoKeyMaterial: assertNoKeyMaterial2, textHoldsKey } = $s5;
+const { containsSecret } = $s7;
+const { KEY_WITHHELD: KEY_WITHHELD2, safeFileText: safeFileText2 } = $s6;
+const { verifyManifest: verifyManifest3 } = $s10;
+const { readControllerPermissions } = $s12;
+const { hasCode: hasCode2 } = $s13;
+const { internalBackend: internalBackend2 } = $s14;
+const { readCandidates, importRecorded, updateCandidates, withKeyLock } = $s18;
+const { readInventory } = $s15;
+const { chainControllerList: chainControllerList2 } = $s17;
 function issueSummary(issues) {
   return issues.filter((i) => i.level === "error").map((i) => `${i.code}: ${i.message}`).join("; ");
 }
@@ -860,9 +902,7 @@ async function openBackup(text, password) {
   if (seedPhraseEntries) all.push({ level: "warn", code: "seed-phrase", message: `${seedPhraseEntries} seed phrase entr${seedPhraseEntries === 1 ? "y" : "ies"} found; seed phrases are not supported and were skipped` });
   return { parsed: backup, issues: all, keys, seedPhraseEntries, decryption };
 }
-function holdsKey(text) {
-  return containsSecret(text) || containsSecret(text.replace(/[^0-9a-z]/gi, "")) || looksLikeKey(text);
-}
+var holdsKey = textHoldsKey;
 function scrubPublicText(backup) {
   let n = 0;
   const clean = (v) => {
@@ -907,15 +947,26 @@ function analyseAccounts(opened, localKeys) {
     for (const n of account.networks) for (const c of n.controllers) listed.add(c.address.toLowerCase()), c.privateKeyIndex !== void 0 && indices.add(c.privateKeyIndex);
     for (const it of items) for (const c of it.item.initialControllers) listed.add(c.address.toLowerCase()), c.privateKeyIndex !== void 0 && indices.add(c.privateKeyIndex);
     const heldControllers = [...listed].filter((a) => held.has(a)).map((a) => getAddress5(a));
+    const heldByChain = /* @__PURE__ */ new Map();
     const fileKeys = opened.keys.filter((k) => indices.has(k.index) || listed.has(k.address.toLowerCase()));
     const proof = items.some((it) => it.decoded.rederives && it.decoded.initialControllers.some((c) => !c.isUrd && c.hasPermissions && held.has(c.address.toLowerCase())));
     const forged = items.some((i) => i.decoded.supported && !i.decoded.rederives);
     const chains = [.../* @__PURE__ */ new Set([...account.networks.map((n) => n.chainID), ...account.networks.length ? [] : items.map((i) => i.item.initialChainID)])];
-    return { account, chains, items, heldControllers, fileKeys, proof, forged };
+    for (const chainId of chains) {
+      const here = /* @__PURE__ */ new Set();
+      for (const n of account.networks) if (n.chainID === chainId) for (const c of n.controllers) here.add(c.address.toLowerCase());
+      for (const it of items) if (it.item.initialChainID === chainId) for (const c of it.item.initialControllers) here.add(c.address.toLowerCase());
+      heldByChain.set(chainId, [...here].filter((a) => held.has(a)).map((a) => getAddress5(a)));
+    }
+    return { account, chains, items, heldControllers, heldByChain, fileKeys, proof, forged };
   });
 }
+function assertProfileRecordClean(x) {
+  assertNoKeyMaterial2(`the backup's data for the profile ${x.account.address}`, { account: x.account, items: x.items.map((i) => ({ item: i.item, manifest: i.manifest })) });
+}
 async function decideChain(ctx, a, chainId) {
-  if (!a.heldControllers.length) return { chainId, status: "no-controlling-key" };
+  const candidates = a.heldByChain.get(chainId) ?? [];
+  if (!candidates.length) return { chainId, status: "no-controlling-key" };
   const forged = a.forged && !a.proof;
   const open = (status, note) => forged ? { chainId, status: "impersonation-blocked", note: "the deployment data in the file does not create this profile and the network cannot confirm that a backup key controls it" } : { chainId, status, note };
   try {
@@ -929,10 +980,10 @@ async function decideChain(ctx, a, chainId) {
     return open("unverified", "the network could not be reached");
   }
   let inconclusive = false;
-  for (const key of a.heldControllers) {
+  for (const key of candidates) {
     try {
       const info = await readControllerPermissions(ctx, chainId, a.account.address, key);
-      if (info.permissions.value !== 0n) return { chainId, status: "controls" };
+      if (hasDefinedPermission(info.permissions.value)) return { chainId, status: "controls" };
     } catch {
       inconclusive = true;
     }
@@ -944,8 +995,13 @@ async function decideChain(ctx, a, chainId) {
 async function decideProfile(ctx, a, online) {
   const address = a.account.address;
   if (!online) {
-    const verdict2 = !a.heldControllers.length ? "no-controlling-key" : a.forged && !a.proof ? "impersonation-blocked" : "unverified";
-    return { address, verdict: verdict2, restorable: verdict2 === "unverified", chains: a.chains.map((chainId) => ({ chainId, status: verdict2 === "unverified" ? "unverified" : verdict2 === "no-controlling-key" ? "no-controlling-key" : "impersonation-blocked", note: "not checked on the network" })) };
+    const chains2 = a.chains.map((chainId) => ({
+      chainId,
+      status: a.heldByChain.get(chainId)?.length ? a.forged && !a.proof ? "impersonation-blocked" : "unverified" : "no-controlling-key",
+      note: "not checked on the network"
+    }));
+    const verdict2 = chains2.some((c) => c.status === "unverified") ? "unverified" : chains2.some((c) => c.status === "impersonation-blocked") ? "impersonation-blocked" : "no-controlling-key";
+    return { address, verdict: verdict2, restorable: verdict2 === "unverified", chains: chains2 };
   }
   const chains = [];
   for (const c of a.chains) chains.push(await decideChain(ctx, a, c));
@@ -1054,6 +1110,7 @@ async function writeProfileRecords(ctx, profiles, info) {
           status = "restored";
         }
       } else if (manifest && cur) status = cur.deployCalldata?.toLowerCase() === manifest.deployCalldata.toLowerCase() ? "kept-existing" : "conflict";
+      assertNoKeyMaterial2(`the record of the profile ${analysis.account.address}`, patch);
       return patch;
     });
     out.push({ address: analysis.account.address, manifest: status, chains: analysis.chains });
@@ -1061,6 +1118,7 @@ async function writeProfileRecords(ctx, profiles, info) {
   return out;
 }
 async function applyImportConfig(ctx, change) {
+  assertNoKeyMaterial2("the configuration change", change);
   const known = [];
   const unknownChains = [];
   for (const c of change.chains) {
@@ -1139,13 +1197,16 @@ async function runExport(ctx, a) {
   if (mode === "unencrypted" && a["explicit-consent"] !== true) {
     throw new UpError7("BAD_ARGS", "an unencrypted backup needs --explicit-consent: it puts the keys in a file anyone can use", { hint: "recommend the encrypted backup; only if the human insists, add --explicit-consent and their --approval" });
   }
+  assertNoKeyMaterial3("the backup destination or hint", { path: a.path, hint: a.hint });
   const cfg = await ctx.config();
   const only = a.profiles?.length ? await Promise.all(a.profiles.map((p) => ctx.resolveAddress(p))) : void 0;
   const state = await collectState(ctx, { only, refresh: a.refresh === true });
   if (!state.profiles.length && !state.keys.length) throw new UpError7("BAD_ARGS", "there is nothing to back up yet: no profile and no key on this machine", { hint: "set up the profile first (up start)" });
   if (mode !== "public" && !state.keys.length) throw new UpError7("NO_SIGNER", "none of the agent's keys is in a key store here, so there are no keys to back up", { hint: "a backup without keys is --mode public" });
   const built = buildBackup(ctx, cfg, state, mode);
+  assertNoKeyMaterial3("an account name, alias or label of the backup", built.file);
   const dest = await resolveDestination(ctx.home, a.path);
+  assertNoKeyMaterial3("the backup destination", { path: dest });
   const profiles = state.profiles.map((p) => p.address);
   const warnings = [...state.warnings];
   if (!state.profiles.length) warnings.push("the agent has no deployed profile yet: the file holds only its keys");
@@ -1153,22 +1214,20 @@ async function runExport(ctx, a) {
   if (mode === "public" && built.file.LSP23CrossChainDeployment.length) warnings.push("the Universal Profile app cannot import a public file that has deployment data (it needs a key)");
   if (mode === "unencrypted") warnings.push("UNENCRYPTED: this file holds the private keys in plain text. Anyone with a copy controls those keys and what they control. Delete it after use; if it was ever sent through a chat or e-mail, treat the keys as exposed and move the funds");
   if (mode !== "public") {
-    await ctx.consent({
-      verb: "backup export",
-      risk: "secret",
-      summary: {
-        effect: mode === "encrypted" ? "write a backup file with the agent's keys locked by a password" : "write a backup file with the agent's keys in PLAIN TEXT",
-        destination: dest,
-        profiles,
-        chains: built.chains.map((c) => `${chainName2(ctx, c)} (${c})`),
-        keyAddresses: built.keys.map((k) => k.address),
-        keyCount: built.keys.length,
-        format: mode === "encrypted" ? `LSP-30 version 2 (${KDF_DESCRIPTION})` : "LSP-30 version 2, keys not encrypted",
-        password: mode === "encrypted" ? hasPasswordArgs(a) && a["generate-password"] !== true ? "chosen by the human" : "generated (returned to the agent to tell the human)" : "none",
-        note: mode === "encrypted" ? "anyone with the file AND the password controls these keys" : "anyone with the file controls these keys",
-        warnings
-      }
-    });
+    const summary = {
+      effect: mode === "encrypted" ? "write a backup file with the agent's keys locked by a password" : "write a backup file with the agent's keys in PLAIN TEXT",
+      destination: dest,
+      profiles,
+      chains: built.chains.map((c) => `${chainName2(ctx, c)} (${c})`),
+      keyAddresses: built.keys.map((k) => k.address),
+      keyCount: built.keys.length,
+      format: mode === "encrypted" ? `LSP-30 version 2 (${KDF_DESCRIPTION})` : "LSP-30 version 2, keys not encrypted",
+      password: mode === "encrypted" ? hasPasswordArgs(a) && a["generate-password"] !== true ? "chosen by the human" : "generated (returned to the agent to tell the human)" : "none",
+      note: mode === "encrypted" ? "anyone with the file AND the password controls these keys" : "anyone with the file controls these keys",
+      warnings
+    };
+    assertNoKeyMaterial3("the export confirmation", summary);
+    await ctx.consent({ verb: "backup export", risk: "secret", summary });
   }
   if (ctx.flags.dryRun) {
     return { data: { dryRun: true, mode, path: dest, profiles, keys: built.keys.map((k) => k.address), chains: built.chains, appCompatible: built.appIncompatible.length === 0 }, text: `Dry run: a ${mode} backup of ${plural(profiles.length, "profile", "profiles")} and ${plural(built.keys.length, "key", "keys")} would be written to ${dest}.`, warnings };
@@ -1186,10 +1245,23 @@ async function runExport(ctx, a) {
   const file = { ...built.file, secrets };
   const text = serializeBackup(file);
   await verifyRoundTrip(text, built, secretKeys, choice?.password);
+  assertNoKeyMaterial3("an account name, alias, hint or the destination of the backup", { file: built.file, hint, path: dest });
   await appendIndex(ctx.home, { at: (/* @__PURE__ */ new Date()).toISOString(), event: "reserved", file: dest }).catch(() => {
     throw new UpError7("INTERNAL", "the backups index cannot be written, so no backup was made; nothing was written", { hint: `check that ${paths3.backups(ctx.home)} is writable and not full` });
   });
-  const written = await writeBackup(dest, text);
+  let written;
+  try {
+    written = await writeBackup(dest, text);
+  } catch (e) {
+    const exists = await lstat2(dest).then(() => true, () => false);
+    const ours = exists && !(e instanceof UpError7 && /already exists/.test(e.message));
+    await appendIndex(ctx.home, { at: (/* @__PURE__ */ new Date()).toISOString(), event: ours ? "committed" : "cancelled", file: dest }).catch(() => {
+    });
+    throw e;
+  }
+  await appendIndex(ctx.home, { at: (/* @__PURE__ */ new Date()).toISOString(), event: "committed", file: dest }).catch(() => {
+  });
+  if (written.warning) warnings.push(written.warning);
   ctx.log(`${mode} backup written: ${dest}`);
   const fp = fingerprints(state);
   let indexed = true;
@@ -1387,6 +1459,7 @@ async function runImport(ctx, a) {
     for (const w of wanted2) if (!analyses.some((x) => sameAddress4(x.account.address, w))) throw new UpError7("BAD_ARGS", `the backup has no profile ${w}`, { hint: "list them with: up backup inspect <file>" });
     analyses = analyses.filter((x) => wanted2.some((w) => sameAddress4(w, x.account.address)));
   }
+  for (const x of analyses) assertProfileRecordClean(x);
   const decisions = [];
   for (const x of analyses) decisions.push(await decideProfile(ctx, x, !offline));
   const chosen = analyses.filter((_, i) => decisions[i].restorable);
@@ -1421,16 +1494,14 @@ async function runImport(ctx, a) {
       warnings: opened.issues.filter((i) => i.level === "warn").map((i) => i.message)
     };
   }
-  await ctx.consent({
-    verb: "backup import",
-    risk: "secret",
-    summary: {
-      effect: "restore profiles and keys from a backup file into this agent's key store and records",
-      ...plan,
-      keyStoreNote: "keys are only ever added; none is overwritten or deleted. A key already here is skipped",
-      ...offline ? { warning: "the check on the networks is skipped: whether the backup's keys control the profiles is not confirmed" } : {}
-    }
-  });
+  const summary = {
+    effect: "restore profiles and keys from a backup file into this agent's key store and records",
+    ...plan,
+    keyStoreNote: "keys are only ever added; none is overwritten or deleted. A key already here is skipped",
+    ...offline ? { warning: "the check on the networks is skipped: whether the backup's keys control the profiles is not confirmed" } : {}
+  };
+  assertNoKeyMaterial3("the import confirmation", summary);
+  await ctx.consent({ verb: "backup import", risk: "secret", summary });
   if (ctx.flags.dryRun) return { data: { dryRun: true, ...plan }, text: `Dry run: ${plural(chosen.length, "profile", "profiles")} and ${plural(keysToRestore.length, "key", "keys")} would be restored from ${plan.file}.` };
   const keyResults = keysToRestore.length ? await restoreKeys(ctx, keysToRestore, backend, opened.parsed.backupDate, known, activeAddress) : [];
   const restoredKeys = keyResults.filter((r) => r.status === "restored").map((r) => r.address);
