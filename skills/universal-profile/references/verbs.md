@@ -7,7 +7,7 @@ Risk classes: **local** (no chain writes), **read** (chain/HTTP reads), **write*
 ## Index
 
 - **abi**: [`abi bundled`](#abi-bundled), [`abi decode`](#abi-decode), [`abi decode-error`](#abi-decode-error), [`abi decode-event`](#abi-decode-event), [`abi encode`](#abi-encode), [`abi fetch`](#abi-fetch), [`abi functions`](#abi-functions), [`abi resolve-proxy`](#abi-resolve-proxy), [`abi selector`](#abi-selector), [`contract call`](#contract-call), [`contract read`](#contract-read)
-- **account**: [`account data get`](#account-data-get), [`account data set`](#account-data-set), [`account deploy`](#account-deploy), [`account extensions add`](#account-extensions-add), [`account extensions remove`](#account-extensions-remove), [`account info`](#account-info), [`account manifest export`](#account-manifest-export), [`account manifest show`](#account-manifest-show), [`account precompute`](#account-precompute), [`account urd set`](#account-urd-set), [`profile join`](#profile-join), [`profile link`](#profile-link), [`profile metadata set`](#profile-metadata-set), [`profile metadata show`](#profile-metadata-show), [`profile status`](#profile-status), [`profile url`](#profile-url)
+- **account**: [`account data get`](#account-data-get), [`account data set`](#account-data-set), [`account deploy`](#account-deploy), [`account extensions add`](#account-extensions-add), [`account extensions remove`](#account-extensions-remove), [`account info`](#account-info), [`account manifest export`](#account-manifest-export), [`account manifest show`](#account-manifest-show), [`account precompute`](#account-precompute), [`account urd set`](#account-urd-set), [`profile identity`](#profile-identity), [`profile join`](#profile-join), [`profile link`](#profile-link), [`profile metadata set`](#profile-metadata-set), [`profile metadata show`](#profile-metadata-show), [`profile status`](#profile-status), [`profile url`](#profile-url)
 - **backup**: [`backup export`](#backup-export), [`backup import`](#backup-import), [`backup inspect`](#backup-inspect), [`backup list`](#backup-list), [`backup verify`](#backup-verify)
 - **chains**: [`chains add`](#chains-add), [`chains list`](#chains-list), [`chains refresh`](#chains-refresh), [`chains rpc find`](#chains-rpc-find), [`chains rpc list`](#chains-rpc-list), [`chains rpc set`](#chains-rpc-set), [`chains rpc verify`](#chains-rpc-verify), [`chains verify`](#chains-verify), [`funding suggest`](#funding-suggest)
 - **display**: [`display address`](#display-address), [`identicon`](#identicon), [`qr`](#qr)
@@ -365,6 +365,21 @@ Set the profile's LSP1 Universal Receiver Delegate (admin: ADD/CHANGEUNIVERSALRE
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
 | `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
+### profile identity
+
+Read-only, offline: the Universal Profile(s) this machine already knows (default profile, address and recorded controllers per network) and the agent's own signing-key address(es), from the saved public state. Run it first in every new chat and whenever asked for the agent's profile address.
+
+Reads only the public files under UP_HOME (config.json and profiles/*.json): no network call, no key store access, nothing written, no key or profile created. Every chat that shares the same UP_HOME (same user, same machine or mounted persistent storage) gets the same answer; do not rely on chat memory, and never say you have no profile, forgot it, or start `up start` / create a new key or profile while `data.found` is true. `profiles[]` separates the profile (the account that holds assets) from `agentControllers` (the agent's own key addresses, which are NOT the profile) and from each network's `recordedControllers` (who was recorded as a controller when it was saved; not a current permission). Nothing here is fresh: whether a profile is deployed on a network and what the agent may do there is only known after `up profile status` (it reads the chains). A public address alone is not access and recovers no key. If `data.found` is false, this storage knows no profile: that is not proof none exists (another device, another environment or an isolated VM that was reset). Ask the human before creating a new one; a backup (`up backup import`) or an existing profile (onboarding choice 3) is the way back. Several people sharing one agent need separate UP_HOME folders (one per person); this verb shows everything in the one it is given.
+
+- CLI: `up profile identity [options]`
+- MCP tool: `up_profile_identity` · risk: **local**
+
+Examples:
+
+```
+up profile identity
+```
+
 ### profile join
 
 Join ANY existing Universal Profile (relayer-created or the human's own): checks per chain whether this agent's controller is authorised, and prints the recommended permission set to hand to the human.
@@ -512,14 +527,15 @@ up profile url --profile 0xProfile
 
 Make a backup file of the agent's profiles and keys that the Universal Profile mobile app can import (LSP-30), encrypted with a password by default.
 
-Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) or at --path. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.
+Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) as `<your display name> - universal-profiles-backup-YYYY-MM-DD.json` (pass --bot-name with your own display name; never guess another agent's or brand's name), or at --path exactly as given. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.
 
 - CLI: `up backup export [path] [options]`
 - MCP tool: `up_backup_export` · risk: **secret**
 
 | option | type | required | description |
 | --- | --- | --- | --- |
-| `--path` | string |  | Where to write the file (must not exist; its folder must exist). Default: <UP_HOME>/backups/universal-profiles-backup-YYYY-MM-DD.json. |
+| `--path` | string |  | Where to write the file (must not exist; its folder must exist). Used exactly as given, without the agent prefix. Default: <UP_HOME>/backups/<agent display name> - universal-profiles-backup-YYYY-MM-DD.json. |
+| `--bot-name` | string |  | Your own display name as the human sees it in this chat (e.g. "Alice"): the default file name starts with it. Pass it every time; if omitted, the host's UP_AGENT_NAME is used, else the name has no prefix. A public label only, never a key or password; unsafe characters are removed. |
 | `--mode` | string (encrypted\|public\|unencrypted) |  | encrypted (keys locked with a password, default), public (no keys at all) or unencrypted (keys in plain text; dangerous). Default: `"encrypted"`. |
 | `--profiles` | string[] |  | Only these profiles (addresses or aliases). Default: every profile on this machine. The keys are always all of the agent's keys. |
 | `--password` | string |  | The backup password the human chose and told you in chat (at least 6 characters with a lowercase and an uppercase letter, a number and a symbol; one they will remember). Omit to have one generated. |
@@ -533,8 +549,8 @@ Covers every profile and every key the agent has (--profiles narrows the profile
 Examples:
 
 ```
-up backup export --approval "<the human's words>"
-up backup export --mode public
+up backup export --bot-name "<your display name>" --approval "<the human's words>"
+up backup export --mode public --bot-name "<your display name>"
 up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval "<their words>"
 ```
 

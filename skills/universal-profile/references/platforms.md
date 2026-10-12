@@ -78,12 +78,21 @@ Client configuration (use the absolute path of the installed skill):
 
 A client's "always allow" setting for a tool is not the human's approval for a transaction; the consent rules in `SKILL.md` still apply.
 
+## Remembering the profile across chats
+
+`up profile identity` finds the saved profile(s) again in any chat that uses **the same state folder** (`UP_HOME`, default `~/.universal-profile`): same user, same machine or the same mounted persistent storage. It reads only public files; it never creates a key or profile, never touches the key store and makes no network call.
+
+- **Works:** several chats of one user on one machine (Claude Code, Codex, OpenClaw and other hosts that run the skill on the user's computer), and any host whose agent VM keeps the state folder between chats.
+- **Does not work by itself:** a chat in a different, fresh or reset environment (an isolated cloud VM such as OpenAI dots or Meta Muse without storage that persists between chats, a new machine, another user's account). It cannot see another environment's files, and the verb then reports that nothing is saved here. Whether a given dots/Muse chat keeps its files has not been tested; do not promise it. Ways back: persistent storage the platform mounts at the state folder, restoring an encrypted backup (`up backup import`), or the human authorising the new agent address on their existing profile. A public profile address alone is not access and recovers no key.
+- Never keep the key or the state in chat memory, a note or a hosted sync; the skill creates none. Several people sharing one agent need one state folder each.
+
 ## Environment variables
 
 | Variable | Purpose |
 | --- | --- |
 | `UP_HOME` | state directory (default `~/.universal-profile`) |
 | `UP_AGENT_HOST` | `dots`, `muse` or `vm`: declares a cloud agent VM so the in-VM protected key file may be used |
+| `UP_AGENT_NAME` | the agent's own public display name (never a secret): the default backup file name starts with it when `--bot-name` is not given. Not set by default; the skill never guesses a name |
 | `UP_ASSETS_DIR` | override the bundled `assets/` location (development only) |
 | `UP_RPC_TIMEOUT_MS` | RPC timeout in milliseconds (default 15000) |
 

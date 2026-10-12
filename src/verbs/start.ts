@@ -146,6 +146,7 @@ defineVerb({
         controller: keyData.address,
         say: welcomeMessage(ctx),
         next: [
+          "Before offering a new profile, make sure `up profile identity` found nothing saved (run it first in every chat): if it lists a profile, use that one and never create another.",
           "Show `say` and wait for the human's choice. Ask one question at a time; never mention commands, scripts, files or key stores.",
           "Choice 1 → references/onboarding.md J1 (suggest LUKSO first). Choice 2 → J2-relayer. Choice 3 → J2.",
           "If your environment or policy does not let you hold crypto or send transactions yourself, say so first: what the skill normally does, what you may not do here, and which choice still works (2 or 3). See SKILL.md \"If your environment restricts crypto transactions\".",

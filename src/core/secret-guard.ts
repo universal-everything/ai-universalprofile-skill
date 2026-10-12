@@ -107,7 +107,7 @@ function startsLikeBackup(file: string): boolean {
 /**
  * Refuses user-supplied file paths inside the skill's key store (`<UP_HOME>/keys`) or that look
  * like key files, so no verb can read a key file and echo, parse or upload its contents. Backup
- * files (<UP_HOME>/backups, universal-profiles-backup-*.json, files named in the backup index)
+ * files (<UP_HOME>/backups, *universal-profiles-backup-*.json, files named in the backup index)
  * are refused too, except for the backup verbs, which read them through their own reader
  * (`allowBackups`).
  */
@@ -137,7 +137,7 @@ export function assertNotKeyMaterialPath(file: string, what = "file", opts: { al
     } catch {
       /* no backups yet */
     }
-    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real) || startsLikeBackup(real)) {
+    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])[^\\/]*universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real) || startsLikeBackup(real)) {
       throw new UpError("BAD_ARGS", `refusing to read ${what} from the backups or a backup file`, { hint: "backup files hold encrypted (or, if asked for, plain) keys; only the backup verbs open them. Never read or send a backup file's contents" });
     }
   }

@@ -28,7 +28,7 @@ import {
   type KeyResult,
   type ProfileDecision,
 } from "./restore.ts";
-import { appendIndex, readBackupFile, readIndex, resolveDestination, sha256Hex, writeBackup } from "./store.ts";
+import { agentLabel, appendIndex, readBackupFile, readIndex, resolveDestination, sha256Hex, writeBackup } from "./store.ts";
 
 const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -89,7 +89,8 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
     throw new UpError("BAD_ARGS", "an unencrypted backup needs --explicit-consent: it puts the keys in a file anyone can use", { hint: "recommend the encrypted backup; only if the human insists, add --explicit-consent and their --approval" });
   }
   // the public text of the file (destination, hint, account names) is checked before anything is asked, audited or stored
-  assertNoKeyMaterial("the backup destination or hint", { path: a.path, hint: a.hint });
+  assertNoKeyMaterial("the backup destination or hint", { path: a.path, hint: a.hint, botName: a["bot-name"] });
+  const label = agentLabel(a["bot-name"]);
   const cfg = await ctx.config();
   const only = a.profiles?.length ? await Promise.all((a.profiles as string[]).map((p) => ctx.resolveAddress(p))) : undefined;
   const state = await collectState(ctx, { only, refresh: a.refresh === true });
@@ -97,7 +98,7 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
   if (mode !== "public" && !state.keys.length) throw new UpError("NO_SIGNER", "none of the agent's keys is in a key store here, so there are no keys to back up", { hint: "a backup without keys is --mode public" });
   const built = buildBackup(ctx, cfg, state, mode);
   assertNoKeyMaterial("an account name, alias or label of the backup", built.file);
-  const dest = await resolveDestination(ctx.home, a.path);
+  const dest = await resolveDestination(ctx.home, a.path, label);
   assertNoKeyMaterial("the backup destination", { path: dest });
   const profiles = state.profiles.map((p) => p.address);
   const warnings = [...state.warnings];

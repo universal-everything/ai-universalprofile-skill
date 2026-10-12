@@ -28,10 +28,11 @@ defineVerb({
   description:
     "Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). " +
     "Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. " +
-    "Saved in <UP_HOME>/backups (never overwrites) or at --path. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.",
+    "Saved in <UP_HOME>/backups (never overwrites) as `<your display name> - universal-profiles-backup-YYYY-MM-DD.json` (pass --bot-name with your own display name; never guess another agent's or brand's name), or at --path exactly as given. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.",
   risk: "secret",
   params: [
-    { name: "path", type: "string", positional: 0, description: "Where to write the file (must not exist; its folder must exist). Default: <UP_HOME>/backups/universal-profiles-backup-YYYY-MM-DD.json." },
+    { name: "path", type: "string", positional: 0, description: "Where to write the file (must not exist; its folder must exist). Used exactly as given, without the agent prefix. Default: <UP_HOME>/backups/<agent display name> - universal-profiles-backup-YYYY-MM-DD.json." },
+    { name: "bot-name", type: "string", description: "Your own display name as the human sees it in this chat (e.g. \"Alice\"): the default file name starts with it. Pass it every time; if omitted, the host's UP_AGENT_NAME is used, else the name has no prefix. A public label only, never a key or password; unsafe characters are removed." },
     { name: "mode", type: "string", enum: MODES, default: "encrypted", description: "encrypted (keys locked with a password, default), public (no keys at all) or unencrypted (keys in plain text; dangerous)." },
     { name: "profiles", type: "string[]", description: "Only these profiles (addresses or aliases). Default: every profile on this machine. The keys are always all of the agent's keys." },
     ...PASSWORD_HELP,
@@ -39,7 +40,7 @@ defineVerb({
     { name: "explicit-consent", type: "boolean", default: false, description: "Required for --mode unencrypted: the human explicitly wants the keys in a file without a password." },
     { name: "refresh", type: "boolean", default: false, description: "Also read each profile's current controllers from the networks (best effort, 8 seconds per network)." },
   ],
-  examples: ["up backup export --approval \"<the human's words>\"", "up backup export --mode public", "up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval \"<their words>\""],
+  examples: ["up backup export --bot-name \"<your display name>\" --approval \"<the human's words>\"", "up backup export --mode public --bot-name \"<your display name>\"", "up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval \"<their words>\""],
   run: (ctx, a) => import("./run.ts").then((m) => m.runExport(ctx, a)),
 });
 

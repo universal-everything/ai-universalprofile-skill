@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 50971fd78b91 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 5a878e567e01 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -381,7 +381,7 @@ function assertNotKeyMaterialPath(file2, what = "file", opts = {}) {
       backupsReal = realpathSync(backupsDir);
     } catch {
     }
-    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real) || startsLikeBackup(real)) {
+    if (inside(backupsDir) || inside(backupsReal) || /(^|[\\/])[^\\/]*universal-profiles-backup-[^\\/]*\.json$/i.test(real) || indexedBackups().some((f) => f === real || realOf(f) === real) || startsLikeBackup(real)) {
       throw new UpError("BAD_ARGS", `refusing to read ${what} from the backups or a backup file`, { hint: "backup files hold encrypted (or, if asked for, plain) keys; only the backup verbs open them. Never read or send a backup file's contents" });
     }
   }
@@ -2765,10 +2765,10 @@ var init_assets2 = __esm({
 // src/tokens/metadata.ts
 import { decodeData, encodeArrayKey } from "./vendor-erc725.mjs";
 import { getAddress as getAddress3, keccak256 as keccak2564, toHex } from "./vendor-viem.mjs";
-function decodeKey(keyName, value) {
+function decodeKey(keyName2, value) {
   if (typeof value !== "string" || value === "0x") return void 0;
   try {
-    return decodeData([{ keyName, value }], SCHEMAS)[0]?.value;
+    return decodeData([{ keyName: keyName2, value }], SCHEMAS)[0]?.value;
   } catch {
     return void 0;
   }
@@ -4895,6 +4895,950 @@ var init_profile_record = __esm({
     "use strict";
     init_home();
     init_lock();
+  }
+});
+
+// src/core/context.ts
+import { getAddress as getAddress10, isAddress as isAddress7 } from "./vendor-viem.mjs";
+import { readFileSync as readFileSync8, existsSync as existsSync13 } from "node:fs";
+function upgradeConfig(raw) {
+  if (!raw || typeof raw !== "object") return raw;
+  const { retiredControllers: legacy, ...rest } = raw;
+  if (!Array.isArray(legacy)) return raw;
+  const prev = Array.isArray(rest.previousControllers) ? [...rest.previousControllers] : [];
+  for (const r of legacy) {
+    if (!r || typeof r.address !== "string") continue;
+    if (prev.some((p) => typeof p?.address === "string" && p.address.toLowerCase() === r.address.toLowerCase())) continue;
+    prev.push({ address: r.address, backend: r.backend, switchedAt: r.retiredAt ?? r.switchedAt ?? "", ...r.chainId !== void 0 ? { chainId: r.chainId } : {} });
+  }
+  return prev.length ? { ...rest, previousControllers: prev } : rest;
+}
+async function readConfigFile(home) {
+  const raw = await readJsonStrict(paths.config(home), MISSING);
+  if (raw === MISSING) return { ...DEFAULT_CONFIG };
+  if (!isJsonObject(raw)) {
+    throw new UpError("INTERNAL", `${paths.config(home)} is damaged (it does not hold a config object); nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${paths.config(home)}.bak); never delete it: it lists the agent's keys` });
+  }
+  return { ...DEFAULT_CONFIG, ...upgradeConfig(raw) };
+}
+function configKeys(cfg) {
+  const out = [];
+  if (cfg.controller?.address) out.push({ address: cfg.controller.address, backend: cfg.controller.backend });
+  for (const [id, k] of Object.entries(cfg.chainControllers ?? {})) if (k?.address) out.push({ address: k.address, backend: k.backend, chainId: Number(id) });
+  for (const k of cfg.previousControllers ?? []) if (k?.address) out.push({ address: k.address, backend: k.backend, ...k.chainId !== void 0 ? { chainId: k.chainId } : {} });
+  return out;
+}
+function preserveKeyInventory(latest, next, now = (/* @__PURE__ */ new Date()).toISOString()) {
+  const have = new Set(configKeys(next).map((k) => k.address.toLowerCase()));
+  const missing = configKeys(latest).filter((k) => !have.has(k.address.toLowerCase()) && (have.add(k.address.toLowerCase()), true));
+  if (!missing.length) return next;
+  return { ...next, previousControllers: [...next.previousControllers ?? [], ...missing.map((k) => ({ address: k.address, backend: k.backend, switchedAt: now, ...k.chainId !== void 0 ? { chainId: k.chainId } : {} }))] };
+}
+function applyChangedFields(latest, base, next) {
+  const out = { ...latest };
+  const b = base;
+  const n = next;
+  for (const k of /* @__PURE__ */ new Set([...Object.keys(b), ...Object.keys(n)])) {
+    if (JSON.stringify(b[k]) === JSON.stringify(n[k])) continue;
+    if (n[k] === void 0) delete out[k];
+    else out[k] = n[k];
+  }
+  return out;
+}
+function createContext(opts) {
+  const home = opts.home ?? upHome();
+  let cfgCache;
+  let loaded;
+  const config = async () => {
+    if (!cfgCache) {
+      const c = await readConfigFile(home);
+      cfgCache ??= c;
+      loaded ??= structuredClone(c);
+    }
+    return cfgCache;
+  };
+  const registry2 = createRegistry(home);
+  const rpc = createRpcManager(home, registry2, config);
+  const ctx = {
+    home,
+    flags: opts.flags,
+    registry: registry2,
+    rpc,
+    config,
+    async saveConfig(cfg) {
+      const base = loaded ?? { ...DEFAULT_CONFIG };
+      await ctx.updateConfig((latest) => applyChangedFields(latest, base, cfg));
+    },
+    async updateConfig(fn) {
+      await ensureDir(home);
+      return withLock(home, "config", async () => {
+        const latest = await readConfigFile(home);
+        const draft = structuredClone(latest);
+        const next = preserveKeyInventory(latest, await fn(draft) ?? draft);
+        await writeJsonWithBackup(paths.config(home), next, isJsonObject);
+        cfgCache = next;
+        loaded = structuredClone(next);
+        return next;
+      });
+    },
+    async refreshConfig() {
+      cfgCache = void 0;
+      loaded = void 0;
+      return config();
+    },
+    async signer(chainId) {
+      const { loadSignerFromConfig: loadSignerFromConfig2 } = await Promise.resolve().then(() => (init_signer(), signer_exports));
+      const cfg = await config();
+      return loadSignerFromConfig2(cfg, chainId ?? verbChain());
+    },
+    async consent(req) {
+      if (req.risk === "write" && !opts.flags.dryRun && !(opts.flags.approval && opts.flags.approval.trim().length >= 3)) {
+        const { loadPolicy: loadPolicy2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
+        const { guardTokenMoves: guardTokenMoves2 } = await Promise.resolve().then(() => (init_token_guard(), token_guard_exports));
+        await guardTokenMoves2(ctx, await loadPolicy2(home), req);
+      }
+      return requireConsent(home, opts.flags, req);
+    },
+    chainId(arg) {
+      const v = arg ?? opts.flags.chain;
+      if (v !== void 0 && v !== "") return registry2.chain(v).chainId;
+      if (!cfgCache && existsSync13(paths.config(home))) {
+        try {
+          const raw = JSON.parse(readFileSync8(paths.config(home), "utf8"));
+          if (isJsonObject(raw)) {
+            const c = { ...DEFAULT_CONFIG, ...upgradeConfig(raw) };
+            cfgCache = c;
+            loaded ??= structuredClone(c);
+          }
+        } catch {
+        }
+      }
+      if (cfgCache?.defaultChain) return cfgCache.defaultChain;
+      throw new UpError("BAD_ARGS", "no chain given", { hint: "pass --chain <id|name> or set a default: up config set default-chain 42" });
+    },
+    async identity(arg) {
+      const v = arg ?? opts.flags.profile;
+      const cfg = await config();
+      if (v) return ctx.resolveAddress(v);
+      if (cfg.defaultProfile) return getAddress10(cfg.defaultProfile);
+      throw new UpError("BAD_ARGS", "no profile given", { hint: "pass --profile <address> or set one: up config set default-profile <address>" });
+    },
+    async profile(arg, chainId) {
+      const id = await ctx.identity(arg);
+      const c = chainId ?? verbChain();
+      if (c === void 0) return id;
+      const { profileAddressOn: profileAddressOn2 } = await Promise.resolve().then(() => (init_profile_record(), profile_record_exports));
+      return profileAddressOn2(home, id, c);
+    },
+    async resolveAddress(v) {
+      if (isAddress7(v, { strict: false })) return getAddress10(v);
+      const a = (await config()).aliases?.[v];
+      if (a) return getAddress10(a);
+      throw new UpError("BAD_ARGS", `"${v}" is neither an address nor a known alias`, { hint: "list aliases with: up config get aliases" });
+    },
+    log: opts.log ?? (() => {
+    })
+  };
+  const verbChain = () => {
+    try {
+      return ctx.chainId();
+    } catch {
+      return void 0;
+    }
+  };
+  void config().catch(() => {
+  });
+  return ctx;
+}
+async function preloadConfig(ctx) {
+  return ctx.config();
+}
+function checksum(a) {
+  if (!isAddress7(a, { strict: false })) throw new UpError("BAD_ARGS", `invalid address: ${a}`);
+  return getAddress10(a);
+}
+var DEFAULT_CONFIG, MISSING;
+var init_context = __esm({
+  "src/core/context.ts"() {
+    "use strict";
+    init_home();
+    init_lock();
+    init_errors();
+    init_policy();
+    init_registry();
+    init_rpc();
+    DEFAULT_CONFIG = { version: 1 };
+    MISSING = /* @__PURE__ */ Symbol("missing");
+  }
+});
+
+// src/signer/inventory.ts
+var inventory_exports = {};
+__export(inventory_exports, {
+  inventoryFile: () => inventoryFile,
+  readInventory: () => readInventory,
+  recordKey: () => recordKey
+});
+import { readFile as readFile6 } from "node:fs/promises";
+import { join as join8 } from "node:path";
+import { getAddress as getAddress11, isAddress as isAddress8 } from "./vendor-viem.mjs";
+function inventoryFile(home) {
+  return join8(paths.keys(home), "inventory.jsonl");
+}
+async function recordKey(home, entry) {
+  const line = { address: getAddress11(entry.address), backend: entry.backend, createdAt: entry.createdAt ?? (/* @__PURE__ */ new Date()).toISOString(), ...entry.note ? { note: entry.note } : {}, ...entry.notStored ? { notStored: true } : {} };
+  await appendLine(inventoryFile(home), JSON.stringify(line));
+}
+function recordsIn(line) {
+  try {
+    return [JSON.parse(line)];
+  } catch {
+    const out = [];
+    for (const m of line.match(/\{[^{}]*\}/g) ?? []) {
+      try {
+        out.push(JSON.parse(m));
+      } catch {
+      }
+    }
+    return out;
+  }
+}
+async function readInventory(home) {
+  let text = "";
+  try {
+    text = await readFile6(inventoryFile(home), "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT") return [];
+    throw e;
+  }
+  const out = [];
+  for (const raw of text.split("\n")) {
+    if (!raw.trim()) continue;
+    for (const v of recordsIn(raw)) {
+      if (!v || typeof v.address !== "string" || !isAddress8(v.address, { strict: false }) || typeof v.backend !== "string") continue;
+      const prev = out.find((x) => x.address.toLowerCase() === v.address.toLowerCase());
+      if (prev) {
+        if (v.note) prev.note = prev.note ? `${prev.note}; ${v.note}` : v.note;
+        if (v.notStored === true) prev.notStored = true;
+        continue;
+      }
+      out.push({ address: getAddress11(v.address), backend: v.backend, createdAt: typeof v.createdAt === "string" ? v.createdAt : "", ...v.note ? { note: String(v.note) } : {}, ...v.notStored === true ? { notStored: true } : {} });
+    }
+  }
+  return out;
+}
+var init_inventory = __esm({
+  "src/signer/inventory.ts"() {
+    "use strict";
+    init_home();
+  }
+});
+
+// src/signer/keystore-v3.ts
+import { createCipheriv, createDecipheriv, pbkdf2, randomBytes as randomBytes5, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
+import { bytesToHex, hexToBytes as hexToBytes2, keccak256 as keccak2567 } from "./vendor-viem.mjs";
+function passwordBytes(passphrase) {
+  if (typeof passphrase !== "string" || passphrase.length === 0) throw new UpError("BAD_ARGS", "an empty passphrase is not allowed");
+  return Buffer.from(passphrase, "utf8");
+}
+async function deriveScrypt(pw, p) {
+  const { n, r, p: par, dklen } = p;
+  if (!Number.isInteger(n) || n < 2 || (n & n - 1) !== 0) throw new UpError("BAD_ARGS", "keystore scrypt n must be a power of two");
+  if (!Number.isInteger(r) || r < 1 || !Number.isInteger(par) || par < 1 || dklen !== 32) throw new UpError("BAD_ARGS", "unsupported keystore scrypt parameters");
+  if (n * r > 2 ** 24 || par > 16 || n * r * par > 2 ** 25) throw new UpError("BAD_ARGS", "keystore scrypt parameters are unreasonably large");
+  if (16 * r < 53 && n >= 2 ** (16 * r)) throw new UpError("NOT_SUPPORTED", `keystore scrypt parameters n=${n}, r=${r} are not supported by this runtime (needs n < 2^(16·r))`);
+  try {
+    return await scryptAsync(pw, Buffer.from(p.salt, "hex"), dklen, { N: n, r, p: par, maxmem: 256 * n * r + 64 * 1024 * 1024 });
+  } catch (e) {
+    throw new UpError("NOT_SUPPORTED", `scrypt failed for keystore parameters n=${n}, r=${r}, p=${par}: ${e instanceof Error ? e.message : "error"}`);
+  }
+}
+function mac(derived, ciphertext) {
+  return keccak2567(new Uint8Array(Buffer.concat([derived.subarray(16, 32), ciphertext])));
+}
+async function encryptKeystoreV3(privateKey, passphrase, opts = {}) {
+  const key = normalizePrivateKey(privateKey);
+  assertValidPrivateKey(key, "key");
+  const salt = Buffer.from(opts.salt ?? randomBytes5(32));
+  const iv = Buffer.from(opts.iv ?? randomBytes5(16));
+  if (iv.length !== 16) throw new UpError("BAD_ARGS", "iv must be 16 bytes");
+  const kdfparams = { dklen: 32, n: opts.n ?? STANDARD_SCRYPT.n, r: opts.r ?? STANDARD_SCRYPT.r, p: opts.p ?? STANDARD_SCRYPT.p, salt: salt.toString("hex") };
+  const derived = await deriveScrypt(passwordBytes(passphrase), kdfparams);
+  const plain = Buffer.from(hexToBytes2(key));
+  const cipher = createCipheriv("aes-128-ctr", derived.subarray(0, 16), iv);
+  const ciphertext = Buffer.concat([cipher.update(plain), cipher.final()]);
+  plain.fill(0);
+  const out = {
+    version: 3,
+    id: opts.uuid ?? randomUUID(),
+    address: addressOf(key).slice(2).toLowerCase(),
+    crypto: {
+      cipher: "aes-128-ctr",
+      cipherparams: { iv: iv.toString("hex") },
+      ciphertext: ciphertext.toString("hex"),
+      kdf: "scrypt",
+      kdfparams,
+      mac: mac(derived, ciphertext).slice(2)
+    }
+  };
+  derived.fill(0);
+  return out;
+}
+async function decryptKeystoreV3(input, passphrase) {
+  let ks;
+  try {
+    ks = typeof input === "string" ? JSON.parse(input) : input;
+  } catch {
+    throw new UpError("BAD_ARGS", "not a JSON keystore");
+  }
+  const c = ks?.crypto ?? ks?.Crypto;
+  if (ks?.version !== 3 || !c) throw new UpError("BAD_ARGS", "not a version 3 keystore");
+  if (c.cipher !== "aes-128-ctr") throw new UpError("BAD_ARGS", `unsupported keystore cipher ${String(c.cipher).slice(0, 32)}`);
+  const pw = passwordBytes(passphrase);
+  let derived;
+  if (c.kdf === "scrypt") derived = await deriveScrypt(pw, c.kdfparams);
+  else if (c.kdf === "pbkdf2") {
+    const kp = c.kdfparams;
+    if (kp.prf !== "hmac-sha256" || kp.dklen !== 32 || !Number.isInteger(kp.c) || kp.c < 1 || kp.c > 1e7) throw new UpError("BAD_ARGS", "unsupported keystore pbkdf2 parameters");
+    derived = await pbkdf2Async(pw, Buffer.from(kp.salt, "hex"), kp.c, 32, "sha256");
+  } else throw new UpError("BAD_ARGS", `unsupported keystore kdf ${String(c.kdf).slice(0, 32)}`);
+  const ciphertext = Buffer.from(c.ciphertext, "hex");
+  const expected = Buffer.from(String(c.mac).replace(/^0x/, ""), "hex");
+  const actual = Buffer.from(hexToBytes2(mac(derived, ciphertext)));
+  if (expected.length !== 32 || !timingSafeEqual(expected, actual)) {
+    derived.fill(0);
+    throw new UpError("BAD_ARGS", "wrong passphrase or corrupted keystore (MAC mismatch)");
+  }
+  const decipher = createDecipheriv("aes-128-ctr", derived.subarray(0, 16), Buffer.from(c.cipherparams.iv, "hex"));
+  const plain = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  derived.fill(0);
+  const key = bytesToHex(new Uint8Array(plain));
+  plain.fill(0);
+  assertValidPrivateKey(key, "decrypted key");
+  if (ks.address && addressOf(key).slice(2).toLowerCase() !== String(ks.address).replace(/^0x/, "").toLowerCase()) {
+    throw new UpError("BAD_ARGS", "keystore address does not match the decrypted key");
+  }
+  return key;
+}
+var scryptAsync, pbkdf2Async, STANDARD_SCRYPT;
+var init_keystore_v3 = __esm({
+  "src/signer/keystore-v3.ts"() {
+    "use strict";
+    init_errors();
+    init_local_signer();
+    scryptAsync = promisify(scrypt);
+    pbkdf2Async = promisify(pbkdf2);
+    STANDARD_SCRYPT = { n: 262144, r: 8, p: 1 };
+  }
+});
+
+// src/signer/verbs.ts
+var verbs_exports2 = {};
+__export(verbs_exports2, {
+  MIN_PASSPHRASE_LENGTH: () => MIN_PASSPHRASE_LENGTH,
+  importRecorded: () => importRecorded,
+  initVerb: () => initVerb,
+  keptKeys: () => keptKeys,
+  keyActivateVerb: () => keyActivateVerb,
+  keyAddressVerb: () => keyAddressVerb,
+  keyBackendVerb: () => keyBackendVerb,
+  keyBackupVerb: () => keyBackupVerb,
+  keyNewCandidateVerb: () => keyNewCandidateVerb,
+  keyVerbs: () => keyVerbs,
+  readCandidates: () => readCandidates,
+  updateCandidates: () => updateCandidates,
+  withKeyLock: () => withKeyLock,
+  writeNewFileExclusive: () => writeNewFileExclusive
+});
+import { chmod as chmod2, link as link2, lstat as lstat2, open as open3, rm as rm4, stat as stat4, writeFile as writeFile4 } from "node:fs/promises";
+import { randomBytes as randomBytes6 } from "node:crypto";
+import { basename, dirname as dirname3, isAbsolute, join as join9, resolve as resolve4 } from "node:path";
+import { getAddress as getAddress12, isAddress as isAddress9 } from "./vendor-viem.mjs";
+import { existsSync as existsSync14 } from "node:fs";
+function candidatesFile(home) {
+  return join9(paths.keys(home), "candidates.json");
+}
+async function readCandidatesRaw(home) {
+  const f = candidatesFile(home);
+  const v = await readJsonStrict(f, []);
+  if (!Array.isArray(v)) throw new UpError("INTERNAL", `${f} is damaged (it does not hold a list); nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${f}.bak); never delete it: it lists the agent's keys` });
+  return v;
+}
+function isCandidate(c) {
+  return Boolean(c && typeof c === "object" && isAddress9(c.address, { strict: false }) && typeof c.backend === "string");
+}
+async function readCandidates(home) {
+  return (await readCandidatesRaw(home)).filter(isCandidate);
+}
+async function updateCandidates(home, fn) {
+  await writeJsonWithBackup(candidatesFile(home), fn(await readCandidatesRaw(home)), Array.isArray);
+}
+async function dropCandidate(home, address) {
+  const raw = await readCandidatesRaw(home);
+  if (raw.some((k) => isCandidate(k) && sameAddress(k.address, address))) await updateCandidates(home, (list) => list.filter((k) => !(isCandidate(k) && sameAddress(k.address, address))));
+}
+function sameAddress(a, b) {
+  return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+}
+function sameKey(a, b) {
+  return !a && !b || sameAddress(a, b);
+}
+async function storeRecorded(home, backendId, store2, note) {
+  let recorded;
+  try {
+    return await store2(async (address) => {
+      try {
+        await recordKey(home, { address, backend: backendId, ...note ? { note } : {} });
+      } catch (e) {
+        throw new UpError("INTERNAL", `could not record the new key in ${inventoryFile(home)} (${e.message}); no key was created`, { hint: "fix the state directory (keys/), then retry" });
+      }
+      recorded = address;
+    });
+  } catch (e) {
+    if (recorded) {
+      const d = e?.details;
+      const why = d?.kept ? `kept after ${d.problem ?? "a failed check"}` : "creation failed; not stored";
+      await recordKey(home, { address: recorded, backend: backendId, note: why, ...d?.kept ? {} : { notStored: true } }).catch(() => {
+      });
+    }
+    throw e;
+  }
+}
+async function createRecorded(home, backend) {
+  return storeRecorded(home, backend.id, (before) => backend.create(before));
+}
+async function importRecorded(home, backend, privateKey, note) {
+  const importKey = backend.importKey;
+  if (!importKey) throw new UpError("NOT_SUPPORTED", `the ${backend.id} key store cannot import a key`, { hint: "choose another key store with --backend (up key backend lists them)" });
+  return storeRecorded(home, backend.id, (before) => importKey.call(backend, privateKey, before), note);
+}
+function requireController(cfg) {
+  if (!cfg.controller) throw new UpError("NO_SIGNER", "no controller key is configured", { hint: "run: up init" });
+  return cfg.controller;
+}
+function addressArg(v, name) {
+  if (typeof v !== "string" || !isAddress9(v, { strict: false })) throw new UpError("BAD_ARGS", `--${name} must be a 20-byte 0x address`);
+  return getAddress12(v);
+}
+function protectionText(address, backendId, custody = []) {
+  return [`Controller address: ${address}`, `Key protection: ${plainProtection(internalBackend(backendId).protectionInfo())}`, ...custody.map((w) => `Warning: ${w}`)].join("\n");
+}
+async function withKeyLock(home, fn) {
+  const dir = paths.keys(home);
+  await ensureDir(dir, 448);
+  const lock = join9(dir, ".lifecycle.lock");
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (; ; ) {
+    try {
+      const fh = await open3(lock, "wx", 384);
+      await fh.writeFile(`${process.pid} ${(/* @__PURE__ */ new Date()).toISOString()}
+`);
+      await fh.close();
+      break;
+    } catch (e) {
+      if (e.code !== "EEXIST") throw e;
+      const st = await stat4(lock).catch(() => null);
+      if (st && Date.now() - st.mtimeMs > LOCK_STALE_MS) {
+        await rm4(lock, { force: true });
+        continue;
+      }
+      if (Date.now() > deadline) {
+        throw new UpError("INTERNAL", "another key operation is in progress", { hint: `retry in a moment; if no other 'up' process is running, delete ${lock}` });
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm4(lock, { force: true });
+  }
+}
+async function freshConfig(ctx) {
+  const c = await ctx.config();
+  if (!existsSync14(paths.config(ctx.home))) return c;
+  const d = await readConfigFile(ctx.home);
+  return { ...c, controller: d.controller, previousControllers: d.previousControllers, chainControllers: d.chainControllers };
+}
+function explicitChain(args) {
+  return args.chain !== void 0 && args.chain !== "";
+}
+function chainText(ctx, chainId) {
+  try {
+    return `${ctx.registry.chain(chainId).name} (${chainId})`;
+  } catch {
+    return `chain ${chainId}`;
+  }
+}
+function perChainLines(ctx, cfg) {
+  const own = chainControllerList(cfg);
+  return own.length ? [`Own key per chain (used there instead of the default): ${own.map((c) => `${chainText(ctx, c.chainId)} → ${c.address} (${c.backend})`).join("; ")}`] : [];
+}
+async function keptKeys(home, cfg) {
+  const inUse = [cfg.controller?.address, ...chainControllerList(cfg).map((k) => k.address)];
+  const out = [];
+  const add2 = (k, kind) => {
+    if (!isAddress9(k.address, { strict: false }) || inUse.some((a) => sameAddress(a, k.address)) || out.some((o) => sameAddress(o.address, k.address))) return;
+    out.push({ address: getAddress12(k.address), backend: k.backend, kind, ...k.chainId !== void 0 ? { chainId: k.chainId } : {}, ...kind === "recovered" && k.note ? { note: k.note } : {} });
+  };
+  for (const k of cfg.previousControllers ?? []) add2(k, "previous");
+  for (const k of await readCandidates(home)) add2(k, "additional");
+  for (const k of await readInventory(home)) {
+    if (k.notStored && !await Promise.resolve().then(() => internalBackend(k.backend).has(k.address)).catch(() => false)) continue;
+    add2(k, "recovered");
+  }
+  return out;
+}
+function existingResult(home, c, warnings) {
+  const custody = custodyWarnings(c.backend, home);
+  return {
+    data: { address: c.address, backend: c.backend, protection: internalBackend(c.backend).protectionInfo(), created: false, custodyWarnings: custody },
+    text: protectionText(c.address, c.backend, custody),
+    warnings: [...custody, ...warnings]
+  };
+}
+async function writeNewFileExclusive(file2, content) {
+  const dir = dirname3(file2);
+  const tmp = join9(dir, `.${basename(file2)}.${randomBytes6(6).toString("hex")}.tmp`);
+  await writeFile4(tmp, content, { mode: 384, flag: "wx" });
+  try {
+    if (process.platform !== "win32") await chmod2(tmp, 384);
+    try {
+      await link2(tmp, file2);
+    } catch (e) {
+      const code = e.code;
+      if (code === "EEXIST") throw new UpError("BAD_ARGS", `${file2} already exists; refusing to overwrite it`);
+      try {
+        await writeFile4(file2, content, { mode: 384, flag: "wx" });
+      } catch (e2) {
+        if (e2.code === "EEXIST") throw new UpError("BAD_ARGS", `${file2} already exists; refusing to overwrite it`);
+        throw e2;
+      }
+      if (process.platform !== "win32") await chmod2(file2, 384).catch(() => {
+      });
+    }
+  } catch (e) {
+    await rm4(tmp, { force: true }).catch(() => {
+    });
+    throw e;
+  }
+  try {
+    await rm4(tmp, { force: true });
+  } catch (e) {
+    return { warning: `the file was written, but the temporary copy ${tmp} could not be removed (${e.code ?? "error"}); it holds the same content and can be deleted by hand` };
+  }
+  return {};
+}
+async function activateForChain(ctx, args, address, chainId) {
+  const where = chainText(ctx, chainId);
+  const cfg = await freshConfig(ctx);
+  const def = cfg.controller;
+  const current = controllerFor(cfg, chainId);
+  if (current && sameAddress(current.address, address)) {
+    return { data: { address: current.address, backend: current.backend, chainId, scope: current.scope, changed: false }, text: `${current.address} already is the agent's key on ${where}.` };
+  }
+  const toDefault = Boolean(def && sameAddress(def.address, address));
+  const candidates = await readCandidates(ctx.home);
+  const cand = candidates.find((k) => sameAddress(k.address, address));
+  const previous = cfg.previousControllers?.find((r) => sameAddress(r.address, address));
+  const usedElsewhere = chainControllerList(cfg).find((k) => sameAddress(k.address, address));
+  const recorded = (await readInventory(ctx.home)).find((k) => sameAddress(k.address, address));
+  const backendId = args.backend ?? (toDefault ? def.backend : void 0) ?? usedElsewhere?.backend ?? cand?.backend ?? previous?.backend ?? recorded?.backend ?? def?.backend;
+  if (!backendId) throw new UpError("BAD_ARGS", "cannot tell which key store holds this key; pass --backend", { hint: "run: up key backend" });
+  const backend = internalBackend(backendId);
+  if (!await backend.has(address)) {
+    throw new UpError("NO_SIGNER", `no key for ${address} in ${backendId}`, { hint: NOT_IN_STORE_HINT });
+  }
+  await ctx.consent({
+    verb: "key activate",
+    risk: "secret",
+    chainId,
+    summary: {
+      effect: toDefault ? `use the default key again on ${where}` : `use ${address} as the agent's key on ${where} only`,
+      chain: where,
+      from: current?.address ?? null,
+      to: address,
+      backend: backendId,
+      note: "only the local signing key for this chain changes; other chains keep their key, and on-chain permissions stay as they are — the key must be a controller of the profile on this chain"
+    }
+  });
+  if (ctx.flags.dryRun) {
+    return { data: { dryRun: true, address, backend: backendId, chainId, previous: current?.address ?? null }, text: `Dry run: ${address} (${backendId}) would become the agent's key on ${where}.` };
+  }
+  const changed = () => new UpError("BAD_ARGS", `the agent's key on ${where} changed while waiting for approval; nothing was switched`, { hint: `run: up key address --chain ${chainId}, then decide again` });
+  await withKeyLock(ctx.home, async () => {
+    const latest = await freshConfig(ctx);
+    if (!sameKey(controllerFor(latest, chainId)?.address, current?.address)) throw changed();
+    await backend.load(address);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    await ctx.updateConfig((cur) => {
+      if (!sameKey(controllerFor(cur, chainId)?.address, current?.address)) throw changed();
+      const own = { ...cur.chainControllers ?? {} };
+      const previousOwn = own[String(chainId)];
+      if (toDefault) delete own[String(chainId)];
+      else own[String(chainId)] = { address, backend: backendId, createdAt: cand?.createdAt ?? usedElsewhere?.createdAt ?? recorded?.createdAt ?? now };
+      let previousList = (cur.previousControllers ?? []).filter((r) => !sameAddress(r.address, address));
+      if (previousOwn && !sameAddress(previousOwn.address, cur.controller?.address) && !Object.values(own).some((k) => sameAddress(k.address, previousOwn.address))) {
+        previousList = [...previousList.filter((r) => !sameAddress(r.address, previousOwn.address)), { address: previousOwn.address, backend: previousOwn.backend, switchedAt: now, chainId }];
+      }
+      const next = { ...cur, version: 1, previousControllers: previousList.length ? previousList : void 0 };
+      if (Object.keys(own).length) next.chainControllers = own;
+      else delete next.chainControllers;
+      if (!next.previousControllers) delete next.previousControllers;
+      return next;
+    });
+    await dropCandidate(ctx.home, address);
+  });
+  ctx.log(`agent key on chain ${chainId} switched to ${address} (${backendId})`);
+  return {
+    data: { address, backend: backendId, chainId, scope: toDefault ? "default" : "chain", previous: current?.address ?? null, changed: true },
+    text: [
+      toDefault ? `On ${where} the agent uses its default key ${address} again.` : `On ${where} the agent now signs with ${address} (${backendId}); every other chain keeps its key.`,
+      current ? `Previous key there: ${current.address} (kept in its store and listed; its on-chain permissions stay as they are).` : "",
+      `Check that it is a controller of your profile on ${where}: up profile status --chain ${chainId}`
+    ].filter(Boolean).join("\n")
+  };
+}
+var BACKEND_CHOICES, NOT_IN_STORE_HINT, LOCK_WAIT_MS, LOCK_STALE_MS, KIND_TEXT, initVerb, keyAddressVerb, keyBackendVerb, MIN_PASSPHRASE_LENGTH, PASSPHRASE_HINT, keyBackupVerb, keyNewCandidateVerb, keyActivateVerb, keyVerbs;
+var init_verbs2 = __esm({
+  "src/signer/verbs.ts"() {
+    "use strict";
+    init_secret_guard();
+    init_errors();
+    init_home();
+    init_verbs();
+    init_context();
+    init_inventory();
+    init_base();
+    init_signer();
+    init_select();
+    init_keystore_v3();
+    BACKEND_CHOICES = ["auto", ...BACKEND_IDS];
+    NOT_IN_STORE_HINT = "check the address with: up key address (it lists every key of the agent); an additional key is created with: up key new-candidate";
+    LOCK_WAIT_MS = 15e3;
+    LOCK_STALE_MS = 12e4;
+    KIND_TEXT = { additional: "not used yet", previous: "used before", recovered: "created, not recorded in the config" };
+    initVerb = defineVerb({
+      name: "init",
+      group: "key",
+      summary: "Create the agent's controller key inside a protected key store and show its public address.",
+      description: "Generates a new secp256k1 controller key inside the strongest available key store for this machine (macOS login keychain, systemd-creds, desktop keyring, Windows DPAPI, or a private key file inside a cloud agent VM) and records only its public address in config. The private key is never shown. Safe to run unattended for first-time setup. The key is permanent: if one already exists it is kept and nothing changes (it is never replaced); if it is missing from its store, init says so and points to its backup.",
+      risk: "secret",
+      params: [
+        { name: "backend", type: "string", description: "Key store to use; 'auto' picks the strongest unattended store for this machine.", default: "auto", enum: BACKEND_CHOICES }
+      ],
+      examples: ["up init", "up init --backend protected-file"],
+      async run(ctx, args) {
+        const requested = String(args.backend ?? "auto");
+        const existing = (await freshConfig(ctx)).controller;
+        if (existing) {
+          const warnings = ["a controller key already exists; it is permanent and is kept, nothing was changed"];
+          if (requested !== "auto" && requested !== existing.backend) warnings.push(`--backend ${requested} ignored: the existing key lives in ${existing.backend}`);
+          try {
+            if (!await internalBackend(existing.backend).has(existing.address)) warnings.push(`${existing.address}: ${missingKeyHint(existing.backend)}`);
+          } catch (e) {
+            warnings.push(`could not check the key store: ${e instanceof UpError ? e.message : "error"}`);
+          }
+          return existingResult(ctx.home, existing, warnings);
+        }
+        const backend = await chooseBackend(requested);
+        const protection = internalBackend(backend.id).protectionInfo();
+        const custody = custodyWarnings(backend.id, ctx.home);
+        if (ctx.flags.dryRun) {
+          return {
+            data: { dryRun: true, backend: backend.id, protection, custodyWarnings: custody },
+            text: [`Dry run: a new controller key would be created in ${backend.id}.`, `Key protection: ${plainProtection(protection)}`, ...custody.map((w) => `Warning: ${w}`)].join("\n"),
+            ...custody.length ? { warnings: custody } : {}
+          };
+        }
+        return withKeyLock(ctx.home, async () => {
+          const latest = await freshConfig(ctx);
+          if (latest.controller) return existingResult(ctx.home, latest.controller, ["another process created the controller key at the same time; kept that one"]);
+          const address = await createRecorded(ctx.home, backend);
+          const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+          try {
+            await ctx.updateConfig((cur) => {
+              if (cur.controller && !sameAddress(cur.controller.address, address)) {
+                throw new UpError("BAD_ARGS", `another process set the agent's key ${cur.controller.address} meanwhile; it was kept`);
+              }
+              return { ...cur, version: 1, controller: { address, backend: backend.id, createdAt } };
+            });
+          } catch (e) {
+            throw new UpError("INTERNAL", `the new key ${address} was created in ${backend.id} but the config could not be saved (${e.message})`, {
+              hint: `the key stays in its store and is listed by: up key address; record it with: up key activate ${address} --backend ${backend.id}`
+            });
+          }
+          ctx.log(`controller key created in ${backend.id}: ${address}`);
+          return {
+            data: { address, backend: backend.id, protection, created: true, custodyWarnings: custody },
+            text: protectionText(address, backend.id, custody),
+            ...custody.length ? { warnings: custody } : {}
+          };
+        });
+      }
+    });
+    keyAddressVerb = defineVerb({
+      name: "key address",
+      group: "key",
+      summary: "Show the agent's controller address (the default key, or with --chain the key used on that chain) and the key store that protects it; lists chains that use their own key and every other key the agent keeps.",
+      risk: "local",
+      params: [],
+      async run(ctx, args) {
+        const cfg = await ctx.config();
+        const otherKeys = await keptKeys(ctx.home, cfg);
+        const chainId = explicitChain(args) ? ctx.chainId(args.chain) : void 0;
+        const c = chainId !== void 0 ? controllerFor(cfg, chainId) : void 0;
+        const def = cfg.controller;
+        if (!c && !def && otherKeys.length) {
+          throw new UpError("NO_SIGNER", `no default key is configured, but the agent keeps these keys: ${otherKeys.map((k) => `${k.address} (${k.backend}, ${KIND_TEXT[k.kind]})`).join("; ")}`, {
+            hint: `use one of them with: up key activate <address>`,
+            details: { otherKeys }
+          });
+        }
+        const used = c ?? requireController(cfg);
+        const protection = internalBackend(used.backend).protectionInfo();
+        const chainControllers = chainControllerList(cfg).map((k) => ({ chainId: k.chainId, address: k.address, backend: k.backend }));
+        return {
+          data: {
+            address: used.address,
+            backend: used.backend,
+            createdAt: used.createdAt,
+            level: protection.level,
+            ...chainId !== void 0 ? { chainId, scope: c?.scope ?? "default" } : {},
+            default: def ? { address: def.address, backend: def.backend } : null,
+            chainControllers,
+            otherKeys
+          },
+          text: [
+            chainId !== void 0 ? `${used.address} (${used.backend}) — the agent's ${c?.scope === "chain" ? "own key" : "default key"} on ${chainText(ctx, chainId)}` : `${used.address} (${used.backend})`,
+            ...perChainLines(ctx, cfg),
+            ...otherKeys.length ? [`Other keys of the agent (kept in their store, never deleted): ${otherKeys.map((k) => `${k.address} (${k.backend}, ${KIND_TEXT[k.kind]}${k.kind === "previous" && k.chainId !== void 0 ? ` on ${chainText(ctx, k.chainId)}` : ""}${k.note ? `; ${k.note}` : ""})`).join("; ")}`] : []
+          ].join("\n")
+        };
+      }
+    });
+    keyBackendVerb = defineVerb({
+      name: "key backend",
+      group: "key",
+      summary: "Check every key store on this machine and show which one protects the controller key.",
+      risk: "local",
+      params: [],
+      async run(ctx) {
+        const cfg = await ctx.config();
+        const [probes, env] = await Promise.all([probeAll(), environment()]);
+        const activeId = cfg.controller?.backend;
+        const custody = activeId ? custodyWarnings(activeId, ctx.home) : [];
+        const active = activeId ? { address: cfg.controller.address, backend: activeId, protection: internalBackend(activeId).protectionInfo(), custodyWarnings: custody } : null;
+        const perChain = chainControllerList(cfg).map((k) => ({ chainId: k.chainId, address: k.address, backend: k.backend }));
+        const chainCustody = perChain.flatMap((k) => custodyWarnings(k.backend, ctx.home)).filter((w, i, all) => !custody.includes(w) && all.indexOf(w) === i);
+        const relevant = probes.filter((p) => p.available || p.id === activeId || !["memory", "remote-signer"].includes(p.id));
+        const lines = [];
+        lines.push(active ? `Active: ${active.backend} — ${plainProtection(active.protection)}` : "Active: none (run: up init)");
+        lines.push(...perChainLines(ctx, cfg));
+        for (const p of relevant) lines.push(`${p.id === activeId ? "*" : " "} ${p.id.padEnd(21)} ${(p.available ? "available" : "unavailable").padEnd(11)} ${p.level.padEnd(17)} ${p.reason}`);
+        const warnings = [];
+        const ap = activeId ? probes.find((p) => p.id === activeId) : void 0;
+        if (ap && !ap.available) warnings.push(`the active key store ${ap.id} is not available right now: ${ap.reason}`);
+        for (const k of perChain) {
+          const p = probes.find((x) => x.id === k.backend);
+          if (k.backend !== activeId && p && !p.available) warnings.push(`the key store ${p.id} of the key for ${chainText(ctx, k.chainId)} is not available right now: ${p.reason}`);
+        }
+        warnings.push(...custody, ...chainCustody);
+        for (const w of warnings) lines.push(`Warning: ${w}`);
+        return {
+          data: {
+            active,
+            chainControllers: perChain,
+            backends: probes,
+            environment: { platform: env.platform, wsl: env.wsl, container: env.container, vm: env.vm, agentHost: env.agentHost, headless: env.headless, ssh: env.ssh, systemdVersion: env.systemdVersion, declaredAgentVm: env.isolated, unattendedHost: env.unattendedHost, hints: env.hints }
+          },
+          text: lines.join("\n"),
+          ...warnings.length ? { warnings } : {}
+        };
+      }
+    });
+    MIN_PASSPHRASE_LENGTH = 12;
+    PASSPHRASE_HINT = 'a human must run this in their own terminal (never via chat): read -rs UP_BACKUP_PASSPHRASE && export UP_BACKUP_PASSPHRASE && up key backup --encrypted --explicit-consent --path <file> --approval "<your words>"; unset UP_BACKUP_PASSPHRASE';
+    keyBackupVerb = defineVerb({
+      name: "key backup",
+      group: "key",
+      summary: "Write a passphrase-encrypted backup (Ethereum keystore v3) of the controller key (default key; with --chain the key used on that chain) — human-run only.",
+      description: `Only encrypted backups exist; the raw key is never exported. Requires --encrypted, --explicit-consent, a human approval, and a passphrase (>= ${MIN_PASSPHRASE_LENGTH} characters) in the UP_BACKUP_PASSPHRASE environment variable, set by the human in their own terminal (never passed as an argument, never typed into chat). The preferred recovery path is a second (human) controller on the profile, not a key export.`,
+      risk: "secret",
+      params: [
+        { name: "path", type: "string", description: "Where to write the keystore JSON (must not exist; parent directory must exist).", required: true, positional: 0 },
+        { name: "encrypted", type: "boolean", description: "Required: confirms an encrypted keystore v3 backup.", default: false },
+        { name: "explicit-consent", type: "boolean", description: "Required: the human explicitly wants a copy of the key to exist outside the key store.", default: false }
+      ],
+      async run(ctx, args) {
+        if (args.encrypted !== true) throw new UpError("BAD_ARGS", "only encrypted backups are supported (--encrypted); the raw key is never exported");
+        if (args["explicit-consent"] !== true) throw new UpError("BAD_ARGS", "a key backup needs --explicit-consent from the human", { hint: PASSPHRASE_HINT });
+        const cfgNow = await ctx.config();
+        const c = explicitChain(args) ? controllerFor(cfgNow, ctx.chainId(args.chain)) ?? requireController(cfgNow) : requireController(cfgNow);
+        const raw = typeof args.path === "string" ? args.path.trim() : "";
+        if (!raw) throw new UpError("BAD_ARGS", "--path is required");
+        const file2 = isAbsolute(raw) ? raw : resolve4(raw);
+        const parent = await stat4(dirname3(file2)).catch(() => null);
+        if (!parent?.isDirectory()) throw new UpError("BAD_ARGS", `directory ${dirname3(file2)} does not exist`);
+        if (await lstat2(file2).then(() => true, () => false)) throw new UpError("BAD_ARGS", `${file2} already exists; refusing to overwrite it`);
+        const passphrase = process.env.UP_BACKUP_PASSPHRASE;
+        registerSecret(passphrase);
+        if (!passphrase) throw new UpError("BAD_ARGS", "no backup passphrase: UP_BACKUP_PASSPHRASE is not set", { hint: PASSPHRASE_HINT });
+        if (passphrase.length < MIN_PASSPHRASE_LENGTH) throw new UpError("BAD_ARGS", `the backup passphrase must have at least ${MIN_PASSPHRASE_LENGTH} characters`, { hint: PASSPHRASE_HINT });
+        const backend = internalBackend(c.backend);
+        if (!backend.exportPrivateKey) throw new UpError("NOT_SUPPORTED", `the ${c.backend} backend cannot produce a backup`);
+        const kdf = { name: "scrypt", ...STANDARD_SCRYPT };
+        await ctx.consent({
+          verb: "key backup",
+          risk: "secret",
+          summary: {
+            effect: "write an encrypted copy of the controller key to a file",
+            controller: c.address,
+            backend: c.backend,
+            path: file2,
+            format: `Ethereum keystore v3 (scrypt n=${kdf.n} r=${kdf.r} p=${kdf.p}, aes-128-ctr)`,
+            note: "anyone with this file AND the passphrase controls the key; prefer a second human controller for recovery"
+          }
+        });
+        if (ctx.flags.dryRun) {
+          return { data: { dryRun: true, path: file2, address: c.address, format: "keystore-v3", kdf }, text: `Dry run: an encrypted keystore for ${c.address} would be written to ${file2}.` };
+        }
+        delete process.env.UP_BACKUP_PASSPHRASE;
+        const key = await backend.exportPrivateKey(c.address);
+        const ks = await encryptKeystoreV3(key, passphrase);
+        const check = await decryptKeystoreV3(ks, passphrase);
+        if (check !== key) throw new UpError("INTERNAL", "backup verification failed; nothing was written");
+        const written = await writeNewFileExclusive(file2, JSON.stringify(ks, null, 2) + "\n");
+        ctx.log(`encrypted key backup written: ${file2}`);
+        return {
+          data: { path: file2, address: c.address, format: "keystore-v3", kdf, verified: true },
+          text: `Encrypted backup of ${c.address} written to ${file2} (Ethereum keystore v3). Keep the passphrase somewhere else — the file alone cannot be opened, the file plus passphrase controls the key.`,
+          ...written.warning ? { warnings: [written.warning] } : {}
+        };
+      }
+    });
+    keyNewCandidateVerb = defineVerb({
+      name: "key new-candidate",
+      group: "key",
+      summary: "Create an additional key in the same key store (e.g. a separate key for one network, or a replacement when a key was lost); the agent's current key stays as it is.",
+      description: "Generates a new key next to the agent's current key and returns its public address. Nothing changes on-chain and the agent keeps signing with its current key until `up key activate`. Keys are permanent: no key is ever deleted; the current key stays in its store and stays listed.",
+      risk: "secret",
+      params: [],
+      async run(ctx) {
+        const c = requireController(await freshConfig(ctx));
+        const backend = internalBackend(c.backend);
+        await ctx.consent({
+          verb: "key new-candidate",
+          risk: "secret",
+          summary: {
+            effect: "create an additional controller key (not used until activated)",
+            activeController: c.address,
+            backend: c.backend,
+            note: "nothing changes on-chain and the active key stays active until: up key activate <address>"
+          }
+        });
+        if (ctx.flags.dryRun) {
+          return { data: { dryRun: true, backend: c.backend }, text: `Dry run: a new inactive key would be created in ${c.backend}.` };
+        }
+        const address = await withKeyLock(ctx.home, async () => {
+          await readCandidatesRaw(ctx.home);
+          const a = await createRecorded(ctx.home, backend);
+          try {
+            await updateCandidates(ctx.home, (list) => [...list, { address: a, backend: c.backend, createdAt: (/* @__PURE__ */ new Date()).toISOString() }]);
+          } catch (e) {
+            throw new UpError("INTERNAL", `the additional key ${a} was created in ${c.backend} but could not be added to the candidates list (${e.message})`, {
+              hint: `the key stays in its store and is listed by: up key address; use it with: up key activate ${a} --backend ${c.backend} (add --chain <id> for one network)`
+            });
+          }
+          return a;
+        });
+        ctx.log(`additional key created in ${c.backend}: ${address}`);
+        return {
+          data: { address, backend: c.backend, active: false, protection: backend.protectionInfo() },
+          text: `New additional key: ${address} (${c.backend}, not used yet). The current key ${c.address} stays as it is.
+Next: a co-owner or admin wallet adds it as a controller of the profile on the network(s) where it will be used; then: up key activate ${address} --chain <id> (one network) or up key activate ${address} (default key).`
+        };
+      }
+    });
+    keyActivateVerb = defineVerb({
+      name: "key activate",
+      group: "key",
+      summary: "Choose which of the agent's keys it signs with: the default key, or with --chain the key used on that chain only. The previous key is kept in its store and stays listed; no key is ever deleted.",
+      description: "Without --chain the default key changes (every chain without its own key follows). With --chain <id> only that chain switches to the key; activating the default key's address for a chain makes that chain use the default key again. Only the local signing key changes: the key must be a controller of the profile on that chain (check with: up profile status). Keys are permanent: the previous key is never deleted and can be activated again.",
+      risk: "secret",
+      params: [
+        { name: "address", type: "string", description: "Address of the key to use (an additional key, a previous key, or with --chain also the default key); up key address lists them all.", required: true, positional: 0 },
+        { name: "backend", type: "string", description: "Key store holding that key (default: where it was created, else the current key's store).", enum: BACKEND_IDS }
+      ],
+      async run(ctx, args) {
+        const address = addressArg(args.address, "address");
+        if (explicitChain(args)) return activateForChain(ctx, args, address, ctx.chainId(args.chain));
+        const cfg = await freshConfig(ctx);
+        const current = cfg.controller;
+        if (current && sameAddress(current.address, address)) {
+          return { data: { address: current.address, backend: current.backend, changed: false }, text: `${current.address} is already the active controller.` };
+        }
+        const candidates = await readCandidates(ctx.home);
+        const cand = candidates.find((k) => sameAddress(k.address, address));
+        const previous = cfg.previousControllers?.find((r) => sameAddress(r.address, address));
+        const own = chainControllerList(cfg);
+        const chainKey = own.find((k) => sameAddress(k.address, address));
+        const recorded = (await readInventory(ctx.home)).find((k) => sameAddress(k.address, address));
+        const backendId = args.backend ?? cand?.backend ?? previous?.backend ?? chainKey?.backend ?? recorded?.backend ?? current?.backend;
+        if (!backendId) throw new UpError("BAD_ARGS", "cannot tell which key store holds this key; pass --backend", { hint: "run: up key backend" });
+        const backend = internalBackend(backendId);
+        if (!await backend.has(address)) {
+          throw new UpError("NO_SIGNER", `no key for ${address} in ${backendId}`, { hint: NOT_IN_STORE_HINT });
+        }
+        await ctx.consent({
+          verb: "key activate",
+          risk: "secret",
+          summary: {
+            effect: "switch the agent's active (default) controller key",
+            from: current?.address ?? null,
+            to: address,
+            backend: backendId,
+            note: "only the local signing key changes; on-chain permissions of both keys stay as they are",
+            ...own.length ? { chainsWithOwnKey: own.map((k) => ({ chainId: k.chainId, address: k.address })) } : {}
+          }
+        });
+        if (ctx.flags.dryRun) {
+          return { data: { dryRun: true, address, backend: backendId, previous: current?.address ?? null }, text: `Dry run: ${address} (${backendId}) would become the active controller.` };
+        }
+        const changed = () => new UpError("BAD_ARGS", "the active controller changed while waiting for approval; nothing was switched", { hint: "run: up key address, then decide again" });
+        await withKeyLock(ctx.home, async () => {
+          const latest = await freshConfig(ctx);
+          if (!sameKey(latest.controller?.address, current?.address)) throw changed();
+          await backend.load(address);
+          const now = (/* @__PURE__ */ new Date()).toISOString();
+          await ctx.updateConfig((cur) => {
+            if (!sameKey(cur.controller?.address, current?.address)) throw changed();
+            const previousList = (cur.previousControllers ?? []).filter((r) => !sameAddress(r.address, address) && !sameAddress(r.address, cur.controller?.address));
+            if (cur.controller) previousList.push({ address: cur.controller.address, backend: cur.controller.backend, switchedAt: now });
+            const next = { ...cur, version: 1, controller: { address, backend: backendId, createdAt: cand?.createdAt ?? recorded?.createdAt ?? now }, previousControllers: previousList };
+            if (next.chainControllers) {
+              const kept = Object.fromEntries(Object.entries(next.chainControllers).filter(([, k]) => !sameAddress(k.address, address)));
+              if (Object.keys(kept).length) next.chainControllers = kept;
+              else delete next.chainControllers;
+            }
+            return next;
+          });
+          await dropCandidate(ctx.home, address);
+        });
+        ctx.log(`active controller switched to ${address} (${backendId})`);
+        const ownAfter = own.filter((k) => !sameAddress(k.address, address));
+        return {
+          data: { address, backend: backendId, previous: current?.address ?? null, changed: true, chainControllers: ownAfter.map((k) => ({ chainId: k.chainId, address: k.address })) },
+          text: [
+            protectionText(address, backendId),
+            current ? `Previous key ${current.address} is kept in ${current.backend} and stays listed (up key address); its on-chain permissions stay as they are.` : "",
+            ownAfter.length ? `Chains with their own key keep it: ${ownAfter.map((k) => `${chainText(ctx, k.chainId)} → ${k.address}`).join("; ")}.` : ""
+          ].filter(Boolean).join("\n")
+        };
+      }
+    });
+    keyVerbs = [initVerb, keyAddressVerb, keyBackendVerb, keyBackupVerb, keyNewCandidateVerb, keyActivateVerb];
   }
 });
 
@@ -7494,6 +8438,482 @@ var init_media = __esm({
   }
 });
 
+// src/core/safe-text.ts
+var safe_text_exports = {};
+__export(safe_text_exports, {
+  KEY_WITHHELD: () => KEY_WITHHELD,
+  canonicalDateTime: () => canonicalDateTime,
+  looksLikeKey: () => looksLikeKey,
+  safeEcho: () => safeEcho,
+  safeFileText: () => safeFileText
+});
+function looksLikeKey(text) {
+  const t = text.replace(INVISIBLE, "");
+  return /[0-9a-f]{64}/i.test(t) || /[0-9a-f]{64}/i.test(t.replace(SPREAD, ""));
+}
+function safeFileText(value, max = 80) {
+  const raw = typeof value === "string" ? value : value === void 0 || value === null ? "" : String(value);
+  if (looksLikeKey(raw)) return KEY_WITHHELD;
+  const t = raw.replace(INVISIBLE, " ").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+function safeEcho(value, max = 64) {
+  const raw = typeof value === "string" ? value : value === void 0 || value === null ? "" : typeof value === "object" ? "[object]" : String(value);
+  const t = raw.replace(INVISIBLE, " ").replace(/[0-9a-f]{32,}/gi, "<hidden>").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+function canonicalDateTime(value) {
+  return typeof value === "string" && ISO_DATE_TIME.test(value) && !Number.isNaN(Date.parse(value)) ? value : void 0;
+}
+var INVISIBLE, SPREAD, KEY_WITHHELD, ISO_DATE_TIME;
+var init_safe_text = __esm({
+  "src/core/safe-text.ts"() {
+    "use strict";
+    INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]/g;
+    SPREAD = /(?<=[0-9a-f])[\s_.,:;'"`|/\\-]+(?=[0-9a-f])/gi;
+    KEY_WITHHELD = "[withheld: looks like key material]";
+    ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+  }
+});
+
+// src/backup/lsp30-crypto.ts
+import { getAddress as getAddress47 } from "./vendor-viem.mjs";
+var init_lsp30_crypto = __esm({
+  "src/backup/lsp30-crypto.ts"() {
+    "use strict";
+    init_errors();
+    init_secret_guard();
+    init_local_signer();
+  }
+});
+
+// src/backup/lsp30-format.ts
+import { getAddress as getAddress48 } from "./vendor-viem.mjs";
+function backupDate(now = /* @__PURE__ */ new Date()) {
+  return now.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+function appIncompatibilities(f) {
+  const out = [];
+  f.LSP23CrossChainDeployment.forEach((item, i) => {
+    if (!item.initialControllers.some((c) => c.privateKeyIndex !== void 0)) out.push(`LSP23CrossChainDeployment[${i}] has no initial controller with a key in this file; the app rejects such a file`);
+  });
+  return out;
+}
+var MAX_BACKUP_BYTES, KNOWN_PERMISSION_NAMES;
+var init_lsp30_format = __esm({
+  "src/backup/lsp30-format.ts"() {
+    "use strict";
+    init_errors();
+    init_constants();
+    init_safe_text();
+    init_lsp30_crypto();
+    MAX_BACKUP_BYTES = 5 * 1024 * 1024;
+    KNOWN_PERMISSION_NAMES = new Set(PERMISSION_NAMES);
+  }
+});
+
+// src/backup/lsp23-decode.ts
+import { decodeAbiParameters as decodeAbiParameters2, decodeFunctionData as decodeFunctionData5, getAddress as getAddress49, isAddress as isAddress19 } from "./vendor-viem.mjs";
+function hasDefinedPermission(value) {
+  return (value & DEFINED_PERMISSION_BITS) !== 0n;
+}
+function addressFromKey(key, prefix) {
+  return key.toLowerCase().startsWith(prefix.toLowerCase()) && key.length === 66 ? getAddress49(`0x${key.slice(26)}`) : void 0;
+}
+function decodeDeployment(item) {
+  const selector = item.deploymentCalldata.slice(0, 10).toLowerCase();
+  if (selector === DEPLOY_CONTRACTS) return unsupported2("deployContracts calldata cannot be verified; only deployERC1167Proxies is supported");
+  if (selector !== DEPLOY_ERC1167_PROXIES) return unsupported2("the calldata is not a deployERC1167Proxies call");
+  let primary, secondary, module, moduleData;
+  try {
+    const d = decodeFunctionData5({ abi: LSP23_ABI, data: item.deploymentCalldata });
+    if (d.functionName !== "deployERC1167Proxies") return unsupported2("the calldata is not a deployERC1167Proxies call");
+    [primary, secondary, module, moduleData] = d.args;
+  } catch {
+    return unsupported2("the calldata could not be decoded");
+  }
+  const derived = computeERC1167Addresses(item.factoryAddress, primary, secondary, module, moduleData);
+  const perms = /* @__PURE__ */ new Map();
+  const calls = /* @__PURE__ */ new Map();
+  const dataKeys = /* @__PURE__ */ new Map();
+  let dataKeyList, dataValueList;
+  try {
+    [dataKeyList, dataValueList] = decodeAbiParameters2([{ type: "bytes32[]" }, { type: "bytes[]" }], moduleData);
+  } catch {
+    return unsupported2("the post-deployment data could not be decoded");
+  }
+  if (dataKeyList.length !== dataValueList.length) return unsupported2("the post-deployment data has lists of different lengths");
+  let urd;
+  let lsp3;
+  dataKeyList.forEach((key, i) => {
+    const value = dataValueList[i];
+    const p = addressFromKey(key, DATA_KEYS.AddressPermissionsPermissionsPrefix);
+    const c = addressFromKey(key, DATA_KEYS.AddressPermissionsAllowedCallsPrefix);
+    const k = addressFromKey(key, DATA_KEYS.AddressPermissionsAllowedERC725YDataKeysPrefix);
+    if (p) {
+      const permissionsValid = PERMISSION_VALUE.test(value);
+      perms.set(p, { address: p, permissions: permissionsValid ? value.toLowerCase() : ZERO_PERMISSIONS, permissionsValid, hasPermissions: permissionsValid && hasDefinedPermission(BigInt(value)), allowedCalls: "0x", allowedERC725YDataKeys: "0x", isUrd: false });
+    } else if (c) calls.set(c, value);
+    else if (k) dataKeys.set(k, value);
+    else if (key.toLowerCase() === DATA_KEYS.LSP1UniversalReceiverDelegate.toLowerCase() && value.length === 42 && isAddress19(value, { strict: false })) urd = getAddress49(value);
+    else if (key.toLowerCase() === DATA_KEYS.LSP3Profile.toLowerCase()) lsp3 = value;
+  });
+  const initialControllers = [...perms.values()].map((c) => ({ ...c, allowedCalls: calls.get(c.address) ?? "0x", allowedERC725YDataKeys: dataKeys.get(c.address) ?? "0x", isUrd: urd !== void 0 && sameAddress2(c.address, urd) }));
+  const versionOf = (table, a) => Object.entries(table).find(([, x]) => sameAddress2(x, a))?.[0] ?? "imported";
+  const plan = urd ? {
+    factory: getAddress49(item.factoryAddress),
+    postDeploymentModule: getAddress49(module),
+    implementations: {
+      universalProfileInit: { version: versionOf(LSP.UP_INIT, primary.implementationContract), address: getAddress49(primary.implementationContract) },
+      keyManagerInit: { version: versionOf(LSP.KM_INIT, secondary.implementationContract), address: getAddress49(secondary.implementationContract) },
+      universalReceiverDelegate: { version: versionOf(LSP.URD, urd), address: urd }
+    },
+    dataKeys: dataKeyList,
+    dataValues: dataValueList,
+    primaryContractDeploymentInit: { salt: primary.salt.toLowerCase(), fundingAmount: primary.fundingAmount.toString(), implementationContract: getAddress49(primary.implementationContract), initializationCalldata: primary.initializationCalldata },
+    secondaryContractDeploymentInit: {
+      fundingAmount: secondary.fundingAmount.toString(),
+      implementationContract: getAddress49(secondary.implementationContract),
+      initializationCalldata: secondary.initializationCalldata,
+      addPrimaryContractAddress: secondary.addPrimaryContractAddress,
+      extraInitializationParams: secondary.extraInitializationParams
+    },
+    postDeploymentModuleCalldata: moduleData,
+    generatedSalt: derived.generatedSalt,
+    profile: derived.profile,
+    keyManager: derived.keyManager
+  } : void 0;
+  return {
+    supported: true,
+    derivedProfile: derived.profile,
+    derivedKeyManager: derived.keyManager,
+    rederives: sameAddress2(derived.profile, item.profileAddress),
+    canonicalFactory: sameAddress2(item.factoryAddress, LSP.LSP23_FACTORY),
+    initialControllers,
+    ...urd ? { urd } : {},
+    ...lsp3 ? { lsp3 } : {},
+    ...plan ? { plan } : {}
+  };
+}
+function initialControllersFor(dec, keyIndexOf) {
+  return dec.initialControllers.map((c) => {
+    const idx = c.isUrd ? void 0 : keyIndexOf(c.address);
+    const names = decodePermissions(c.permissions).names;
+    return {
+      address: c.address,
+      ...idx !== void 0 ? { privateKeyIndex: idx } : {},
+      addressPermissions: { permissions: c.permissions, decodedPermissions: Object.fromEntries(names.map((n) => [n, true])), allowedCalls: c.allowedCalls, allowedERC725YDataKeys: c.allowedERC725YDataKeys }
+    };
+  });
+}
+var DEPLOY_ERC1167_PROXIES, DEPLOY_CONTRACTS, unsupported2, sameAddress2, ZERO_PERMISSIONS, PERMISSION_VALUE, DEFINED_PERMISSION_BITS;
+var init_lsp23_decode = __esm({
+  "src/backup/lsp23-decode.ts"() {
+    "use strict";
+    init_registry();
+    init_abis();
+    init_constants();
+    init_lsp23();
+    init_permissions();
+    DEPLOY_ERC1167_PROXIES = "0x6a66a753";
+    DEPLOY_CONTRACTS = "0x17ad46a8";
+    unsupported2 = (reason) => ({ supported: false, reason, rederives: false, canonicalFactory: false, initialControllers: [] });
+    sameAddress2 = (a, b) => a.toLowerCase() === b.toLowerCase();
+    ZERO_PERMISSIONS = `0x${"00".repeat(32)}`;
+    PERMISSION_VALUE = /^0x0{56}[0-9a-f]{8}$/i;
+    DEFINED_PERMISSION_BITS = PERMISSION_NAMES.reduce((m, n) => m | PERMISSIONS[n], 0n);
+  }
+});
+
+// src/core/public-record.ts
+var public_record_exports = {};
+__export(public_record_exports, {
+  assertNoKeyMaterial: () => assertNoKeyMaterial,
+  holdsKeyMaterial: () => holdsKeyMaterial,
+  textHoldsKey: () => textHoldsKey
+});
+function textHoldsKey(text) {
+  return containsSecret(text) || containsSecret(text.replace(/[^0-9a-z]/gi, "")) || looksLikeKey(text);
+}
+function holdsKeyMaterial(value) {
+  const seen = /* @__PURE__ */ new Set();
+  const walk = (v, field, depth) => {
+    if (typeof v === "string") {
+      if (PURE_HEX.test(v) && !TEXT_FIELDS.has(field)) return containsSecret(v);
+      return textHoldsKey(v);
+    }
+    if (v === null || typeof v !== "object") return false;
+    if (seen.has(v) || depth > MAX_DEPTH) return false;
+    seen.add(v);
+    if (Array.isArray(v)) return v.some((x) => walk(x, field, depth + 1));
+    return Object.entries(v).some(([k, x]) => textHoldsKey(k) || walk(x, k, depth + 1));
+  };
+  return walk(value, "", 0);
+}
+function assertNoKeyMaterial(what, value) {
+  if (holdsKeyMaterial(value)) throw new UpError("BAD_ARGS", `${what} holds private key material (or text shaped like it); nothing was changed`, { hint: "rename or replace it" });
+}
+var TEXT_FIELDS, PURE_HEX, MAX_DEPTH;
+var init_public_record = __esm({
+  "src/core/public-record.ts"() {
+    "use strict";
+    init_errors();
+    init_safe_text();
+    init_secret_guard();
+    TEXT_FIELDS = /* @__PURE__ */ new Set(["name", "type", "hint", "passwordHint", "encryptionType", "backupDate", "file", "path", "destination", "alias", "label", "note", "effect", "say", "message", "chain", "network"]);
+    PURE_HEX = /^(0x)?[0-9a-f]*$/i;
+    MAX_DEPTH = 24;
+  }
+});
+
+// src/backup/store.ts
+import { createHash as createHash2 } from "node:crypto";
+var sha256Hex2;
+var init_store = __esm({
+  "src/backup/store.ts"() {
+    "use strict";
+    init_errors();
+    init_public_record();
+    init_home();
+    init_secret_guard();
+    init_safe_text();
+    init_verbs2();
+    init_lsp30_format();
+    sha256Hex2 = (data) => createHash2("sha256").update(data).digest("hex");
+  }
+});
+
+// src/backup/build.ts
+var build_exports = {};
+__export(build_exports, {
+  buildBackup: () => buildBackup,
+  collectHeldKeys: () => collectHeldKeys,
+  collectProfiles: () => collectProfiles,
+  collectState: () => collectState,
+  fingerprints: () => fingerprints
+});
+import { readdir } from "node:fs/promises";
+import { getAddress as getAddress50, isAddress as isAddress20 } from "./vendor-viem.mjs";
+function withTimeout(p, ms) {
+  return new Promise((resolve7, reject) => {
+    const t = setTimeout(() => reject(new Error("timed out")), ms);
+    p.then((v) => (clearTimeout(t), resolve7(v)), (e) => (clearTimeout(t), reject(e)));
+  });
+}
+async function collectHeldKeys(ctx, cfg, warnings) {
+  const listed = [];
+  const add2 = (address, backend, kind) => {
+    if (isAddress20(address, { strict: false }) && !listed.some((k) => sameAddress3(k.address, address))) listed.push({ address: getAddress50(address), backend, kind });
+  };
+  if (cfg.controller) add2(cfg.controller.address, cfg.controller.backend, "default");
+  for (const k of chainControllerList(cfg)) add2(k.address, k.backend, "chain");
+  for (const k of await keptKeys(ctx.home, cfg)) add2(k.address, k.backend, k.kind);
+  const held = [];
+  for (const k of listed) {
+    let has = false;
+    try {
+      has = await internalBackend(k.backend).has(k.address);
+    } catch {
+    }
+    if (has) held.push(k);
+    else warnings.push(`the key ${k.address} is listed but is not in its key store (${k.backend}); it cannot be part of the backup`);
+  }
+  return held;
+}
+function deployedChains(m, record) {
+  const ids = /* @__PURE__ */ new Set();
+  for (const d of Object.values(m?.deployments ?? {})) if (d && (d.status === "deployed" || d.status === "already-deployed") && Number.isInteger(d.chainId)) ids.add(d.chainId);
+  for (const id of m?.chains ?? []) if (Number.isInteger(id)) ids.add(id);
+  for (const c of record.joined?.chains ?? []) if (c?.deployed === true && Number.isInteger(c.chainId)) ids.add(c.chainId);
+  for (const [id, c] of Object.entries(record.status?.chains ?? {})) if (c?.deployed === true && /^\d+$/.test(id)) ids.add(Number(id));
+  for (const c of importedChainsOf(record)) ids.add(c.chainId);
+  return [...ids];
+}
+function importedChainsOf(record) {
+  const raw = record.imported?.chains;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((c) => Number.isInteger(c?.chainId) && c.chainId > 0 ? [{ chainId: c.chainId, verified: c.provenance === "verified", controllers: (Array.isArray(c.controllers) ? c.controllers : []).filter((a) => typeof a === "string" && isAddress20(a, { strict: false })).map((a) => getAddress50(a)) }] : []);
+}
+function establishedFor(chainId, manifest, dec, record, onChain3) {
+  const out = [];
+  const add2 = (address, source) => {
+    if (typeof address === "string" && isAddress20(address, { strict: false }) && !out.some((x) => sameAddress3(x.address, address))) out.push({ address: getAddress50(address), source });
+  };
+  if (manifest && (manifest.chains?.includes(chainId) || manifest.deployments?.[String(chainId)])) {
+    if (dec?.supported) for (const c of dec.initialControllers) !c.isUrd && add2(c.address, "deployment");
+    else add2(manifest.controller, "deployment"), manifest.extraControllers?.forEach((c) => add2(c.address, "deployment"));
+  }
+  for (const c of record.joined?.chains ?? []) if (c?.chainId === chainId && c.authorised !== false) add2(c.controller ?? record.joined?.controller, "joined");
+  const st = record.status?.chains?.[String(chainId)];
+  if (st?.isController === true) add2(st.controller, "checked");
+  for (const a of record.linkEvidence?.controllers ?? []) add2(a, "checked");
+  for (const a of onChain3) add2(a, "chain");
+  for (const c of importedChainsOf(record)) if (c.chainId === chainId) for (const a of c.controllers) add2(a, "imported");
+  return out;
+}
+async function collectProfiles(ctx, cfg, warnings, opts = {}) {
+  const dir = paths.profiles(ctx.home);
+  const names = (await readdir(dir).catch(() => [])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
+  const identities = /* @__PURE__ */ new Map();
+  for (const n of names) identities.set(n.slice(0, 42).toLowerCase(), getAddress50(n.slice(0, 42)));
+  if (cfg.defaultProfile) identities.set(cfg.defaultProfile.toLowerCase(), getAddress50(cfg.defaultProfile));
+  if (opts.only) {
+    for (const o of opts.only) if (!identities.has(o.toLowerCase())) throw new UpError("BAD_ARGS", `no profile ${o} is known on this machine`, { hint: "the profiles known here are listed by: up profile status" });
+  }
+  const out = [];
+  const aliasOf = (a) => Object.entries(cfg.aliases ?? {}).find(([, v]) => sameAddress3(v, a))?.[0] ?? "";
+  const ordered = [...identities.values()].sort((a, b) => cfg.defaultProfile && sameAddress3(a, cfg.defaultProfile) ? -1 : cfg.defaultProfile && sameAddress3(b, cfg.defaultProfile) ? 1 : a.localeCompare(b));
+  for (const id of ordered) {
+    if (opts.only && !opts.only.some((o) => sameAddress3(o, id))) continue;
+    const record = await readProfileRecord(ctx.home, id);
+    const linked = chainAddressesOf(record);
+    let manifest = record.deployment;
+    if (manifest && (manifest.kind !== "lsp23-erc1167-up" || !verifyManifest(manifest).ok)) {
+      warnings.push(`the deployment data of ${id} does not check out (it is left out of the backup)`);
+      manifest = void 0;
+    }
+    const linkedChains = new Set(Object.keys(linked).map(Number));
+    const imported = importedChainsOf(record);
+    let chainIds = deployedChains(manifest, record).filter((c) => !linkedChains.has(c));
+    const onChain3 = {};
+    const refreshedChains = [];
+    if (opts.refresh) {
+      for (const c of new Set([...chainIds, ...cfg.chains ?? []].filter((x) => !linkedChains.has(x)))) {
+        try {
+          if (!await withTimeout(hasCode(ctx, c, id), REFRESH_TIMEOUT_MS)) continue;
+          if (!chainIds.includes(c)) chainIds.push(c), refreshedChains.push(c);
+          onChain3[c] = (await withTimeout(readControllers(ctx, c, id), REFRESH_TIMEOUT_MS)).controllers.map((x) => x.address);
+        } catch (e) {
+          warnings.push(`could not refresh ${id} on chain ${c}: ${e.message}`);
+        }
+      }
+    }
+    chainIds = [...new Set(chainIds)];
+    const recorded = manifest ? Object.values(manifest.deployments ?? {}).filter((d) => d?.status === "deployed" || d?.status === "already-deployed") : [];
+    const importedHere = imported.filter((c) => !linkedChains.has(c.chainId));
+    const dec = manifest ? decodeDeployment({ profileAddress: manifest.profile, factoryAddress: manifest.plan.factory, deploymentCalldata: manifest.deployCalldata }) : void 0;
+    const controllers = {};
+    for (const c of chainIds) controllers[c] = establishedFor(c, manifest, dec, record, onChain3[c] ?? []);
+    const first = [...recorded].sort((a, b) => a.deployedAt.localeCompare(b.deployedAt))[0]?.chainId;
+    const importedInitial = Number.isInteger(record.imported?.initialChainID) ? record.imported.initialChainID : chainIds[0];
+    const unverifiedChains = importedHere.filter((c) => !c.verified && !recorded.some((d) => d.chainId === c.chainId)).map((c) => c.chainId);
+    if (unverifiedChains.length) warnings.push(`the networks ${unverifiedChains.join(", ")} of ${id} come from an imported backup and were not confirmed on a network from here`);
+    if (chainIds.length) out.push({ address: id, name: aliasOf(id), chainIds, ...manifest && (recorded.length || importedHere.length) ? { manifest, initialChainId: first ?? importedInitial } : {}, onChain: onChain3, controllers, unverifiedChains, refreshedChains });
+    else if (!linkedChains.size) warnings.push(`the profile ${id} is not deployed or joined anywhere yet; nothing to back up for it`);
+    for (const [chain, address] of Object.entries(linked)) {
+      const c = Number(chain);
+      const snap = record.status?.chains?.[chain];
+      const own = snap && (typeof snap.profile !== "string" || !isAddress20(snap.profile, { strict: false }) || sameAddress3(snap.profile, address)) ? snap : void 0;
+      const found = [];
+      if (opts.refresh) {
+        try {
+          if (await withTimeout(hasCode(ctx, c, address), REFRESH_TIMEOUT_MS)) {
+            found.push(...(await withTimeout(readControllers(ctx, c, address), REFRESH_TIMEOUT_MS)).controllers.map((x) => x.address));
+          }
+        } catch (e) {
+          warnings.push(`could not refresh the linked address ${address} (profile ${id}) on chain ${c}: ${e.message}`);
+        }
+      }
+      const evidence = { controllers: linkEvidenceOf(record, c) };
+      out.push({ address, name: aliasOf(address), chainIds: [c], onChain: { [c]: found }, controllers: { [c]: establishedFor(c, void 0, void 0, { status: own ? { chains: { [chain]: own } } : void 0, linkEvidence: evidence }, found) }, unverifiedChains: [], refreshedChains: [] });
+    }
+  }
+  return out;
+}
+async function collectState(ctx, opts = {}) {
+  const cfg = await ctx.config();
+  const warnings = [];
+  const keys = await collectHeldKeys(ctx, cfg, warnings);
+  const profiles = await collectProfiles(ctx, cfg, warnings, opts);
+  return { keys, profiles, warnings };
+}
+function profileLine(p) {
+  const chains = [...new Set(p.chainIds.filter((c) => !(p.refreshedChains ?? []).includes(c)))].sort((a, b) => a - b);
+  const perChain = chains.map((c) => `${c}:${[...new Set((p.controllers[c] ?? []).filter((e) => e.source !== "chain").map((e) => e.address.toLowerCase()))].sort().join(",")}`);
+  return `${p.address.toLowerCase()}|${perChain.join(";")}`;
+}
+function fingerprints(state) {
+  const addrs2 = (xs) => xs.map((x) => x.address.toLowerCase()).sort();
+  const profilePart = ["profiles", ...state.profiles.map(profileLine).sort(), "deployments", ...state.profiles.flatMap((p) => p.manifest ? [sha256Hex2(p.manifest.deployCalldata.toLowerCase())] : []).sort()];
+  return { full: sha256Hex2(["keys", ...addrs2(state.keys), ...profilePart].join("\n")), profiles: sha256Hex2(profilePart.join("\n")) };
+}
+function chainName6(ctx, id) {
+  try {
+    return ctx.registry.chain(id).name;
+  } catch {
+    return "Unknown chain";
+  }
+}
+function keyName(k, activeHere) {
+  if (activeHere) return "AI agent key";
+  if (k.kind === "previous") return "AI agent key (previous)";
+  if (k.kind === "additional" || k.kind === "recovered") return "AI agent key (not yet used)";
+  return "AI agent key (other network)";
+}
+function buildBackup(ctx, cfg, state, mode, now = /* @__PURE__ */ new Date()) {
+  const withKeys = mode !== "public";
+  const indexOf = (a) => {
+    const i = state.keys.findIndex((k) => sameAddress3(k.address, a));
+    return withKeys && i >= 0 ? i : void 0;
+  };
+  const accounts = [];
+  const lsp23 = [];
+  for (const p of state.profiles) {
+    const dec = p.manifest ? decodeDeployment({ profileAddress: p.manifest.profile, factoryAddress: p.manifest.plan.factory, deploymentCalldata: p.manifest.deployCalldata }) : void 0;
+    const networks = [...p.chainIds].sort((a, b) => a === 42 ? -1 : b === 42 ? 1 : a - b).map((chainID) => {
+      const active = controllerFor(cfg, chainID)?.address;
+      const controllers = [];
+      const push = (c) => {
+        if (!controllers.some((x) => sameAddress3(x.address, c.address))) controllers.push(c);
+      };
+      const established = p.controllers[chainID] ?? [];
+      for (const e of established) {
+        const key = state.keys.find((k) => sameAddress3(k.address, e.address));
+        if (key) push({ address: key.address, type: "Device", ...indexOf(key.address) !== void 0 ? { privateKeyIndex: indexOf(key.address) } : {}, name: keyName(key, !!active && sameAddress3(active, key.address)) });
+        else if (dec?.urd && sameAddress3(dec.urd, e.address)) push({ address: e.address, type: "UniversalReceiver", name: "Universal Receiver" });
+        else push({ address: e.address, type: "Device", name: e.source === "chain" ? "Controller (found on chain)" : "Co-owner (key not held by the agent)" });
+      }
+      if (dec?.urd && established.length) push({ address: dec.urd, type: "UniversalReceiver", name: "Universal Receiver" });
+      return { chainID, name: chainName6(ctx, chainID), controllers };
+    });
+    accounts.push({ type: "LSP0-ERC725Account", name: p.name, address: p.address, networks });
+    if (p.manifest && dec) {
+      if (p.initialChainId === void 0) continue;
+      lsp23.push({
+        profileAddress: p.manifest.profile,
+        initialChainID: p.initialChainId,
+        factoryAddress: p.manifest.plan.factory,
+        deploymentCalldata: p.manifest.deployCalldata,
+        salt: p.manifest.salt,
+        initialControllers: initialControllersFor(dec, indexOf)
+      });
+    }
+  }
+  const file2 = { version: 2, backupDate: backupDate(now), accounts, LSP23CrossChainDeployment: lsp23 };
+  const appIncompatible = appIncompatibilities({ ...file2, secrets: { encrypted: false, data: [] } });
+  return { file: file2, keys: withKeys ? state.keys : [], chains: [...new Set(accounts.flatMap((a) => a.networks.map((n) => n.chainID)))].sort((a, b) => a - b), appIncompatible };
+}
+var sameAddress3, REFRESH_TIMEOUT_MS;
+var init_build = __esm({
+  "src/backup/build.ts"() {
+    "use strict";
+    init_errors();
+    init_home();
+    init_profile_record();
+    init_read2();
+    init_lsp23();
+    init_profile();
+    init_signer();
+    init_select();
+    init_verbs2();
+    init_lsp30_format();
+    init_lsp23_decode();
+    init_store();
+    sameAddress3 = (a, b) => a.toLowerCase() === b.toLowerCase();
+    REFRESH_TIMEOUT_MS = 8e3;
+  }
+});
+
 // src/verbs/setup.ts
 init_verbs();
 init_errors();
@@ -7504,7 +8924,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "50971fd78b91" : "source";
+var SOURCE = true ? "5a878e567e01" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -7974,927 +9394,8 @@ defineVerb({
   }
 });
 
-// src/signer/verbs.ts
-var verbs_exports2 = {};
-__export(verbs_exports2, {
-  MIN_PASSPHRASE_LENGTH: () => MIN_PASSPHRASE_LENGTH,
-  importRecorded: () => importRecorded,
-  initVerb: () => initVerb,
-  keptKeys: () => keptKeys,
-  keyActivateVerb: () => keyActivateVerb,
-  keyAddressVerb: () => keyAddressVerb,
-  keyBackendVerb: () => keyBackendVerb,
-  keyBackupVerb: () => keyBackupVerb,
-  keyNewCandidateVerb: () => keyNewCandidateVerb,
-  keyVerbs: () => keyVerbs,
-  readCandidates: () => readCandidates,
-  updateCandidates: () => updateCandidates,
-  withKeyLock: () => withKeyLock,
-  writeNewFileExclusive: () => writeNewFileExclusive
-});
-init_secret_guard();
-init_errors();
-init_home();
-init_verbs();
-import { chmod as chmod2, link as link2, lstat as lstat2, open as open3, rm as rm4, stat as stat4, writeFile as writeFile4 } from "node:fs/promises";
-import { randomBytes as randomBytes6 } from "node:crypto";
-import { basename, dirname as dirname3, isAbsolute, join as join9, resolve as resolve4 } from "node:path";
-import { getAddress as getAddress12, isAddress as isAddress9 } from "./vendor-viem.mjs";
-import { existsSync as existsSync14 } from "node:fs";
-
-// src/core/context.ts
-init_home();
-init_lock();
-init_errors();
-init_policy();
-init_registry();
-init_rpc();
-import { getAddress as getAddress10, isAddress as isAddress7 } from "./vendor-viem.mjs";
-import { readFileSync as readFileSync8, existsSync as existsSync13 } from "node:fs";
-var DEFAULT_CONFIG = { version: 1 };
-function upgradeConfig(raw) {
-  if (!raw || typeof raw !== "object") return raw;
-  const { retiredControllers: legacy, ...rest } = raw;
-  if (!Array.isArray(legacy)) return raw;
-  const prev = Array.isArray(rest.previousControllers) ? [...rest.previousControllers] : [];
-  for (const r of legacy) {
-    if (!r || typeof r.address !== "string") continue;
-    if (prev.some((p) => typeof p?.address === "string" && p.address.toLowerCase() === r.address.toLowerCase())) continue;
-    prev.push({ address: r.address, backend: r.backend, switchedAt: r.retiredAt ?? r.switchedAt ?? "", ...r.chainId !== void 0 ? { chainId: r.chainId } : {} });
-  }
-  return prev.length ? { ...rest, previousControllers: prev } : rest;
-}
-var MISSING = /* @__PURE__ */ Symbol("missing");
-async function readConfigFile(home) {
-  const raw = await readJsonStrict(paths.config(home), MISSING);
-  if (raw === MISSING) return { ...DEFAULT_CONFIG };
-  if (!isJsonObject(raw)) {
-    throw new UpError("INTERNAL", `${paths.config(home)} is damaged (it does not hold a config object); nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${paths.config(home)}.bak); never delete it: it lists the agent's keys` });
-  }
-  return { ...DEFAULT_CONFIG, ...upgradeConfig(raw) };
-}
-function configKeys(cfg) {
-  const out = [];
-  if (cfg.controller?.address) out.push({ address: cfg.controller.address, backend: cfg.controller.backend });
-  for (const [id, k] of Object.entries(cfg.chainControllers ?? {})) if (k?.address) out.push({ address: k.address, backend: k.backend, chainId: Number(id) });
-  for (const k of cfg.previousControllers ?? []) if (k?.address) out.push({ address: k.address, backend: k.backend, ...k.chainId !== void 0 ? { chainId: k.chainId } : {} });
-  return out;
-}
-function preserveKeyInventory(latest, next, now = (/* @__PURE__ */ new Date()).toISOString()) {
-  const have = new Set(configKeys(next).map((k) => k.address.toLowerCase()));
-  const missing = configKeys(latest).filter((k) => !have.has(k.address.toLowerCase()) && (have.add(k.address.toLowerCase()), true));
-  if (!missing.length) return next;
-  return { ...next, previousControllers: [...next.previousControllers ?? [], ...missing.map((k) => ({ address: k.address, backend: k.backend, switchedAt: now, ...k.chainId !== void 0 ? { chainId: k.chainId } : {} }))] };
-}
-function applyChangedFields(latest, base, next) {
-  const out = { ...latest };
-  const b = base;
-  const n = next;
-  for (const k of /* @__PURE__ */ new Set([...Object.keys(b), ...Object.keys(n)])) {
-    if (JSON.stringify(b[k]) === JSON.stringify(n[k])) continue;
-    if (n[k] === void 0) delete out[k];
-    else out[k] = n[k];
-  }
-  return out;
-}
-function createContext(opts) {
-  const home = opts.home ?? upHome();
-  let cfgCache;
-  let loaded;
-  const config = async () => {
-    if (!cfgCache) {
-      const c = await readConfigFile(home);
-      cfgCache ??= c;
-      loaded ??= structuredClone(c);
-    }
-    return cfgCache;
-  };
-  const registry2 = createRegistry(home);
-  const rpc = createRpcManager(home, registry2, config);
-  const ctx = {
-    home,
-    flags: opts.flags,
-    registry: registry2,
-    rpc,
-    config,
-    async saveConfig(cfg) {
-      const base = loaded ?? { ...DEFAULT_CONFIG };
-      await ctx.updateConfig((latest) => applyChangedFields(latest, base, cfg));
-    },
-    async updateConfig(fn) {
-      await ensureDir(home);
-      return withLock(home, "config", async () => {
-        const latest = await readConfigFile(home);
-        const draft = structuredClone(latest);
-        const next = preserveKeyInventory(latest, await fn(draft) ?? draft);
-        await writeJsonWithBackup(paths.config(home), next, isJsonObject);
-        cfgCache = next;
-        loaded = structuredClone(next);
-        return next;
-      });
-    },
-    async refreshConfig() {
-      cfgCache = void 0;
-      loaded = void 0;
-      return config();
-    },
-    async signer(chainId) {
-      const { loadSignerFromConfig: loadSignerFromConfig2 } = await Promise.resolve().then(() => (init_signer(), signer_exports));
-      const cfg = await config();
-      return loadSignerFromConfig2(cfg, chainId ?? verbChain());
-    },
-    async consent(req) {
-      if (req.risk === "write" && !opts.flags.dryRun && !(opts.flags.approval && opts.flags.approval.trim().length >= 3)) {
-        const { loadPolicy: loadPolicy2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
-        const { guardTokenMoves: guardTokenMoves2 } = await Promise.resolve().then(() => (init_token_guard(), token_guard_exports));
-        await guardTokenMoves2(ctx, await loadPolicy2(home), req);
-      }
-      return requireConsent(home, opts.flags, req);
-    },
-    chainId(arg) {
-      const v = arg ?? opts.flags.chain;
-      if (v !== void 0 && v !== "") return registry2.chain(v).chainId;
-      if (!cfgCache && existsSync13(paths.config(home))) {
-        try {
-          const raw = JSON.parse(readFileSync8(paths.config(home), "utf8"));
-          if (isJsonObject(raw)) {
-            const c = { ...DEFAULT_CONFIG, ...upgradeConfig(raw) };
-            cfgCache = c;
-            loaded ??= structuredClone(c);
-          }
-        } catch {
-        }
-      }
-      if (cfgCache?.defaultChain) return cfgCache.defaultChain;
-      throw new UpError("BAD_ARGS", "no chain given", { hint: "pass --chain <id|name> or set a default: up config set default-chain 42" });
-    },
-    async identity(arg) {
-      const v = arg ?? opts.flags.profile;
-      const cfg = await config();
-      if (v) return ctx.resolveAddress(v);
-      if (cfg.defaultProfile) return getAddress10(cfg.defaultProfile);
-      throw new UpError("BAD_ARGS", "no profile given", { hint: "pass --profile <address> or set one: up config set default-profile <address>" });
-    },
-    async profile(arg, chainId) {
-      const id = await ctx.identity(arg);
-      const c = chainId ?? verbChain();
-      if (c === void 0) return id;
-      const { profileAddressOn: profileAddressOn2 } = await Promise.resolve().then(() => (init_profile_record(), profile_record_exports));
-      return profileAddressOn2(home, id, c);
-    },
-    async resolveAddress(v) {
-      if (isAddress7(v, { strict: false })) return getAddress10(v);
-      const a = (await config()).aliases?.[v];
-      if (a) return getAddress10(a);
-      throw new UpError("BAD_ARGS", `"${v}" is neither an address nor a known alias`, { hint: "list aliases with: up config get aliases" });
-    },
-    log: opts.log ?? (() => {
-    })
-  };
-  const verbChain = () => {
-    try {
-      return ctx.chainId();
-    } catch {
-      return void 0;
-    }
-  };
-  void config().catch(() => {
-  });
-  return ctx;
-}
-async function preloadConfig(ctx) {
-  return ctx.config();
-}
-function checksum(a) {
-  if (!isAddress7(a, { strict: false })) throw new UpError("BAD_ARGS", `invalid address: ${a}`);
-  return getAddress10(a);
-}
-
-// src/signer/inventory.ts
-var inventory_exports = {};
-__export(inventory_exports, {
-  inventoryFile: () => inventoryFile,
-  readInventory: () => readInventory,
-  recordKey: () => recordKey
-});
-init_home();
-import { readFile as readFile6 } from "node:fs/promises";
-import { join as join8 } from "node:path";
-import { getAddress as getAddress11, isAddress as isAddress8 } from "./vendor-viem.mjs";
-function inventoryFile(home) {
-  return join8(paths.keys(home), "inventory.jsonl");
-}
-async function recordKey(home, entry) {
-  const line = { address: getAddress11(entry.address), backend: entry.backend, createdAt: entry.createdAt ?? (/* @__PURE__ */ new Date()).toISOString(), ...entry.note ? { note: entry.note } : {}, ...entry.notStored ? { notStored: true } : {} };
-  await appendLine(inventoryFile(home), JSON.stringify(line));
-}
-function recordsIn(line) {
-  try {
-    return [JSON.parse(line)];
-  } catch {
-    const out = [];
-    for (const m of line.match(/\{[^{}]*\}/g) ?? []) {
-      try {
-        out.push(JSON.parse(m));
-      } catch {
-      }
-    }
-    return out;
-  }
-}
-async function readInventory(home) {
-  let text = "";
-  try {
-    text = await readFile6(inventoryFile(home), "utf8");
-  } catch (e) {
-    if (e.code === "ENOENT") return [];
-    throw e;
-  }
-  const out = [];
-  for (const raw of text.split("\n")) {
-    if (!raw.trim()) continue;
-    for (const v of recordsIn(raw)) {
-      if (!v || typeof v.address !== "string" || !isAddress8(v.address, { strict: false }) || typeof v.backend !== "string") continue;
-      const prev = out.find((x) => x.address.toLowerCase() === v.address.toLowerCase());
-      if (prev) {
-        if (v.note) prev.note = prev.note ? `${prev.note}; ${v.note}` : v.note;
-        if (v.notStored === true) prev.notStored = true;
-        continue;
-      }
-      out.push({ address: getAddress11(v.address), backend: v.backend, createdAt: typeof v.createdAt === "string" ? v.createdAt : "", ...v.note ? { note: String(v.note) } : {}, ...v.notStored === true ? { notStored: true } : {} });
-    }
-  }
-  return out;
-}
-
-// src/signer/verbs.ts
-init_base();
-init_signer();
-init_select();
-
-// src/signer/keystore-v3.ts
-init_errors();
-init_local_signer();
-import { createCipheriv, createDecipheriv, pbkdf2, randomBytes as randomBytes5, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
-import { bytesToHex, hexToBytes as hexToBytes2, keccak256 as keccak2567 } from "./vendor-viem.mjs";
-var scryptAsync = promisify(scrypt);
-var pbkdf2Async = promisify(pbkdf2);
-var STANDARD_SCRYPT = { n: 262144, r: 8, p: 1 };
-function passwordBytes(passphrase) {
-  if (typeof passphrase !== "string" || passphrase.length === 0) throw new UpError("BAD_ARGS", "an empty passphrase is not allowed");
-  return Buffer.from(passphrase, "utf8");
-}
-async function deriveScrypt(pw, p) {
-  const { n, r, p: par, dklen } = p;
-  if (!Number.isInteger(n) || n < 2 || (n & n - 1) !== 0) throw new UpError("BAD_ARGS", "keystore scrypt n must be a power of two");
-  if (!Number.isInteger(r) || r < 1 || !Number.isInteger(par) || par < 1 || dklen !== 32) throw new UpError("BAD_ARGS", "unsupported keystore scrypt parameters");
-  if (n * r > 2 ** 24 || par > 16 || n * r * par > 2 ** 25) throw new UpError("BAD_ARGS", "keystore scrypt parameters are unreasonably large");
-  if (16 * r < 53 && n >= 2 ** (16 * r)) throw new UpError("NOT_SUPPORTED", `keystore scrypt parameters n=${n}, r=${r} are not supported by this runtime (needs n < 2^(16·r))`);
-  try {
-    return await scryptAsync(pw, Buffer.from(p.salt, "hex"), dklen, { N: n, r, p: par, maxmem: 256 * n * r + 64 * 1024 * 1024 });
-  } catch (e) {
-    throw new UpError("NOT_SUPPORTED", `scrypt failed for keystore parameters n=${n}, r=${r}, p=${par}: ${e instanceof Error ? e.message : "error"}`);
-  }
-}
-function mac(derived, ciphertext) {
-  return keccak2567(new Uint8Array(Buffer.concat([derived.subarray(16, 32), ciphertext])));
-}
-async function encryptKeystoreV3(privateKey, passphrase, opts = {}) {
-  const key = normalizePrivateKey(privateKey);
-  assertValidPrivateKey(key, "key");
-  const salt = Buffer.from(opts.salt ?? randomBytes5(32));
-  const iv = Buffer.from(opts.iv ?? randomBytes5(16));
-  if (iv.length !== 16) throw new UpError("BAD_ARGS", "iv must be 16 bytes");
-  const kdfparams = { dklen: 32, n: opts.n ?? STANDARD_SCRYPT.n, r: opts.r ?? STANDARD_SCRYPT.r, p: opts.p ?? STANDARD_SCRYPT.p, salt: salt.toString("hex") };
-  const derived = await deriveScrypt(passwordBytes(passphrase), kdfparams);
-  const plain = Buffer.from(hexToBytes2(key));
-  const cipher = createCipheriv("aes-128-ctr", derived.subarray(0, 16), iv);
-  const ciphertext = Buffer.concat([cipher.update(plain), cipher.final()]);
-  plain.fill(0);
-  const out = {
-    version: 3,
-    id: opts.uuid ?? randomUUID(),
-    address: addressOf(key).slice(2).toLowerCase(),
-    crypto: {
-      cipher: "aes-128-ctr",
-      cipherparams: { iv: iv.toString("hex") },
-      ciphertext: ciphertext.toString("hex"),
-      kdf: "scrypt",
-      kdfparams,
-      mac: mac(derived, ciphertext).slice(2)
-    }
-  };
-  derived.fill(0);
-  return out;
-}
-async function decryptKeystoreV3(input, passphrase) {
-  let ks;
-  try {
-    ks = typeof input === "string" ? JSON.parse(input) : input;
-  } catch {
-    throw new UpError("BAD_ARGS", "not a JSON keystore");
-  }
-  const c = ks?.crypto ?? ks?.Crypto;
-  if (ks?.version !== 3 || !c) throw new UpError("BAD_ARGS", "not a version 3 keystore");
-  if (c.cipher !== "aes-128-ctr") throw new UpError("BAD_ARGS", `unsupported keystore cipher ${String(c.cipher).slice(0, 32)}`);
-  const pw = passwordBytes(passphrase);
-  let derived;
-  if (c.kdf === "scrypt") derived = await deriveScrypt(pw, c.kdfparams);
-  else if (c.kdf === "pbkdf2") {
-    const kp = c.kdfparams;
-    if (kp.prf !== "hmac-sha256" || kp.dklen !== 32 || !Number.isInteger(kp.c) || kp.c < 1 || kp.c > 1e7) throw new UpError("BAD_ARGS", "unsupported keystore pbkdf2 parameters");
-    derived = await pbkdf2Async(pw, Buffer.from(kp.salt, "hex"), kp.c, 32, "sha256");
-  } else throw new UpError("BAD_ARGS", `unsupported keystore kdf ${String(c.kdf).slice(0, 32)}`);
-  const ciphertext = Buffer.from(c.ciphertext, "hex");
-  const expected = Buffer.from(String(c.mac).replace(/^0x/, ""), "hex");
-  const actual = Buffer.from(hexToBytes2(mac(derived, ciphertext)));
-  if (expected.length !== 32 || !timingSafeEqual(expected, actual)) {
-    derived.fill(0);
-    throw new UpError("BAD_ARGS", "wrong passphrase or corrupted keystore (MAC mismatch)");
-  }
-  const decipher = createDecipheriv("aes-128-ctr", derived.subarray(0, 16), Buffer.from(c.cipherparams.iv, "hex"));
-  const plain = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-  derived.fill(0);
-  const key = bytesToHex(new Uint8Array(plain));
-  plain.fill(0);
-  assertValidPrivateKey(key, "decrypted key");
-  if (ks.address && addressOf(key).slice(2).toLowerCase() !== String(ks.address).replace(/^0x/, "").toLowerCase()) {
-    throw new UpError("BAD_ARGS", "keystore address does not match the decrypted key");
-  }
-  return key;
-}
-
-// src/signer/verbs.ts
-function candidatesFile(home) {
-  return join9(paths.keys(home), "candidates.json");
-}
-async function readCandidatesRaw(home) {
-  const f = candidatesFile(home);
-  const v = await readJsonStrict(f, []);
-  if (!Array.isArray(v)) throw new UpError("INTERNAL", `${f} is damaged (it does not hold a list); nothing was changed and it will not be overwritten`, { hint: `repair it or restore it (a previous copy may be at ${f}.bak); never delete it: it lists the agent's keys` });
-  return v;
-}
-function isCandidate(c) {
-  return Boolean(c && typeof c === "object" && isAddress9(c.address, { strict: false }) && typeof c.backend === "string");
-}
-async function readCandidates(home) {
-  return (await readCandidatesRaw(home)).filter(isCandidate);
-}
-async function updateCandidates(home, fn) {
-  await writeJsonWithBackup(candidatesFile(home), fn(await readCandidatesRaw(home)), Array.isArray);
-}
-async function dropCandidate(home, address) {
-  const raw = await readCandidatesRaw(home);
-  if (raw.some((k) => isCandidate(k) && sameAddress(k.address, address))) await updateCandidates(home, (list) => list.filter((k) => !(isCandidate(k) && sameAddress(k.address, address))));
-}
-function sameAddress(a, b) {
-  return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
-}
-function sameKey(a, b) {
-  return !a && !b || sameAddress(a, b);
-}
-async function storeRecorded(home, backendId, store2, note) {
-  let recorded;
-  try {
-    return await store2(async (address) => {
-      try {
-        await recordKey(home, { address, backend: backendId, ...note ? { note } : {} });
-      } catch (e) {
-        throw new UpError("INTERNAL", `could not record the new key in ${inventoryFile(home)} (${e.message}); no key was created`, { hint: "fix the state directory (keys/), then retry" });
-      }
-      recorded = address;
-    });
-  } catch (e) {
-    if (recorded) {
-      const d = e?.details;
-      const why = d?.kept ? `kept after ${d.problem ?? "a failed check"}` : "creation failed; not stored";
-      await recordKey(home, { address: recorded, backend: backendId, note: why, ...d?.kept ? {} : { notStored: true } }).catch(() => {
-      });
-    }
-    throw e;
-  }
-}
-async function createRecorded(home, backend) {
-  return storeRecorded(home, backend.id, (before) => backend.create(before));
-}
-async function importRecorded(home, backend, privateKey, note) {
-  const importKey = backend.importKey;
-  if (!importKey) throw new UpError("NOT_SUPPORTED", `the ${backend.id} key store cannot import a key`, { hint: "choose another key store with --backend (up key backend lists them)" });
-  return storeRecorded(home, backend.id, (before) => importKey.call(backend, privateKey, before), note);
-}
-function requireController(cfg) {
-  if (!cfg.controller) throw new UpError("NO_SIGNER", "no controller key is configured", { hint: "run: up init" });
-  return cfg.controller;
-}
-function addressArg(v, name) {
-  if (typeof v !== "string" || !isAddress9(v, { strict: false })) throw new UpError("BAD_ARGS", `--${name} must be a 20-byte 0x address`);
-  return getAddress12(v);
-}
-function protectionText(address, backendId, custody = []) {
-  return [`Controller address: ${address}`, `Key protection: ${plainProtection(internalBackend(backendId).protectionInfo())}`, ...custody.map((w) => `Warning: ${w}`)].join("\n");
-}
-var BACKEND_CHOICES = ["auto", ...BACKEND_IDS];
-var NOT_IN_STORE_HINT = "check the address with: up key address (it lists every key of the agent); an additional key is created with: up key new-candidate";
-var LOCK_WAIT_MS = 15e3;
-var LOCK_STALE_MS = 12e4;
-async function withKeyLock(home, fn) {
-  const dir = paths.keys(home);
-  await ensureDir(dir, 448);
-  const lock = join9(dir, ".lifecycle.lock");
-  const deadline = Date.now() + LOCK_WAIT_MS;
-  for (; ; ) {
-    try {
-      const fh = await open3(lock, "wx", 384);
-      await fh.writeFile(`${process.pid} ${(/* @__PURE__ */ new Date()).toISOString()}
-`);
-      await fh.close();
-      break;
-    } catch (e) {
-      if (e.code !== "EEXIST") throw e;
-      const st = await stat4(lock).catch(() => null);
-      if (st && Date.now() - st.mtimeMs > LOCK_STALE_MS) {
-        await rm4(lock, { force: true });
-        continue;
-      }
-      if (Date.now() > deadline) {
-        throw new UpError("INTERNAL", "another key operation is in progress", { hint: `retry in a moment; if no other 'up' process is running, delete ${lock}` });
-      }
-      await new Promise((r) => setTimeout(r, 100));
-    }
-  }
-  try {
-    return await fn();
-  } finally {
-    await rm4(lock, { force: true });
-  }
-}
-async function freshConfig(ctx) {
-  const c = await ctx.config();
-  if (!existsSync14(paths.config(ctx.home))) return c;
-  const d = await readConfigFile(ctx.home);
-  return { ...c, controller: d.controller, previousControllers: d.previousControllers, chainControllers: d.chainControllers };
-}
-function explicitChain(args) {
-  return args.chain !== void 0 && args.chain !== "";
-}
-function chainText(ctx, chainId) {
-  try {
-    return `${ctx.registry.chain(chainId).name} (${chainId})`;
-  } catch {
-    return `chain ${chainId}`;
-  }
-}
-function perChainLines(ctx, cfg) {
-  const own = chainControllerList(cfg);
-  return own.length ? [`Own key per chain (used there instead of the default): ${own.map((c) => `${chainText(ctx, c.chainId)} → ${c.address} (${c.backend})`).join("; ")}`] : [];
-}
-async function keptKeys(home, cfg) {
-  const inUse = [cfg.controller?.address, ...chainControllerList(cfg).map((k) => k.address)];
-  const out = [];
-  const add2 = (k, kind) => {
-    if (!isAddress9(k.address, { strict: false }) || inUse.some((a) => sameAddress(a, k.address)) || out.some((o) => sameAddress(o.address, k.address))) return;
-    out.push({ address: getAddress12(k.address), backend: k.backend, kind, ...k.chainId !== void 0 ? { chainId: k.chainId } : {}, ...kind === "recovered" && k.note ? { note: k.note } : {} });
-  };
-  for (const k of cfg.previousControllers ?? []) add2(k, "previous");
-  for (const k of await readCandidates(home)) add2(k, "additional");
-  for (const k of await readInventory(home)) {
-    if (k.notStored && !await Promise.resolve().then(() => internalBackend(k.backend).has(k.address)).catch(() => false)) continue;
-    add2(k, "recovered");
-  }
-  return out;
-}
-var KIND_TEXT = { additional: "not used yet", previous: "used before", recovered: "created, not recorded in the config" };
-function existingResult(home, c, warnings) {
-  const custody = custodyWarnings(c.backend, home);
-  return {
-    data: { address: c.address, backend: c.backend, protection: internalBackend(c.backend).protectionInfo(), created: false, custodyWarnings: custody },
-    text: protectionText(c.address, c.backend, custody),
-    warnings: [...custody, ...warnings]
-  };
-}
-var initVerb = defineVerb({
-  name: "init",
-  group: "key",
-  summary: "Create the agent's controller key inside a protected key store and show its public address.",
-  description: "Generates a new secp256k1 controller key inside the strongest available key store for this machine (macOS login keychain, systemd-creds, desktop keyring, Windows DPAPI, or a private key file inside a cloud agent VM) and records only its public address in config. The private key is never shown. Safe to run unattended for first-time setup. The key is permanent: if one already exists it is kept and nothing changes (it is never replaced); if it is missing from its store, init says so and points to its backup.",
-  risk: "secret",
-  params: [
-    { name: "backend", type: "string", description: "Key store to use; 'auto' picks the strongest unattended store for this machine.", default: "auto", enum: BACKEND_CHOICES }
-  ],
-  examples: ["up init", "up init --backend protected-file"],
-  async run(ctx, args) {
-    const requested = String(args.backend ?? "auto");
-    const existing = (await freshConfig(ctx)).controller;
-    if (existing) {
-      const warnings = ["a controller key already exists; it is permanent and is kept, nothing was changed"];
-      if (requested !== "auto" && requested !== existing.backend) warnings.push(`--backend ${requested} ignored: the existing key lives in ${existing.backend}`);
-      try {
-        if (!await internalBackend(existing.backend).has(existing.address)) warnings.push(`${existing.address}: ${missingKeyHint(existing.backend)}`);
-      } catch (e) {
-        warnings.push(`could not check the key store: ${e instanceof UpError ? e.message : "error"}`);
-      }
-      return existingResult(ctx.home, existing, warnings);
-    }
-    const backend = await chooseBackend(requested);
-    const protection = internalBackend(backend.id).protectionInfo();
-    const custody = custodyWarnings(backend.id, ctx.home);
-    if (ctx.flags.dryRun) {
-      return {
-        data: { dryRun: true, backend: backend.id, protection, custodyWarnings: custody },
-        text: [`Dry run: a new controller key would be created in ${backend.id}.`, `Key protection: ${plainProtection(protection)}`, ...custody.map((w) => `Warning: ${w}`)].join("\n"),
-        ...custody.length ? { warnings: custody } : {}
-      };
-    }
-    return withKeyLock(ctx.home, async () => {
-      const latest = await freshConfig(ctx);
-      if (latest.controller) return existingResult(ctx.home, latest.controller, ["another process created the controller key at the same time; kept that one"]);
-      const address = await createRecorded(ctx.home, backend);
-      const createdAt = (/* @__PURE__ */ new Date()).toISOString();
-      try {
-        await ctx.updateConfig((cur) => {
-          if (cur.controller && !sameAddress(cur.controller.address, address)) {
-            throw new UpError("BAD_ARGS", `another process set the agent's key ${cur.controller.address} meanwhile; it was kept`);
-          }
-          return { ...cur, version: 1, controller: { address, backend: backend.id, createdAt } };
-        });
-      } catch (e) {
-        throw new UpError("INTERNAL", `the new key ${address} was created in ${backend.id} but the config could not be saved (${e.message})`, {
-          hint: `the key stays in its store and is listed by: up key address; record it with: up key activate ${address} --backend ${backend.id}`
-        });
-      }
-      ctx.log(`controller key created in ${backend.id}: ${address}`);
-      return {
-        data: { address, backend: backend.id, protection, created: true, custodyWarnings: custody },
-        text: protectionText(address, backend.id, custody),
-        ...custody.length ? { warnings: custody } : {}
-      };
-    });
-  }
-});
-var keyAddressVerb = defineVerb({
-  name: "key address",
-  group: "key",
-  summary: "Show the agent's controller address (the default key, or with --chain the key used on that chain) and the key store that protects it; lists chains that use their own key and every other key the agent keeps.",
-  risk: "local",
-  params: [],
-  async run(ctx, args) {
-    const cfg = await ctx.config();
-    const otherKeys = await keptKeys(ctx.home, cfg);
-    const chainId = explicitChain(args) ? ctx.chainId(args.chain) : void 0;
-    const c = chainId !== void 0 ? controllerFor(cfg, chainId) : void 0;
-    const def = cfg.controller;
-    if (!c && !def && otherKeys.length) {
-      throw new UpError("NO_SIGNER", `no default key is configured, but the agent keeps these keys: ${otherKeys.map((k) => `${k.address} (${k.backend}, ${KIND_TEXT[k.kind]})`).join("; ")}`, {
-        hint: `use one of them with: up key activate <address>`,
-        details: { otherKeys }
-      });
-    }
-    const used = c ?? requireController(cfg);
-    const protection = internalBackend(used.backend).protectionInfo();
-    const chainControllers = chainControllerList(cfg).map((k) => ({ chainId: k.chainId, address: k.address, backend: k.backend }));
-    return {
-      data: {
-        address: used.address,
-        backend: used.backend,
-        createdAt: used.createdAt,
-        level: protection.level,
-        ...chainId !== void 0 ? { chainId, scope: c?.scope ?? "default" } : {},
-        default: def ? { address: def.address, backend: def.backend } : null,
-        chainControllers,
-        otherKeys
-      },
-      text: [
-        chainId !== void 0 ? `${used.address} (${used.backend}) — the agent's ${c?.scope === "chain" ? "own key" : "default key"} on ${chainText(ctx, chainId)}` : `${used.address} (${used.backend})`,
-        ...perChainLines(ctx, cfg),
-        ...otherKeys.length ? [`Other keys of the agent (kept in their store, never deleted): ${otherKeys.map((k) => `${k.address} (${k.backend}, ${KIND_TEXT[k.kind]}${k.kind === "previous" && k.chainId !== void 0 ? ` on ${chainText(ctx, k.chainId)}` : ""}${k.note ? `; ${k.note}` : ""})`).join("; ")}`] : []
-      ].join("\n")
-    };
-  }
-});
-var keyBackendVerb = defineVerb({
-  name: "key backend",
-  group: "key",
-  summary: "Check every key store on this machine and show which one protects the controller key.",
-  risk: "local",
-  params: [],
-  async run(ctx) {
-    const cfg = await ctx.config();
-    const [probes, env] = await Promise.all([probeAll(), environment()]);
-    const activeId = cfg.controller?.backend;
-    const custody = activeId ? custodyWarnings(activeId, ctx.home) : [];
-    const active = activeId ? { address: cfg.controller.address, backend: activeId, protection: internalBackend(activeId).protectionInfo(), custodyWarnings: custody } : null;
-    const perChain = chainControllerList(cfg).map((k) => ({ chainId: k.chainId, address: k.address, backend: k.backend }));
-    const chainCustody = perChain.flatMap((k) => custodyWarnings(k.backend, ctx.home)).filter((w, i, all) => !custody.includes(w) && all.indexOf(w) === i);
-    const relevant = probes.filter((p) => p.available || p.id === activeId || !["memory", "remote-signer"].includes(p.id));
-    const lines = [];
-    lines.push(active ? `Active: ${active.backend} — ${plainProtection(active.protection)}` : "Active: none (run: up init)");
-    lines.push(...perChainLines(ctx, cfg));
-    for (const p of relevant) lines.push(`${p.id === activeId ? "*" : " "} ${p.id.padEnd(21)} ${(p.available ? "available" : "unavailable").padEnd(11)} ${p.level.padEnd(17)} ${p.reason}`);
-    const warnings = [];
-    const ap = activeId ? probes.find((p) => p.id === activeId) : void 0;
-    if (ap && !ap.available) warnings.push(`the active key store ${ap.id} is not available right now: ${ap.reason}`);
-    for (const k of perChain) {
-      const p = probes.find((x) => x.id === k.backend);
-      if (k.backend !== activeId && p && !p.available) warnings.push(`the key store ${p.id} of the key for ${chainText(ctx, k.chainId)} is not available right now: ${p.reason}`);
-    }
-    warnings.push(...custody, ...chainCustody);
-    for (const w of warnings) lines.push(`Warning: ${w}`);
-    return {
-      data: {
-        active,
-        chainControllers: perChain,
-        backends: probes,
-        environment: { platform: env.platform, wsl: env.wsl, container: env.container, vm: env.vm, agentHost: env.agentHost, headless: env.headless, ssh: env.ssh, systemdVersion: env.systemdVersion, declaredAgentVm: env.isolated, unattendedHost: env.unattendedHost, hints: env.hints }
-      },
-      text: lines.join("\n"),
-      ...warnings.length ? { warnings } : {}
-    };
-  }
-});
-var MIN_PASSPHRASE_LENGTH = 12;
-var PASSPHRASE_HINT = 'a human must run this in their own terminal (never via chat): read -rs UP_BACKUP_PASSPHRASE && export UP_BACKUP_PASSPHRASE && up key backup --encrypted --explicit-consent --path <file> --approval "<your words>"; unset UP_BACKUP_PASSPHRASE';
-async function writeNewFileExclusive(file2, content) {
-  const dir = dirname3(file2);
-  const tmp = join9(dir, `.${basename(file2)}.${randomBytes6(6).toString("hex")}.tmp`);
-  await writeFile4(tmp, content, { mode: 384, flag: "wx" });
-  try {
-    if (process.platform !== "win32") await chmod2(tmp, 384);
-    try {
-      await link2(tmp, file2);
-    } catch (e) {
-      const code = e.code;
-      if (code === "EEXIST") throw new UpError("BAD_ARGS", `${file2} already exists; refusing to overwrite it`);
-      try {
-        await writeFile4(file2, content, { mode: 384, flag: "wx" });
-      } catch (e2) {
-        if (e2.code === "EEXIST") throw new UpError("BAD_ARGS", `${file2} already exists; refusing to overwrite it`);
-        throw e2;
-      }
-      if (process.platform !== "win32") await chmod2(file2, 384).catch(() => {
-      });
-    }
-  } catch (e) {
-    await rm4(tmp, { force: true }).catch(() => {
-    });
-    throw e;
-  }
-  try {
-    await rm4(tmp, { force: true });
-  } catch (e) {
-    return { warning: `the file was written, but the temporary copy ${tmp} could not be removed (${e.code ?? "error"}); it holds the same content and can be deleted by hand` };
-  }
-  return {};
-}
-var keyBackupVerb = defineVerb({
-  name: "key backup",
-  group: "key",
-  summary: "Write a passphrase-encrypted backup (Ethereum keystore v3) of the controller key (default key; with --chain the key used on that chain) — human-run only.",
-  description: `Only encrypted backups exist; the raw key is never exported. Requires --encrypted, --explicit-consent, a human approval, and a passphrase (>= ${MIN_PASSPHRASE_LENGTH} characters) in the UP_BACKUP_PASSPHRASE environment variable, set by the human in their own terminal (never passed as an argument, never typed into chat). The preferred recovery path is a second (human) controller on the profile, not a key export.`,
-  risk: "secret",
-  params: [
-    { name: "path", type: "string", description: "Where to write the keystore JSON (must not exist; parent directory must exist).", required: true, positional: 0 },
-    { name: "encrypted", type: "boolean", description: "Required: confirms an encrypted keystore v3 backup.", default: false },
-    { name: "explicit-consent", type: "boolean", description: "Required: the human explicitly wants a copy of the key to exist outside the key store.", default: false }
-  ],
-  async run(ctx, args) {
-    if (args.encrypted !== true) throw new UpError("BAD_ARGS", "only encrypted backups are supported (--encrypted); the raw key is never exported");
-    if (args["explicit-consent"] !== true) throw new UpError("BAD_ARGS", "a key backup needs --explicit-consent from the human", { hint: PASSPHRASE_HINT });
-    const cfgNow = await ctx.config();
-    const c = explicitChain(args) ? controllerFor(cfgNow, ctx.chainId(args.chain)) ?? requireController(cfgNow) : requireController(cfgNow);
-    const raw = typeof args.path === "string" ? args.path.trim() : "";
-    if (!raw) throw new UpError("BAD_ARGS", "--path is required");
-    const file2 = isAbsolute(raw) ? raw : resolve4(raw);
-    const parent = await stat4(dirname3(file2)).catch(() => null);
-    if (!parent?.isDirectory()) throw new UpError("BAD_ARGS", `directory ${dirname3(file2)} does not exist`);
-    if (await lstat2(file2).then(() => true, () => false)) throw new UpError("BAD_ARGS", `${file2} already exists; refusing to overwrite it`);
-    const passphrase = process.env.UP_BACKUP_PASSPHRASE;
-    registerSecret(passphrase);
-    if (!passphrase) throw new UpError("BAD_ARGS", "no backup passphrase: UP_BACKUP_PASSPHRASE is not set", { hint: PASSPHRASE_HINT });
-    if (passphrase.length < MIN_PASSPHRASE_LENGTH) throw new UpError("BAD_ARGS", `the backup passphrase must have at least ${MIN_PASSPHRASE_LENGTH} characters`, { hint: PASSPHRASE_HINT });
-    const backend = internalBackend(c.backend);
-    if (!backend.exportPrivateKey) throw new UpError("NOT_SUPPORTED", `the ${c.backend} backend cannot produce a backup`);
-    const kdf = { name: "scrypt", ...STANDARD_SCRYPT };
-    await ctx.consent({
-      verb: "key backup",
-      risk: "secret",
-      summary: {
-        effect: "write an encrypted copy of the controller key to a file",
-        controller: c.address,
-        backend: c.backend,
-        path: file2,
-        format: `Ethereum keystore v3 (scrypt n=${kdf.n} r=${kdf.r} p=${kdf.p}, aes-128-ctr)`,
-        note: "anyone with this file AND the passphrase controls the key; prefer a second human controller for recovery"
-      }
-    });
-    if (ctx.flags.dryRun) {
-      return { data: { dryRun: true, path: file2, address: c.address, format: "keystore-v3", kdf }, text: `Dry run: an encrypted keystore for ${c.address} would be written to ${file2}.` };
-    }
-    delete process.env.UP_BACKUP_PASSPHRASE;
-    const key = await backend.exportPrivateKey(c.address);
-    const ks = await encryptKeystoreV3(key, passphrase);
-    const check = await decryptKeystoreV3(ks, passphrase);
-    if (check !== key) throw new UpError("INTERNAL", "backup verification failed; nothing was written");
-    const written = await writeNewFileExclusive(file2, JSON.stringify(ks, null, 2) + "\n");
-    ctx.log(`encrypted key backup written: ${file2}`);
-    return {
-      data: { path: file2, address: c.address, format: "keystore-v3", kdf, verified: true },
-      text: `Encrypted backup of ${c.address} written to ${file2} (Ethereum keystore v3). Keep the passphrase somewhere else — the file alone cannot be opened, the file plus passphrase controls the key.`,
-      ...written.warning ? { warnings: [written.warning] } : {}
-    };
-  }
-});
-var keyNewCandidateVerb = defineVerb({
-  name: "key new-candidate",
-  group: "key",
-  summary: "Create an additional key in the same key store (e.g. a separate key for one network, or a replacement when a key was lost); the agent's current key stays as it is.",
-  description: "Generates a new key next to the agent's current key and returns its public address. Nothing changes on-chain and the agent keeps signing with its current key until `up key activate`. Keys are permanent: no key is ever deleted; the current key stays in its store and stays listed.",
-  risk: "secret",
-  params: [],
-  async run(ctx) {
-    const c = requireController(await freshConfig(ctx));
-    const backend = internalBackend(c.backend);
-    await ctx.consent({
-      verb: "key new-candidate",
-      risk: "secret",
-      summary: {
-        effect: "create an additional controller key (not used until activated)",
-        activeController: c.address,
-        backend: c.backend,
-        note: "nothing changes on-chain and the active key stays active until: up key activate <address>"
-      }
-    });
-    if (ctx.flags.dryRun) {
-      return { data: { dryRun: true, backend: c.backend }, text: `Dry run: a new inactive key would be created in ${c.backend}.` };
-    }
-    const address = await withKeyLock(ctx.home, async () => {
-      await readCandidatesRaw(ctx.home);
-      const a = await createRecorded(ctx.home, backend);
-      try {
-        await updateCandidates(ctx.home, (list) => [...list, { address: a, backend: c.backend, createdAt: (/* @__PURE__ */ new Date()).toISOString() }]);
-      } catch (e) {
-        throw new UpError("INTERNAL", `the additional key ${a} was created in ${c.backend} but could not be added to the candidates list (${e.message})`, {
-          hint: `the key stays in its store and is listed by: up key address; use it with: up key activate ${a} --backend ${c.backend} (add --chain <id> for one network)`
-        });
-      }
-      return a;
-    });
-    ctx.log(`additional key created in ${c.backend}: ${address}`);
-    return {
-      data: { address, backend: c.backend, active: false, protection: backend.protectionInfo() },
-      text: `New additional key: ${address} (${c.backend}, not used yet). The current key ${c.address} stays as it is.
-Next: a co-owner or admin wallet adds it as a controller of the profile on the network(s) where it will be used; then: up key activate ${address} --chain <id> (one network) or up key activate ${address} (default key).`
-    };
-  }
-});
-var keyActivateVerb = defineVerb({
-  name: "key activate",
-  group: "key",
-  summary: "Choose which of the agent's keys it signs with: the default key, or with --chain the key used on that chain only. The previous key is kept in its store and stays listed; no key is ever deleted.",
-  description: "Without --chain the default key changes (every chain without its own key follows). With --chain <id> only that chain switches to the key; activating the default key's address for a chain makes that chain use the default key again. Only the local signing key changes: the key must be a controller of the profile on that chain (check with: up profile status). Keys are permanent: the previous key is never deleted and can be activated again.",
-  risk: "secret",
-  params: [
-    { name: "address", type: "string", description: "Address of the key to use (an additional key, a previous key, or with --chain also the default key); up key address lists them all.", required: true, positional: 0 },
-    { name: "backend", type: "string", description: "Key store holding that key (default: where it was created, else the current key's store).", enum: BACKEND_IDS }
-  ],
-  async run(ctx, args) {
-    const address = addressArg(args.address, "address");
-    if (explicitChain(args)) return activateForChain(ctx, args, address, ctx.chainId(args.chain));
-    const cfg = await freshConfig(ctx);
-    const current = cfg.controller;
-    if (current && sameAddress(current.address, address)) {
-      return { data: { address: current.address, backend: current.backend, changed: false }, text: `${current.address} is already the active controller.` };
-    }
-    const candidates = await readCandidates(ctx.home);
-    const cand = candidates.find((k) => sameAddress(k.address, address));
-    const previous = cfg.previousControllers?.find((r) => sameAddress(r.address, address));
-    const own = chainControllerList(cfg);
-    const chainKey = own.find((k) => sameAddress(k.address, address));
-    const recorded = (await readInventory(ctx.home)).find((k) => sameAddress(k.address, address));
-    const backendId = args.backend ?? cand?.backend ?? previous?.backend ?? chainKey?.backend ?? recorded?.backend ?? current?.backend;
-    if (!backendId) throw new UpError("BAD_ARGS", "cannot tell which key store holds this key; pass --backend", { hint: "run: up key backend" });
-    const backend = internalBackend(backendId);
-    if (!await backend.has(address)) {
-      throw new UpError("NO_SIGNER", `no key for ${address} in ${backendId}`, { hint: NOT_IN_STORE_HINT });
-    }
-    await ctx.consent({
-      verb: "key activate",
-      risk: "secret",
-      summary: {
-        effect: "switch the agent's active (default) controller key",
-        from: current?.address ?? null,
-        to: address,
-        backend: backendId,
-        note: "only the local signing key changes; on-chain permissions of both keys stay as they are",
-        ...own.length ? { chainsWithOwnKey: own.map((k) => ({ chainId: k.chainId, address: k.address })) } : {}
-      }
-    });
-    if (ctx.flags.dryRun) {
-      return { data: { dryRun: true, address, backend: backendId, previous: current?.address ?? null }, text: `Dry run: ${address} (${backendId}) would become the active controller.` };
-    }
-    const changed = () => new UpError("BAD_ARGS", "the active controller changed while waiting for approval; nothing was switched", { hint: "run: up key address, then decide again" });
-    await withKeyLock(ctx.home, async () => {
-      const latest = await freshConfig(ctx);
-      if (!sameKey(latest.controller?.address, current?.address)) throw changed();
-      await backend.load(address);
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      await ctx.updateConfig((cur) => {
-        if (!sameKey(cur.controller?.address, current?.address)) throw changed();
-        const previousList = (cur.previousControllers ?? []).filter((r) => !sameAddress(r.address, address) && !sameAddress(r.address, cur.controller?.address));
-        if (cur.controller) previousList.push({ address: cur.controller.address, backend: cur.controller.backend, switchedAt: now });
-        const next = { ...cur, version: 1, controller: { address, backend: backendId, createdAt: cand?.createdAt ?? recorded?.createdAt ?? now }, previousControllers: previousList };
-        if (next.chainControllers) {
-          const kept = Object.fromEntries(Object.entries(next.chainControllers).filter(([, k]) => !sameAddress(k.address, address)));
-          if (Object.keys(kept).length) next.chainControllers = kept;
-          else delete next.chainControllers;
-        }
-        return next;
-      });
-      await dropCandidate(ctx.home, address);
-    });
-    ctx.log(`active controller switched to ${address} (${backendId})`);
-    const ownAfter = own.filter((k) => !sameAddress(k.address, address));
-    return {
-      data: { address, backend: backendId, previous: current?.address ?? null, changed: true, chainControllers: ownAfter.map((k) => ({ chainId: k.chainId, address: k.address })) },
-      text: [
-        protectionText(address, backendId),
-        current ? `Previous key ${current.address} is kept in ${current.backend} and stays listed (up key address); its on-chain permissions stay as they are.` : "",
-        ownAfter.length ? `Chains with their own key keep it: ${ownAfter.map((k) => `${chainText(ctx, k.chainId)} → ${k.address}`).join("; ")}.` : ""
-      ].filter(Boolean).join("\n")
-    };
-  }
-});
-async function activateForChain(ctx, args, address, chainId) {
-  const where = chainText(ctx, chainId);
-  const cfg = await freshConfig(ctx);
-  const def = cfg.controller;
-  const current = controllerFor(cfg, chainId);
-  if (current && sameAddress(current.address, address)) {
-    return { data: { address: current.address, backend: current.backend, chainId, scope: current.scope, changed: false }, text: `${current.address} already is the agent's key on ${where}.` };
-  }
-  const toDefault = Boolean(def && sameAddress(def.address, address));
-  const candidates = await readCandidates(ctx.home);
-  const cand = candidates.find((k) => sameAddress(k.address, address));
-  const previous = cfg.previousControllers?.find((r) => sameAddress(r.address, address));
-  const usedElsewhere = chainControllerList(cfg).find((k) => sameAddress(k.address, address));
-  const recorded = (await readInventory(ctx.home)).find((k) => sameAddress(k.address, address));
-  const backendId = args.backend ?? (toDefault ? def.backend : void 0) ?? usedElsewhere?.backend ?? cand?.backend ?? previous?.backend ?? recorded?.backend ?? def?.backend;
-  if (!backendId) throw new UpError("BAD_ARGS", "cannot tell which key store holds this key; pass --backend", { hint: "run: up key backend" });
-  const backend = internalBackend(backendId);
-  if (!await backend.has(address)) {
-    throw new UpError("NO_SIGNER", `no key for ${address} in ${backendId}`, { hint: NOT_IN_STORE_HINT });
-  }
-  await ctx.consent({
-    verb: "key activate",
-    risk: "secret",
-    chainId,
-    summary: {
-      effect: toDefault ? `use the default key again on ${where}` : `use ${address} as the agent's key on ${where} only`,
-      chain: where,
-      from: current?.address ?? null,
-      to: address,
-      backend: backendId,
-      note: "only the local signing key for this chain changes; other chains keep their key, and on-chain permissions stay as they are — the key must be a controller of the profile on this chain"
-    }
-  });
-  if (ctx.flags.dryRun) {
-    return { data: { dryRun: true, address, backend: backendId, chainId, previous: current?.address ?? null }, text: `Dry run: ${address} (${backendId}) would become the agent's key on ${where}.` };
-  }
-  const changed = () => new UpError("BAD_ARGS", `the agent's key on ${where} changed while waiting for approval; nothing was switched`, { hint: `run: up key address --chain ${chainId}, then decide again` });
-  await withKeyLock(ctx.home, async () => {
-    const latest = await freshConfig(ctx);
-    if (!sameKey(controllerFor(latest, chainId)?.address, current?.address)) throw changed();
-    await backend.load(address);
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    await ctx.updateConfig((cur) => {
-      if (!sameKey(controllerFor(cur, chainId)?.address, current?.address)) throw changed();
-      const own = { ...cur.chainControllers ?? {} };
-      const previousOwn = own[String(chainId)];
-      if (toDefault) delete own[String(chainId)];
-      else own[String(chainId)] = { address, backend: backendId, createdAt: cand?.createdAt ?? usedElsewhere?.createdAt ?? recorded?.createdAt ?? now };
-      let previousList = (cur.previousControllers ?? []).filter((r) => !sameAddress(r.address, address));
-      if (previousOwn && !sameAddress(previousOwn.address, cur.controller?.address) && !Object.values(own).some((k) => sameAddress(k.address, previousOwn.address))) {
-        previousList = [...previousList.filter((r) => !sameAddress(r.address, previousOwn.address)), { address: previousOwn.address, backend: previousOwn.backend, switchedAt: now, chainId }];
-      }
-      const next = { ...cur, version: 1, previousControllers: previousList.length ? previousList : void 0 };
-      if (Object.keys(own).length) next.chainControllers = own;
-      else delete next.chainControllers;
-      if (!next.previousControllers) delete next.previousControllers;
-      return next;
-    });
-    await dropCandidate(ctx.home, address);
-  });
-  ctx.log(`agent key on chain ${chainId} switched to ${address} (${backendId})`);
-  return {
-    data: { address, backend: backendId, chainId, scope: toDefault ? "default" : "chain", previous: current?.address ?? null, changed: true },
-    text: [
-      toDefault ? `On ${where} the agent uses its default key ${address} again.` : `On ${where} the agent now signs with ${address} (${backendId}); every other chain keeps its key.`,
-      current ? `Previous key there: ${current.address} (kept in its store and listed; its on-chain permissions stay as they are).` : "",
-      `Check that it is a controller of your profile on ${where}: up profile status --chain ${chainId}`
-    ].filter(Boolean).join("\n")
-  };
-}
-var keyVerbs = [initVerb, keyAddressVerb, keyBackendVerb, keyBackupVerb, keyNewCandidateVerb, keyActivateVerb];
+// src/verbs/index.ts
+init_verbs2();
 
 // src/backup/verbs.ts
 init_verbs();
@@ -8917,10 +9418,11 @@ defineVerb({
   name: "backup export",
   group: "backup",
   summary: "Make a backup file of the agent's profiles and keys that the Universal Profile mobile app can import (LSP-30), encrypted with a password by default.",
-  description: "Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) or at --path. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.",
+  description: "Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) as `<your display name> - universal-profiles-backup-YYYY-MM-DD.json` (pass --bot-name with your own display name; never guess another agent's or brand's name), or at --path exactly as given. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.",
   risk: "secret",
   params: [
-    { name: "path", type: "string", positional: 0, description: "Where to write the file (must not exist; its folder must exist). Default: <UP_HOME>/backups/universal-profiles-backup-YYYY-MM-DD.json." },
+    { name: "path", type: "string", positional: 0, description: "Where to write the file (must not exist; its folder must exist). Used exactly as given, without the agent prefix. Default: <UP_HOME>/backups/<agent display name> - universal-profiles-backup-YYYY-MM-DD.json." },
+    { name: "bot-name", type: "string", description: `Your own display name as the human sees it in this chat (e.g. "Alice"): the default file name starts with it. Pass it every time; if omitted, the host's UP_AGENT_NAME is used, else the name has no prefix. A public label only, never a key or password; unsafe characters are removed.` },
     { name: "mode", type: "string", enum: MODES, default: "encrypted", description: "encrypted (keys locked with a password, default), public (no keys at all) or unencrypted (keys in plain text; dangerous)." },
     { name: "profiles", type: "string[]", description: "Only these profiles (addresses or aliases). Default: every profile on this machine. The keys are always all of the agent's keys." },
     ...PASSWORD_HELP,
@@ -8928,7 +9430,7 @@ defineVerb({
     { name: "explicit-consent", type: "boolean", default: false, description: "Required for --mode unencrypted: the human explicitly wants the keys in a file without a password." },
     { name: "refresh", type: "boolean", default: false, description: "Also read each profile's current controllers from the networks (best effort, 8 seconds per network)." }
   ],
-  examples: [`up backup export --approval "<the human's words>"`, "up backup export --mode public", 'up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval "<their words>"'],
+  examples: [`up backup export --bot-name "<your display name>" --approval "<the human's words>"`, 'up backup export --mode public --bot-name "<your display name>"', 'up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval "<their words>"'],
   run: (ctx, a) => import("./backup.mjs").then((m) => m.runExport(ctx, a))
 });
 defineVerb({
@@ -10859,14 +11361,14 @@ defineVerb({
     const first = planDeployment(firstInputs);
     const warnings = [];
     if ((BigInt(firstInputs.permissions) & ADMIN_PERMISSIONS) === 0n) warnings.push("the initial controller would have no CHANGEOWNER/ADDCONTROLLER/EDITPERMISSIONS: nobody could ever change permissions or ownership of this profile");
-    let onChain2;
+    let onChain3;
     const chainArg = a.chain ?? (cfg.defaultChain ? String(cfg.defaultChain) : void 0);
     if (chainArg) {
       try {
         const chainId = ctx.chainId(chainArg);
         const r = await computeOnChain(ctx, chainId, first);
-        onChain2 = { chainId, ...r, matches: r.profile === first.profile && r.keyManager === first.keyManager };
-        if (!onChain2.matches) warnings.push(`the LSP23 factory on chain ${chainId} computes a different address — do not deploy there`);
+        onChain3 = { chainId, ...r, matches: r.profile === first.profile && r.keyManager === first.keyManager };
+        if (!onChain3.matches) warnings.push(`the LSP23 factory on chain ${chainId} computes a different address — do not deploy there`);
       } catch (e) {
         warnings.push(`not cross-checked with the on-chain factory: ${e.message}`);
       }
@@ -10904,7 +11406,7 @@ defineVerb({
         candidates,
         choices,
         say,
-        onChainCrossCheck: onChain2,
+        onChainCrossCheck: onChain3,
         reproduce: a.salt ? void 0 : `up account precompute --seed ${seed} --count ${a.count} --controller ${controller}${a.preset ? ` --preset ${a.preset}` : ""}`,
         next: [
           "Tell the human `say` and attach the one picture in `media` in the same message (text first, then the picture). Never send separate unlabelled identicons, never send a picture without its explanation, never list full addresses (see references/onboarding-ux.md, step 3). After their choice, confirm it with the full address from `choices`.",
@@ -10982,7 +11484,7 @@ defineVerb({
       if (getAddress26(m.controller) === signer.address && !(m.extraControllers ?? []).length) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
     }
     const metadataNext = out.status === "deployed" && chainId === metadataHooks().defaultChainId && !m.lsp3 ? ["ask the human whether they want a profile name, description, profile picture and background image (all optional, can be done later): up profile metadata set --dry-run, then with their approval"] : [];
-    const chainName6 = (() => {
+    const chainName7 = (() => {
       try {
         return ctx.registry.chain(chainId).name;
       } catch {
@@ -10994,13 +11496,13 @@ defineVerb({
     let say;
     let next;
     if (out.status === "dry-run" && g && g.enough) {
-      say = `Everything is ready to create my profile on ${chainName6}. I send and pay this myself from my gas address (it uses at most ${g.maxCost} ${g.symbol} of the ${g.balance} ${g.symbol} there), so you don't need to sign anything. Shall I create it now?`;
+      say = `Everything is ready to create my profile on ${chainName7}. I send and pay this myself from my gas address (it uses at most ${g.maxCost} ${g.symbol} of the ${g.balance} ${g.symbol} there), so you don't need to sign anything. Shall I create it now?`;
       next = ['When they agree: run the same command without --dry-run, with --approval "<their words>".', noWallet];
     } else if (out.status === "dry-run" && g) {
-      say = `To create my profile on ${chainName6} I need a little gas on my gas address first. You only send a small amount once; you don't sign or approve anything else.`;
+      say = `To create my profile on ${chainName7} I need a little gas on my gas address first. You only send a small amount once; you don't sign or approve anything else.`;
       next = [`Run up funding suggest --chain ${chainId} and send its text together with the one QR of your gas address ${g.payer} (references/onboarding-ux.md, step 4). At least ${g.suggestedFunding ?? g.missing} ${g.symbol} is needed for the deployment itself.`, "When the gas has arrived, run this dry run again, then ask whether to create the profile.", noWallet];
     } else if (out.status === "deployed") {
-      say = `Done! My profile now exists on ${chainName6}:
+      say = `Done! My profile now exists on ${chainName7}:
 ${m.profile}`;
       next = [
         "Send the profile address with its QR (up display address <profile> --chain <id>) and say where money for the profile goes: the profile address, never the gas address.",
@@ -11008,7 +11510,7 @@ ${m.profile}`;
         'Later, once, offer the human a backup of the account (a file plus a password they keep safe, restorable in the Universal Profile app): run up backup list; if data.ask is set, ask its question (references/onboarding.md, "Backup"). A new key or profile makes it ask again.'
       ];
     } else if (out.status === "already-deployed") {
-      say = `My profile already exists on ${chainName6}:
+      say = `My profile already exists on ${chainName7}:
 ${m.profile}`;
       next = metadataNext;
     }
@@ -12569,8 +13071,8 @@ defineVerb({
     else throw new UpError("BAD_ARGS", "pass --chains: the relayer publishes no capability document");
     const warnings = [];
     if (caps.supportedChainIds) {
-      const unsupported2 = chainIds.filter((c) => !caps.supportedChainIds.includes(c));
-      if (unsupported2.length) throw new UpError("BAD_ARGS", `relayer capabilities do not list chain(s) ${unsupported2.join(", ")} (supported: ${caps.supportedChainIds.join(", ")})`);
+      const unsupported3 = chainIds.filter((c) => !caps.supportedChainIds.includes(c));
+      if (unsupported3.length) throw new UpError("BAD_ARGS", `relayer capabilities do not list chain(s) ${unsupported3.join(", ")} (supported: ${caps.supportedChainIds.join(", ")})`);
     }
     if (caps.legacy && chainIds.length > 1) warnings.push("legacy relayer (no capability document): one base URL normally serves exactly one chain");
     if (profile === "lukso-live") warnings.push("LUKSO's live relayer only serves registered profiles; quota checks need a LUKSO account (JWT), which this skill does not use");
@@ -14698,6 +15200,7 @@ defineVerb({
 // src/abi/verbs.ts
 init_verbs();
 init_errors();
+init_context();
 init_error_abis();
 init_bundled();
 init_codec();
@@ -16202,6 +16705,7 @@ defineVerb({
 // src/tokens/verbs.ts
 init_verbs();
 init_errors();
+init_context();
 import { getAddress as getAddress44 } from "./vendor-viem.mjs";
 init_read();
 init_codec();
@@ -17288,6 +17792,7 @@ defineVerb({
 // src/display/verbs.ts
 init_verbs();
 init_errors();
+init_context();
 init_blockies();
 
 // src/display/qr.ts
@@ -17875,6 +18380,7 @@ defineVerb({
         controller: keyData.address,
         say: welcomeMessage(ctx),
         next: [
+          "Before offering a new profile, make sure `up profile identity` found nothing saved (run it first in every chat): if it lists a profile, use that one and never create another.",
           "Show `say` and wait for the human's choice. Ask one question at a time; never mention commands, scripts, files or key stores.",
           "Choice 1 → references/onboarding.md J1 (suggest LUKSO first). Choice 2 → J2-relayer. Choice 3 → J2.",
           'If your environment or policy does not let you hold crypto or send transactions yourself, say so first: what the skill normally does, what you may not do here, and which choice still works (2 or 3). See SKILL.md "If your environment restricts crypto transactions".',
@@ -17882,6 +18388,117 @@ defineVerb({
         ]
       },
       text: `ready to onboard; controller ${keyData.address}${keyData.created ? " (new)" : ""}`
+    };
+  }
+});
+
+// src/verbs/identity.ts
+init_verbs();
+init_home();
+init_profile_record();
+init_safe_text();
+init_select();
+init_multichain();
+import { getAddress as getAddress51, isAddress as isAddress21 } from "./vendor-viem.mjs";
+import { readdir as readdir2 } from "node:fs/promises";
+var same = (a, b) => a.toLowerCase() === b.toLowerCase();
+function listWords3(items) {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+function controllerText(cfg) {
+  let perChain = [];
+  try {
+    perChain = chainControllerList(cfg).map((c) => ({ chainId: c.chainId, address: c.address, backend: c.backend }));
+  } catch {
+  }
+  const def = cfg.controller?.address && isAddress21(cfg.controller.address, { strict: false }) ? { address: getAddress51(cfg.controller.address), backend: cfg.controller.backend } : null;
+  return { default: def, perChain };
+}
+defineVerb({
+  name: "profile identity",
+  group: "account",
+  summary: "Read-only, offline: the Universal Profile(s) this machine already knows (default profile, address and recorded controllers per network) and the agent's own signing-key address(es), from the saved public state. Run it first in every new chat and whenever asked for the agent's profile address.",
+  description: "Reads only the public files under UP_HOME (config.json and profiles/*.json): no network call, no key store access, nothing written, no key or profile created. Every chat that shares the same UP_HOME (same user, same machine or mounted persistent storage) gets the same answer; do not rely on chat memory, and never say you have no profile, forgot it, or start `up start` / create a new key or profile while `data.found` is true. `profiles[]` separates the profile (the account that holds assets) from `agentControllers` (the agent's own key addresses, which are NOT the profile) and from each network's `recordedControllers` (who was recorded as a controller when it was saved; not a current permission). Nothing here is fresh: whether a profile is deployed on a network and what the agent may do there is only known after `up profile status` (it reads the chains). A public address alone is not access and recovers no key. If `data.found` is false, this storage knows no profile: that is not proof none exists (another device, another environment or an isolated VM that was reset). Ask the human before creating a new one; a backup (`up backup import`) or an existing profile (onboarding choice 3) is the way back. Several people sharing one agent need separate UP_HOME folders (one per person); this verb shows everything in the one it is given.",
+  risk: "local",
+  params: [],
+  examples: ["up profile identity"],
+  async run(ctx) {
+    const cfg = await ctx.config();
+    const { collectProfiles: collectProfiles2 } = await Promise.resolve().then(() => (init_build(), build_exports));
+    const warnings = [];
+    const states = await collectProfiles2(ctx, cfg, warnings);
+    const names = (await readdir2(paths.profiles(ctx.home)).catch(() => [])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
+    const identities = /* @__PURE__ */ new Map();
+    for (const n of names) identities.set(n.slice(0, 42).toLowerCase(), getAddress51(n.slice(0, 42)));
+    if (cfg.defaultProfile && isAddress21(cfg.defaultProfile, { strict: false })) identities.set(cfg.defaultProfile.toLowerCase(), getAddress51(cfg.defaultProfile));
+    const defaultProfile = cfg.defaultProfile && isAddress21(cfg.defaultProfile, { strict: false }) ? getAddress51(cfg.defaultProfile) : null;
+    const aliasOf = (a) => Object.entries(cfg.aliases ?? {}).find(([, v]) => typeof v === "string" && same(v, a))?.[0];
+    const ordered = [...identities.values()].sort((a, b) => defaultProfile && same(a, defaultProfile) ? -1 : defaultProfile && same(b, defaultProfile) ? 1 : a.localeCompare(b));
+    const profiles = [];
+    for (const id of ordered) {
+      const record = await readProfileRecord(ctx.home, id);
+      const linked = chainAddressesOf(record);
+      const own = states.find((s) => same(s.address, id));
+      const networks = [];
+      const add2 = (state, chainId, address, isLinked) => {
+        const l = chainLabel(ctx, chainId);
+        const net = luksoNetwork(chainId);
+        networks.push({
+          chainId,
+          network: l.name,
+          address,
+          linkedAddress: isLinked,
+          // saved evidence only: an imported backup's network was not seen on a network from here
+          source: state.unverifiedChains.includes(chainId) ? "imported-backup-not-confirmed" : "recorded-here",
+          recordedControllers: (state.controllers[chainId] ?? []).map((c) => ({ address: c.address, recordedFrom: c.source })),
+          lastCheckedAt: typeof record.status?.chains?.[String(chainId)]?.checkedAt === "string" ? record.status.chains[String(chainId)].checkedAt : null,
+          ...net ? { link: universalEverythingUrl(address, net) } : {}
+        });
+      };
+      for (const c of own?.chainIds ?? []) add2(own, c, linked[String(c)] ?? id, false);
+      for (const [chain, address] of Object.entries(linked)) {
+        const state = states.find((s) => same(s.address, address) && s.chainIds.includes(Number(chain)));
+        if (state) add2(state, Number(chain), address, true);
+      }
+      networks.sort((a, b) => a.chainId - b.chainId);
+      const alias = aliasOf(id);
+      profiles.push({ address: id, ...alias ? { alias: safeFileText(alias, 40) } : {}, isDefault: !!defaultProfile && same(id, defaultProfile), networks });
+    }
+    const agentControllers = controllerText(cfg);
+    const configuredChains = (cfg.chains ?? []).map((c) => ({ chainId: c, network: chainLabel(ctx, c).name }));
+    const found = profiles.length > 0;
+    const hasKeys = !!agentControllers.default || agentControllers.perChain.length > 0;
+    const lines = (p) => {
+      const nets = p.networks.map((n) => `${n.network}${n.linkedAddress ? ` (as ${n.address})` : ""}`);
+      return `${p.address}${p.alias ? ` ("${p.alias}")` : ""}${nets.length ? ` on ${listWords3(nets)}` : " (no network recorded yet)"}`;
+    };
+    const say = found ? profiles.length === 1 ? `My Universal Profile is ${lines(profiles[0])}.` : `I know these Universal Profiles: ${profiles.map((p) => `${lines(p)}${p.isDefault ? " (the one I use by default)" : ""}`).join("; ")}.` : "I don't have a Universal Profile saved in this place yet. That doesn't mean none exists: if you already have one, or a backup of mine, tell me and I'll connect it.";
+    const shown = warnings.filter((w) => !/nothing to back up/.test(w));
+    const profileText = profiles.map((p) => `${p.isDefault ? "* " : "  "}${lines(p)}`);
+    return {
+      data: {
+        found,
+        source: "saved public state under UP_HOME (offline, not verified on any network)",
+        defaultProfile,
+        profiles,
+        agentControllers: { ...agentControllers, note: "the agent's own signing-key addresses; they are not the profile and hold no assets by themselves" },
+        configuredChains,
+        keyPresent: hasKeys,
+        fresh: false,
+        say,
+        next: found ? [
+          "Answer from `profiles` (full address, network names, link): this is saved state shared by every chat using this UP_HOME. Never tell the human you have no profile or forgot it, and do not create a key or profile.",
+          "Saved is not current: run `up profile status` for what is deployed and permitted on each network right now before acting or answering about permissions or balances; never quote old permissions or call a network deployed from the address alone.",
+          "Tell the human the address, network names and link in plain words, not file names or commands. Keep the profile (the account), the agent's key address and a controller's recorded address apart.",
+          ...hasKeys ? [] : ["No agent key address is saved here: if signing is needed, `up doctor` says why; never regenerate a key to replace a missing one."]
+        ] : [
+          "Nothing is saved here. Tell the human plainly, without claiming that no profile exists anywhere, and ask whether they already have a Universal Profile or a backup file before offering a new one.",
+          "A fresh or isolated environment (a reset cloud VM, a new machine, a different user) does not see another environment's files. Persistent storage mounted at the same UP_HOME, an encrypted backup (`up backup import`) or the human's own authorised wallet is the way back; an address alone is not access.",
+          "Only if they want a new profile, continue with `up start` (it creates the agent's own key locally)."
+        ]
+      },
+      text: found ? [`Saved profiles (offline; run \`up profile status\` for the current state):`, ...profileText].join("\n") : "No Universal Profile saved on this machine.",
+      warnings: shown.length ? shown : void 0
     };
   }
 });
@@ -17940,6 +18557,7 @@ function parseArgv(argv) {
 
 // src/cli/main.ts
 init_verbs();
+init_context();
 init_lock();
 
 // src/core/output.ts
@@ -18046,48 +18664,16 @@ async function runCli(argv) {
 
 // src/mcp/server.ts
 init_verbs();
-import { createInterface } from "node:readline";
-import { readdirSync as readdirSync3, readFileSync as readFileSync11, existsSync as existsSync17 } from "node:fs";
-import { join as join13 } from "node:path";
+init_context();
 init_lock();
 init_errors();
 init_json();
 init_assets();
+import { createInterface } from "node:readline";
+import { readdirSync as readdirSync3, readFileSync as readFileSync11, existsSync as existsSync17 } from "node:fs";
+import { join as join13 } from "node:path";
 init_secret_guard();
-
-// src/core/safe-text.ts
-var safe_text_exports = {};
-__export(safe_text_exports, {
-  KEY_WITHHELD: () => KEY_WITHHELD,
-  canonicalDateTime: () => canonicalDateTime,
-  looksLikeKey: () => looksLikeKey,
-  safeEcho: () => safeEcho,
-  safeFileText: () => safeFileText
-});
-var INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]/g;
-var SPREAD = /(?<=[0-9a-f])[\s_.,:;'"`|/\\-]+(?=[0-9a-f])/gi;
-var KEY_WITHHELD = "[withheld: looks like key material]";
-function looksLikeKey(text) {
-  const t = text.replace(INVISIBLE, "");
-  return /[0-9a-f]{64}/i.test(t) || /[0-9a-f]{64}/i.test(t.replace(SPREAD, ""));
-}
-function safeFileText(value, max = 80) {
-  const raw = typeof value === "string" ? value : value === void 0 || value === null ? "" : String(value);
-  if (looksLikeKey(raw)) return KEY_WITHHELD;
-  const t = raw.replace(INVISIBLE, " ").trim();
-  return t.length > max ? `${t.slice(0, max)}…` : t;
-}
-function safeEcho(value, max = 64) {
-  const raw = typeof value === "string" ? value : value === void 0 || value === null ? "" : typeof value === "object" ? "[object]" : String(value);
-  const t = raw.replace(INVISIBLE, " ").replace(/[0-9a-f]{32,}/gi, "<hidden>").trim();
-  return t.length > max ? `${t.slice(0, max)}…` : t;
-}
-var ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
-function canonicalDateTime(value) {
-  return typeof value === "string" && ISO_DATE_TIME.test(value) && !Number.isNaN(Date.parse(value)) ? value : void 0;
-}
-
-// src/mcp/server.ts
+init_safe_text();
 var PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 var writeQueue = Promise.resolve();
 function serialised(fn) {
@@ -18230,42 +18816,8 @@ init_errors();
 init_home();
 init_json();
 init_profile_record();
-
-// src/core/public-record.ts
-var public_record_exports = {};
-__export(public_record_exports, {
-  assertNoKeyMaterial: () => assertNoKeyMaterial,
-  holdsKeyMaterial: () => holdsKeyMaterial,
-  textHoldsKey: () => textHoldsKey
-});
-init_errors();
-init_secret_guard();
-var TEXT_FIELDS = /* @__PURE__ */ new Set(["name", "type", "hint", "passwordHint", "encryptionType", "backupDate", "file", "path", "destination", "alias", "label", "note", "effect", "say", "message", "chain", "network"]);
-var PURE_HEX = /^(0x)?[0-9a-f]*$/i;
-var MAX_DEPTH = 24;
-function textHoldsKey(text) {
-  return containsSecret(text) || containsSecret(text.replace(/[^0-9a-z]/gi, "")) || looksLikeKey(text);
-}
-function holdsKeyMaterial(value) {
-  const seen = /* @__PURE__ */ new Set();
-  const walk = (v, field, depth) => {
-    if (typeof v === "string") {
-      if (PURE_HEX.test(v) && !TEXT_FIELDS.has(field)) return containsSecret(v);
-      return textHoldsKey(v);
-    }
-    if (v === null || typeof v !== "object") return false;
-    if (seen.has(v) || depth > MAX_DEPTH) return false;
-    seen.add(v);
-    if (Array.isArray(v)) return v.some((x) => walk(x, field, depth + 1));
-    return Object.entries(v).some(([k, x]) => textHoldsKey(k) || walk(x, k, depth + 1));
-  };
-  return walk(value, "", 0);
-}
-function assertNoKeyMaterial(what, value) {
-  if (holdsKeyMaterial(value)) throw new UpError("BAD_ARGS", `${what} holds private key material (or text shaped like it); nothing was changed`, { hint: "rename or replace it" });
-}
-
-// app.ts
+init_public_record();
+init_safe_text();
 init_secret_guard();
 init_abis();
 init_constants();
@@ -18274,8 +18826,10 @@ init_permissions();
 init_profile();
 init_read2();
 init_signer();
+init_inventory();
 init_local_signer();
 init_select();
+init_verbs2();
 export {
   registry_exports as $s0,
   errors_exports as $s1,

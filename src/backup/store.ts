@@ -8,6 +8,7 @@ import { UpError } from "../core/errors.ts";
 import { assertNoKeyMaterial } from "../core/public-record.ts";
 import { appendLine, ensureDir, paths } from "../core/home.ts";
 import { assertNotKeyMaterialPath } from "../core/secret-guard.ts";
+import { looksLikeKey } from "../core/safe-text.ts";
 import { writeNewFileExclusive } from "../signer/verbs.ts";
 import { backupText, MAX_BACKUP_BYTES, type BackupMode } from "./lsp30-format.ts";
 
@@ -82,22 +83,56 @@ export async function readIndex(home: string): Promise<{ backups: IndexEntry[]; 
   return { backups, events };
 }
 
-/** `universal-profiles-backup-YYYY-MM-DD.json` (UTC date, the app's name), `-2`, `-3` … when taken. */
-export async function defaultBackupPath(home: string, now = new Date()): Promise<string> {
+const MAX_LABEL = 40;
+/** Names Windows reserves for devices, whatever follows them. */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/**
+ * The generating agent's display name as a safe file name prefix, or undefined when nothing usable is left.
+ * Letters, marks, digits, space, `.`, `_` and `-` stay (Unicode letters included); path separators, Windows-reserved
+ * characters, control and zero-width characters and everything else become spaces; length is capped. Never a path
+ * (no separator survives), never a key (key-shaped text is refused by the caller's key-material check).
+ */
+export function sanitizeAgentLabel(raw: unknown): string | undefined {
+  if (typeof raw !== "string" || looksLikeKey(raw)) return undefined;
+  let t = raw.normalize("NFKC").replace(/[\p{C}\u2028\u2029]/gu, "").replace(/[^\p{L}\p{M}\p{N} ._-]/gu, " ");
+  t = t.replace(/\s+/g, " ").replace(/\.{2,}/g, ".").replace(/(^| )[._-]+(?= |$)/g, "$1").replace(/ {2,}/g, " ").trim();
+  t = [...t].slice(0, MAX_LABEL).join("").replace(/^[ .\-_]+|[ .\-_]+$/g, "");
+  if (!t) return undefined;
+  return WINDOWS_RESERVED.test(t) ? `${t}-agent` : t;
+}
+
+/**
+ * The agent label for a default backup name: the explicit `--bot-name`, else UP_AGENT_NAME (the host's own
+ * public display name for the agent, never a secret). Nothing is guessed from the model or the host: without
+ * either, the name has no prefix.
+ */
+export function agentLabel(given?: unknown, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (typeof given === "string" && given.trim()) {
+    const label = sanitizeAgentLabel(given);
+    if (!label) throw new UpError("BAD_ARGS", "--bot-name has no usable letters or digits left after removing characters that are not allowed in a file name", { hint: "pass the agent's display name, e.g. --bot-name \"Alice\"" });
+    return label;
+  }
+  return sanitizeAgentLabel(env.UP_AGENT_NAME);
+}
+
+/** `<agent> - universal-profiles-backup-YYYY-MM-DD.json` (UTC date; no prefix without an agent label), `-2`, `-3` … when taken. */
+export async function defaultBackupPath(home: string, now = new Date(), label?: string): Promise<string> {
   const day = now.toISOString().slice(0, 10);
   const dir = backupsDir(home);
+  const prefix = label ? `${label} - ` : "";
   for (let n = 1; n < 1000; n++) {
-    const file = join(dir, `universal-profiles-backup-${day}${n === 1 ? "" : `-${n}`}.json`);
+    const file = join(dir, `${prefix}universal-profiles-backup-${day}${n === 1 ? "" : `-${n}`}.json`);
     if (!(await lstat(file).then(() => true, () => false))) return file;
   }
   throw new UpError("INTERNAL", "too many backups for today in the backups folder");
 }
 
-/** The destination for a new backup: the given path (its folder must exist) or the default name in backups/. Never an existing file. */
-export async function resolveDestination(home: string, given?: string): Promise<string> {
+/** The destination for a new backup: the given path (its folder must exist; used as is) or the default name in backups/. Never an existing file. */
+export async function resolveDestination(home: string, given?: string, label?: string): Promise<string> {
   if (!given?.trim()) {
     await ensureDir(backupsDir(home));
-    return defaultBackupPath(home);
+    return defaultBackupPath(home, new Date(), label);
   }
   const file = isAbsolute(given.trim()) ? given.trim() : resolve(given.trim());
   const parent = await stat(dirname(file)).catch(() => null);

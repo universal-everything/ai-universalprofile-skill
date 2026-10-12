@@ -1,6 +1,6 @@
 // Universal Profile skill — backup verbs (loaded on demand by app.mjs)
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 50971fd78b91 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 5a878e567e01 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { $s0, $s1, $s2, $s3, $s4, $s5, $s6, $s7, $s8, $s9, $s10, $s11, $s12, $s13, $s14, $s15, $s16, $s17, $s18 } from "./app.mjs";
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
@@ -515,6 +515,7 @@ const { UpError: UpError3 } = $s1;
 const { assertNoKeyMaterial } = $s5;
 const { appendLine, ensureDir, paths } = $s2;
 const { assertNotKeyMaterialPath } = $s7;
+const { looksLikeKey } = $s6;
 const { writeNewFileExclusive } = $s18;
 var sha256Hex = (data) => createHash("sha256").update(data).digest("hex");
 function backupsDir(home) {
@@ -549,19 +550,38 @@ async function readIndex(home) {
   }
   return { backups, events };
 }
-async function defaultBackupPath(home, now = /* @__PURE__ */ new Date()) {
+var MAX_LABEL = 40;
+var WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+function sanitizeAgentLabel(raw) {
+  if (typeof raw !== "string" || looksLikeKey(raw)) return void 0;
+  let t = raw.normalize("NFKC").replace(/[\p{C}\u2028\u2029]/gu, "").replace(/[^\p{L}\p{M}\p{N} ._-]/gu, " ");
+  t = t.replace(/\s+/g, " ").replace(/\.{2,}/g, ".").replace(/(^| )[._-]+(?= |$)/g, "$1").replace(/ {2,}/g, " ").trim();
+  t = [...t].slice(0, MAX_LABEL).join("").replace(/^[ .\-_]+|[ .\-_]+$/g, "");
+  if (!t) return void 0;
+  return WINDOWS_RESERVED.test(t) ? `${t}-agent` : t;
+}
+function agentLabel(given, env = process.env) {
+  if (typeof given === "string" && given.trim()) {
+    const label = sanitizeAgentLabel(given);
+    if (!label) throw new UpError3("BAD_ARGS", "--bot-name has no usable letters or digits left after removing characters that are not allowed in a file name", { hint: `pass the agent's display name, e.g. --bot-name "Alice"` });
+    return label;
+  }
+  return sanitizeAgentLabel(env.UP_AGENT_NAME);
+}
+async function defaultBackupPath(home, now = /* @__PURE__ */ new Date(), label) {
   const day = now.toISOString().slice(0, 10);
   const dir = backupsDir(home);
+  const prefix = label ? `${label} - ` : "";
   for (let n = 1; n < 1e3; n++) {
-    const file = join(dir, `universal-profiles-backup-${day}${n === 1 ? "" : `-${n}`}.json`);
+    const file = join(dir, `${prefix}universal-profiles-backup-${day}${n === 1 ? "" : `-${n}`}.json`);
     if (!await lstat(file).then(() => true, () => false)) return file;
   }
   throw new UpError3("INTERNAL", "too many backups for today in the backups folder");
 }
-async function resolveDestination(home, given) {
+async function resolveDestination(home, given, label) {
   if (!given?.trim()) {
     await ensureDir(backupsDir(home));
-    return defaultBackupPath(home);
+    return defaultBackupPath(home, /* @__PURE__ */ new Date(), label);
   }
   const file = isAbsolute(given.trim()) ? given.trim() : resolve(given.trim());
   const parent = await stat(dirname(file)).catch(() => null);
@@ -1214,7 +1234,8 @@ async function runExport(ctx, a) {
   if (mode === "unencrypted" && a["explicit-consent"] !== true) {
     throw new UpError7("BAD_ARGS", "an unencrypted backup needs --explicit-consent: it puts the keys in a file anyone can use", { hint: "recommend the encrypted backup; only if the human insists, add --explicit-consent and their --approval" });
   }
-  assertNoKeyMaterial3("the backup destination or hint", { path: a.path, hint: a.hint });
+  assertNoKeyMaterial3("the backup destination or hint", { path: a.path, hint: a.hint, botName: a["bot-name"] });
+  const label = agentLabel(a["bot-name"]);
   const cfg = await ctx.config();
   const only = a.profiles?.length ? await Promise.all(a.profiles.map((p) => ctx.resolveAddress(p))) : void 0;
   const state = await collectState(ctx, { only, refresh: a.refresh === true });
@@ -1222,7 +1243,7 @@ async function runExport(ctx, a) {
   if (mode !== "public" && !state.keys.length) throw new UpError7("NO_SIGNER", "none of the agent's keys is in a key store here, so there are no keys to back up", { hint: "a backup without keys is --mode public" });
   const built = buildBackup(ctx, cfg, state, mode);
   assertNoKeyMaterial3("an account name, alias or label of the backup", built.file);
-  const dest = await resolveDestination(ctx.home, a.path);
+  const dest = await resolveDestination(ctx.home, a.path, label);
   assertNoKeyMaterial3("the backup destination", { path: dest });
   const profiles = state.profiles.map((p) => p.address);
   const warnings = [...state.warnings];
