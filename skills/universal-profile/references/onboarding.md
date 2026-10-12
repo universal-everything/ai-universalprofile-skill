@@ -35,8 +35,8 @@ Do not push either of the first two; explain the trade-off if asked. Choice 1 de
 
 | Address | What it is | What it is for |
 | --- | --- | --- |
-| **Controller address** (`up key address`), "my gas address" | The agent's signing key (an EOA). **Not a wallet:** it only signs and holds a little gas | Signs. On direct paths (`km`, `lsp0`) and for deployment it **pays gas**, so in J1 it needs a little native coin on each chain. Never the place for assets. |
-| **Profile address** (`up account info`) | The Universal Profile contract | The agent's on-chain identity. Assets, tokens and NFTs go here. Value sent by the agent comes from here. |
+| **Controller address** (`up key address`), "my gas address" | The agent's signing key (an EOA). **Not a wallet:** it only signs and holds a little gas | Signs. On direct paths (`km`, `lsp0`) and for deployment it **pays gas**, so in J1 it needs a little native coin on each chain. Never the place for assets, and its gas money never pays for swaps or payments. |
+| **Profile address** (`up account info`) | The Universal Profile contract | The agent's on-chain identity. Assets, tokens and NFTs go here. Value the agent sends (payments, swaps) comes from here, and what it buys comes back here. |
 | **Predicted profile address** (J1 before deployment) | Where the profile *will* be | Show it so the human can choose; **do not fund it** until `up account deploy` succeeded on that chain. |
 
 Every address handed to the human comes with a QR code and the text form. `up display address <address> --chain <id>` (or `up qr <address> --chain <id>`) writes PNG files and returns:

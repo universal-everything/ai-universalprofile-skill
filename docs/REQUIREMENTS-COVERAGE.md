@@ -20,7 +20,7 @@ Maps every requirement of the task definition (Obsidian note *Universal Profile 
 | A12 | Bundled minimal ABI encoder, call any function | `src/abi/codec.ts`, `abi encode/decode*`, `contract read/call` | `unit/abi/codec.test.ts`, `chain/abi.test.ts` |
 | A13 | No per-protocol scripts except core account actions | protocols are knowledge (`protocols list/verify`, `references/protocols.md`); actions go through the generic path | code review; `references/protocols.md` |
 | A14 | LSP7, LSP8, ERC-20/721/1155 references | bundled ABIs + `token *` verbs | `chain/tokens.test.ts`, `references/tokens.md`, `references/functions-tokens.md` |
-| A15 | Swaps vs bridges (Uniswap, CoW, bridges) | knowledge + verified addresses; CoW `setPreSignature`/ERC-1271 path; Hyperlane routes | `assets/registry/protocols.json`, `references/protocols.md` |
+| A15 | Swaps vs bridges (Uniswap, CoW, bridges) | knowledge + verified addresses; CoW `setPreSignature`/ERC-1271 path; Hyperlane routes; swaps executed as the profile with a checklist and revert diagnosis | `assets/registry/protocols.json`, `references/protocols.md`, SKILL.md "Swaps and payments as the profile" |
 | A16–A18 | DeFi/address knowledge bases, look up unknowns | `protocols list/verify`, `abi fetch/functions`, registry `sources.json` | `unit/abi/discovery.test.ts`, `references/discovery.md` |
 | A19–A21 | Generic smart-account tool for any EVM chain incl. LUKSO + testnets | 75-chain registry (73 LSP-deployed), `chains add` for any other chain | `unit/core/core.test.ts` (registry), live `chains verify` on LUKSO and Base |
 | A22 | Upgrade permissions, add/remove keys | `controller add/edit/remove`, `allowed-calls/keys set`, `key new-candidate` + `key activate` (additional keys; the agent's own key is permanent, see E16) | `chain/permissions.test.ts`, `unit/signer/verbs.test.ts` |
@@ -51,7 +51,7 @@ Maps every requirement of the task definition (Obsidian note *Universal Profile 
 | B11 | Hyperlane LYX and USDC Ethereum↔LUKSO | verified routers in `protocols.json`, `HyperlaneTokenRouter` ABI; callable via `contract call` | `references/protocols.md` |
 | B12 | CLI as MCP for all functions of all LSPs, tested | one registry → CLI + MCP; function coverage gate | `unit/core/mcp.test.ts`, `unit/coverage/functions.test.ts`, `e2e/bundle.test.ts` |
 | B13 | ERC-20/721/1155/4337 support; missing popular standards | token verbs; opt-in 4337 module; ERC-4626, WETH9, Permit2, Multicall3 ABIs bundled | `chain/erc4337.test.ts`, `chain/tokens.test.ts` |
-| B14 | Execute relay call + direct execute; everything routes through the UP | `executeAsProfile()` is the only action path | `chain/exec-transports.test.ts` (target sees msg.sender = profile on all paths), `chain/erc4337.test.ts` |
+| B14 | Execute relay call + direct execute; everything routes through the UP | `executeAsProfile()` is the only action path | `chain/exec-transports.test.ts` (target sees msg.sender = profile on all paths), `chain/native-value.test.ts` (a 5-coin router call on km/lsp0/relay and in batches: router sees the profile and the value, the profile pays, the transaction carries 0; missing/unit-less/unfunded values stop in simulation with decoded hints; `--fund-from-controller` needs the human's approval), `unit/exec/native-value.test.ts`, `chain/erc4337.test.ts` |
 
 ## C. Binding decisions from the brief and website notes
 

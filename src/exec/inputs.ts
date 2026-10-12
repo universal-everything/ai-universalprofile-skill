@@ -5,7 +5,7 @@
 // Values: wei integer, hex, or a decimal with a unit suffix (ether/eth/lyx/gwei/wei).
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { encodeFunctionData, getAddress, isAddress, parseAbiItem, parseUnits, toFunctionSignature, zeroAddress, type Abi, type AbiFunction, type AbiParameter, type Address, type Hex } from "viem";
+import { encodeFunctionData, formatEther, getAddress, isAddress, parseAbiItem, parseUnits, toFunctionSignature, zeroAddress, type Abi, type AbiFunction, type AbiParameter, type Address, type Hex } from "viem";
 import { UpError } from "../core/errors.ts";
 import { assetsDir } from "../core/assets.ts";
 import { OPERATION, type ExecCall, type OperationType } from "./transport.ts";
@@ -35,6 +35,16 @@ export function parseValue(v: string | number | bigint | undefined): bigint {
   if (!m) throw new UpError("BAD_ARGS", `cannot parse value "${v}"`, { hint: 'use wei ("1000000000000000000") or a unit ("1ether", "0.5 lyx", "20gwei")' });
   const decimals = m[2] === "gwei" ? 9 : m[2] === "wei" ? 0 : 18;
   return parseUnits(m[1], decimals);
+}
+
+/**
+ * A bare integer value is wei. One below 1 gwei is almost always a coin amount written without its
+ * unit ("--value 5" meant 5 LYX but is 5 wei), so the exec verbs warn before anything is signed.
+ */
+export function bareValueWarning(raw: unknown, value: bigint, what = "--value"): string | undefined {
+  const s = typeof raw === "number" ? String(raw) : typeof raw === "string" ? raw.trim().replace(/_/g, "") : "";
+  if (!/^\d+$/.test(s) || value === 0n || value >= 1_000_000_000n) return undefined;
+  return `${what} ${s} has no unit, so it is ${s} wei (${formatEther(value)} of the native coin); for ${s} whole coins write ${s}lyx or ${s}ether, for wei write ${s}wei`;
 }
 
 export function parseOperation(op: string | number | undefined): OperationType {

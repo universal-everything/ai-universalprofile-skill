@@ -8,7 +8,7 @@ import type { Signer, VerbContext } from "../core/types.ts";
 import { sendTx, simulate } from "../chain/tx.ts";
 import { requireKeyManager } from "../lsp/profile.ts";
 import type { ExecOutcome, ExecRequest, ExecTransport } from "./transport.ts";
-import { confirmationBlock, consentForRequest, decodeReceiptEvents, totalValue, upPayload, validateRequest, type ExecOptionsExt, type ExecRequestExt } from "./common.ts";
+import { assertControllerValueApproved, confirmationBlock, consentForRequest, decodeReceiptEvents, totalValue, upPayload, validateRequest, type ExecOptionsExt, type ExecRequestExt } from "./common.ts";
 
 export function buildLsp0Entry(req: ExecRequest, fundFromController: boolean): { data: Hex; value: bigint; function: string } {
   const data = upPayload(req);
@@ -35,6 +35,7 @@ export const lsp0Transport: ExecTransport = {
       warnings,
     });
     await simulate(ctx, { chainId: req.chainId, from: signer.address, to: req.profile, data: entry.data, value: entry.value });
+    assertControllerValueApproved(ctx, entry.value, confirmation);
     await consentForRequest(ctx, req, confirmation);
     const tx = await sendTx(ctx, signer, { chainId: req.chainId, to: req.profile, data: entry.data, value: entry.value });
     if (tx.status === "dry-run") return { path: "lsp0", chainId: req.chainId, profile: req.profile, keyManager, gasPayer: `controller EOA ${signer.address}`, status: "dry-run", entryCalldata: entry.data, confirmation, warnings };

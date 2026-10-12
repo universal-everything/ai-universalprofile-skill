@@ -174,7 +174,7 @@ Value-moving calls (native --value, transfer/approve/operator/setData/execute/ow
 | `--args` | json |  | JSON array or object of arguments. |
 | `--abi` | json |  | ABI to use: bundled contract name (e.g. LSP7DigitalAsset, ERC20), JSON ABI, path to a .json ABI file, or human-readable fragments. |
 | `--offline` | boolean |  | Do not contact explorers or selector databases (bundled data + RPC only). |
-| `--value` | string |  | Native value sent with the call, in native units ("0.01") or with a unit ("1000 wei", "2 gwei"). |
+| `--value` | string |  | Native value the PROFILE sends with the call, from its own balance: whole coins ("5", "5lyx", "0.01ether") or smaller units ("1000 wei", "2 gwei"). A bare number means whole coins here, but wei in exec send: always give a unit. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default), km (controller → KeyManager.execute), lsp0 (controller → UP.execute, LSP20), relay (LSP25 via a relayer), userop (ERC-4337, opt-in). Default: `"auto"`. |
 | `--relayer` | string |  | relay path only: relayer name or base URL from config. |
 
@@ -231,7 +231,7 @@ Permission routing (LSP6SetDataModule): AddressPermissions* keys → ADDCONTROLL
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### account deploy
 
@@ -273,7 +273,7 @@ Register an LSP17 extension contract for a function selector on the profile (adm
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### account extensions remove
 
@@ -291,7 +291,7 @@ Remove the LSP17 extension registered for a selector (admin: CHANGEEXTENSIONS).
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### account info
 
@@ -363,7 +363,7 @@ Set the profile's LSP1 Universal Receiver Delegate (admin: ADD/CHANGEUNIVERSALRE
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### profile join
 
@@ -434,7 +434,7 @@ Merges with the current metadata by default (fields not given are kept; --replac
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 Examples:
 
@@ -913,7 +913,7 @@ Execute several calls atomically AS THE PROFILE (KM.executeBatch on km, UP.execu
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### exec call
 
@@ -953,7 +953,7 @@ Execute one call AS THE PROFILE through an LSP15 relayer (LSP25 executeRelayCall
 | option | type | required | description |
 | --- | --- | --- | --- |
 | `--to` | string |  | Target address the PROFILE calls (msg.sender at the target is the profile). |
-| `--value` | string |  | Native value sent BY THE PROFILE (from its own balance): wei, hex, or with a unit, e.g. 0.1ether / 0.5lyx / 20gwei. |
+| `--value` | string |  | Native value sent BY THE PROFILE from its own balance (never from the agent's key). Give a unit: 5lyx = 5 LYX, 0.1ether, 20gwei; a bare number is wei (5 = 5 wei). |
 | `--data` | string |  | Raw calldata (hex). Alternative to --fn/--args. |
 | `--fn` | string |  | Function to call: a signature like "transfer(address,uint256)" or, with --abi, a name. |
 | `--args` | json |  | Function arguments as a JSON array (big integers as decimal strings), e.g. ["0xabc…","1000"]. |
@@ -969,7 +969,7 @@ Execute one call AS THE PROFILE through an LSP15 relayer (LSP25 executeRelayCall
 
 Execute one call AS THE PROFILE (--via auto|km|lsp0|relay|userop; auto = relay when a relayer with quota covers the chain, else direct Key Manager).
 
-Builds the ERC725X call, simulates it with the exact transport, shows the confirmation block (actor = profile, chain, Key Manager, path, gas payer, target, value, decoded function, raw calldata), asks for consent, then signs and sends. Value always comes from the profile balance unless --fund-from-controller.
+Builds the ERC725X call, simulates it with the exact transport, shows the confirmation block (actor = profile, chain, Key Manager, path, gas payer, target, value, decoded function, raw calldata), asks for consent, then signs and sends. Swaps, approvals and payments to any contract go this way: the target sees the profile as msg.sender, the value comes from the profile balance (unless --fund-from-controller) and outputs belong to the profile; the agent's key only signs and pays gas. A revert is fixed here and simulated again, never retried from the key or a wallet app.
 
 - CLI: `up exec send [options]`
 - MCP tool: `up_exec_send` · risk: **write**
@@ -977,7 +977,7 @@ Builds the ERC725X call, simulates it with the exact transport, shows the confir
 | option | type | required | description |
 | --- | --- | --- | --- |
 | `--to` | string |  | Target address the PROFILE calls (msg.sender at the target is the profile). |
-| `--value` | string |  | Native value sent BY THE PROFILE (from its own balance): wei, hex, or with a unit, e.g. 0.1ether / 0.5lyx / 20gwei. |
+| `--value` | string |  | Native value sent BY THE PROFILE from its own balance (never from the agent's key). Give a unit: 5lyx = 5 LYX, 0.1ether, 20gwei; a bare number is wei (5 = 5 wei). |
 | `--data` | string |  | Raw calldata (hex). Alternative to --fn/--args. |
 | `--fn` | string |  | Function to call: a signature like "transfer(address,uint256)" or, with --abi, a name. |
 | `--args` | json |  | Function arguments as a JSON array (big integers as decimal strings), e.g. ["0xabc…","1000"]. |
@@ -989,7 +989,7 @@ Builds the ERC725X call, simulates it with the exact transport, shows the confir
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 Examples:
 
@@ -1008,7 +1008,7 @@ Build and simulate a call or batch with the exact transport, return the confirma
 | option | type | required | description |
 | --- | --- | --- | --- |
 | `--to` | string |  | Target address the PROFILE calls (msg.sender at the target is the profile). |
-| `--value` | string |  | Native value sent BY THE PROFILE (from its own balance): wei, hex, or with a unit, e.g. 0.1ether / 0.5lyx / 20gwei. |
+| `--value` | string |  | Native value sent BY THE PROFILE from its own balance (never from the agent's key). Give a unit: 5lyx = 5 LYX, 0.1ether, 20gwei; a bare number is wei (5 = 5 wei). |
 | `--data` | string |  | Raw calldata (hex). Alternative to --fn/--args. |
 | `--fn` | string |  | Function to call: a signature like "transfer(address,uint256)" or, with --abi, a name. |
 | `--args` | json |  | Function arguments as a JSON array (big integers as decimal strings), e.g. ["0xabc…","1000"]. |
@@ -1021,7 +1021,7 @@ Build and simulate a call or batch with the exact transport, return the confirma
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### exec userop
 
@@ -1229,7 +1229,7 @@ Replace a controller's AllowedCalls (admin: EDITPERMISSIONS). Entries: callTypes
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### allowed-calls show
 
@@ -1259,7 +1259,7 @@ Replace a controller's AllowedERC725YDataKeys (admin: EDITPERMISSIONS). Accepts 
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### allowed-keys show
 
@@ -1293,7 +1293,7 @@ Add a controller to the profile with a preset or explicit permissions (+ Allowed
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### controller edit
 
@@ -1318,7 +1318,7 @@ Change a controller's permissions (--preset/--permissions/--bits replace; --add/
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### controller remove
 
@@ -1336,7 +1336,7 @@ Remove a controller (clears its permissions/allowed lists, swap-and-pop in Addre
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### ownership accept
 
@@ -1360,7 +1360,7 @@ Renounce ownership (LSP14 two calls: start, then confirm 200–400 blocks later)
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### ownership transfer
 
@@ -1378,7 +1378,7 @@ Start an LSP14 two-step ownership transfer of the profile (e.g. to a new Key Man
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
-| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. |
+| `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
 
 ### permissions decode
 
@@ -1476,7 +1476,7 @@ Send a call or a raw UP payload (e.g. setData calldata) through an LSP15 relayer
 | --- | --- | --- | --- |
 | `--payload` | string |  | Raw calldata for the Universal Profile (execute/setData/…); alternative to --to/--data/--fn. |
 | `--to` | string |  | Target address the PROFILE calls (msg.sender at the target is the profile). |
-| `--value` | string |  | Native value sent BY THE PROFILE (from its own balance): wei, hex, or with a unit, e.g. 0.1ether / 0.5lyx / 20gwei. |
+| `--value` | string |  | Native value sent BY THE PROFILE from its own balance (never from the agent's key). Give a unit: 5lyx = 5 LYX, 0.1ether, 20gwei; a bare number is wei (5 = 5 wei). |
 | `--data` | string |  | Raw calldata (hex). Alternative to --fn/--args. |
 | `--fn` | string |  | Function to call: a signature like "transfer(address,uint256)" or, with --abi, a name. |
 | `--args` | json |  | Function arguments as a JSON array (big integers as decimal strings), e.g. ["0xabc…","1000"]. |

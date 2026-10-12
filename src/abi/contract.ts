@@ -108,12 +108,11 @@ export function isValueMoving(fn: Pick<AbiFunction, "name" | "inputs">, value: b
   return valueMovingReason(fn, value, data) !== undefined;
 }
 
-/** "0.1" (native units), "1000wei", "2 gwei", "1e15 wei". */
+/** "0.1" (native units), "1000wei", "2 gwei", "1e15 wei", "5lyx" / "5 native" (every native coin has 18 decimals, like ether). */
 export function parseNativeValue(v: unknown): bigint {
   if (v === undefined || v === null || v === "") return 0n;
-  const s = String(v).trim();
-  if (/(wei|gwei|ether|eth)$/i.test(s)) return parseInteger(s, "--value");
-  const n = toBaseUnits(s, 18, "--value");
+  const s = String(v).trim().replace(/\s*(lyxt|lyx|native)$/i, " ether");
+  const n = /(wei|gwei|ether|eth)$/i.test(s) ? parseInteger(s, "--value") : toBaseUnits(s, 18, "--value");
   if (n < 0n) throw new UpError("BAD_ARGS", "--value must not be negative");
   return n;
 }

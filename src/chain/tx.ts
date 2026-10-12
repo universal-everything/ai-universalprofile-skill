@@ -99,6 +99,12 @@ export function hintForRevert(d: DecodedRevert): string | undefined {
     case "RelayCallBeforeStartTime":
     case "RelayCallExpired":
       return "the relay call validity window is not satisfied; re-sign with a fresh window";
+    case "ERC725X_InsufficientBalance":
+      return "the profile holds less native coin on this chain than the call sends (balance, value in wei). Call values always come from the profile's own balance, never from the agent's gas money: ask the human to send the missing amount to the profile address (not the gas address), or lower the amount";
+    case "InsufficientETH":
+      return 'the target (usually a swap router; "ETH" means this chain\'s native coin, e.g. LYX on LUKSO) got less native coin than it needs. Native coin in: the profile sends it as the call value, so give --value with a unit (5lyx, 5ether; a bare 5 is 5 wei), equal to the native amount in the calldata, and check the profile\'s balance. Native coin out: the swap returned less than the minimum, so quote again. Then simulate again through the profile; never switch to a wallet app, a website or a transaction from the agent\'s key';
+    case "TransactionDeadlinePassed":
+      return "the deadline inside the call has passed: get a fresh quote, rebuild the call with a new deadline and simulate again through the profile";
     default:
       return undefined;
   }

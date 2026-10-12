@@ -281,6 +281,18 @@ export function confirmationBlock(
 }
 
 /**
+ * --fund-from-controller: the transaction itself carries the call value, paid from the agent's gas
+ * money instead of the profile's balance. Only the human's own words cover that, never the policy.
+ */
+export function assertControllerValueApproved(ctx: VerbContext, entryValue: bigint, confirmation: Record<string, unknown>): void {
+  if (entryValue === 0n || ctx.flags.dryRun || (ctx.flags.approval?.trim().length ?? 0) >= 3) return;
+  throw new UpError("CONSENT_REQUIRED", "--fund-from-controller pays the call value from the agent's gas money instead of the profile's balance; only the human's own approval covers that", {
+    hint: 'drop --fund-from-controller so the profile pays from its own balance (if it lacks the amount, ask the human to send it to the profile address); use it only when the human asked for exactly this, with --approval "<their exact words>"',
+    details: { confirmation },
+  });
+}
+
+/**
  * Asks for consent once for the whole request. For multi-target batches the
  * delegated policy is checked per call first (ConsentRequest carries one target),
  * unless a human approval string is present.

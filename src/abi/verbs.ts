@@ -526,7 +526,7 @@ defineVerb({
   description:
     "Value-moving calls (native --value, transfer/approve/operator/setData/execute/ownership …) need an ABI with trust bundled/onchain/exact/partial/proxy; with a caller-supplied ABI, a bare signature or a selector guess the human must approve (--approval). Use --dry-run to see the confirmation without sending.",
   risk: "write",
-  params: [...CALL_PARAMS, { name: "value", type: "string", description: 'Native value sent with the call, in native units ("0.01") or with a unit ("1000 wei", "2 gwei").' }, ...EXEC_PARAMS],
+  params: [...CALL_PARAMS, { name: "value", type: "string", description: 'Native value the PROFILE sends with the call, from its own balance: whole coins ("5", "5lyx", "0.01ether") or smaller units ("1000 wei", "2 gwei"). A bare number means whole coins here, but wei in exec send: always give a unit.' }, ...EXEC_PARAMS],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
     const profile = await ctx.profile(a.profile, chainId);

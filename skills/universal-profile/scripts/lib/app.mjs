@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 31097e1209ab (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 50971fd78b91 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -1497,7 +1497,10 @@ var init_error_abis = __esm({
       { type: "error", name: "Error", inputs: [{ name: "message", type: "string" }] },
       { type: "error", name: "Panic", inputs: [{ name: "code", type: "uint256" }] },
       { type: "error", name: "FailedOp", inputs: [{ name: "opIndex", type: "uint256" }, { name: "reason", type: "string" }] },
-      { type: "error", name: "SignatureValidationFailed", inputs: [{ name: "aggregator", type: "address" }] }
+      { type: "error", name: "SignatureValidationFailed", inputs: [{ name: "aggregator", type: "address" }] },
+      // "ETH" means the chain's native coin (LYX on LUKSO)
+      { type: "error", name: "InsufficientETH", inputs: [] },
+      { type: "error", name: "TransactionDeadlinePassed", inputs: [] }
     ];
     ERROR_ABIS = [standard, assetJson("abis", "errors.json")];
   }
@@ -1562,6 +1565,12 @@ function hintForRevert(d) {
     case "RelayCallBeforeStartTime":
     case "RelayCallExpired":
       return "the relay call validity window is not satisfied; re-sign with a fresh window";
+    case "ERC725X_InsufficientBalance":
+      return "the profile holds less native coin on this chain than the call sends (balance, value in wei). Call values always come from the profile's own balance, never from the agent's gas money: ask the human to send the missing amount to the profile address (not the gas address), or lower the amount";
+    case "InsufficientETH":
+      return `the target (usually a swap router; "ETH" means this chain's native coin, e.g. LYX on LUKSO) got less native coin than it needs. Native coin in: the profile sends it as the call value, so give --value with a unit (5lyx, 5ether; a bare 5 is 5 wei), equal to the native amount in the calldata, and check the profile's balance. Native coin out: the swap returned less than the minimum, so quote again. Then simulate again through the profile; never switch to a wallet app, a website or a transaction from the agent's key`;
+    case "TransactionDeadlinePassed":
+      return "the deadline inside the call has passed: get a fresh quote, rebuild the call with a new deadline and simulate again through the profile";
     default:
       return void 0;
   }
@@ -6658,7 +6667,7 @@ __export(funding_exports, {
   priceUsd: () => priceUsd,
   starterUsd: () => starterUsd
 });
-import { formatEther as formatEther3, keccak256 as keccak25612, parseEther, toHex as toHex2 } from "./vendor-viem.mjs";
+import { formatEther as formatEther4, keccak256 as keccak25612, parseEther, toHex as toHex2 } from "./vendor-viem.mjs";
 function displaySymbol(symbol) {
   return /ETH$/.test(symbol) && symbol !== "ETH" && !/^W/.test(symbol) ? "ETH" : symbol;
 }
@@ -6694,7 +6703,7 @@ async function priceUsd(ctx, symbol, opts = {}) {
 }
 function friendlyAmount(wei) {
   if (wei <= 0n) return "0";
-  const s = formatEther3(wei);
+  const s = formatEther4(wei);
   const n = Number(s);
   const mag = Math.floor(Math.log10(n));
   const step = 10 ** (mag - 1);
@@ -6793,7 +6802,7 @@ var init_funding = __esm({
           ctx.rpc.request(chainId, "eth_gasPrice", []).catch(() => void 0)
         ]);
         const gasPrice = gasPriceHex ? BigInt(gasPriceHex) : void 0;
-        const weiToUsd = (wei) => price ? Number(formatEther3(wei)) * price : void 0;
+        const weiToUsd = (wei) => price ? Number(formatEther4(wei)) * price : void 0;
         const actionUsd = gasPrice !== void 0 ? weiToUsd(gasPrice * ACTION_GAS) : void 0;
         const deployUsd = deployCost !== void 0 ? weiToUsd(deployCost) : void 0;
         const needUsd = actionUsd !== void 0 && deployUsd !== void 0 ? deployUsd * 1.5 + actionUsd * STARTER_ACTIONS : void 0;
@@ -6804,7 +6813,7 @@ var init_funding = __esm({
         const starterWei = price ? max(usdToWei(tier.max, price), floor) : floor * 2n;
         const moreWei = price ? max(usdToWei(10, price), starterWei * 2n) : starterWei * 10n;
         if (starterWei === 0n) throw new UpError("NETWORK_ERROR", `could not estimate gas or price on ${chain.name}`, { hint: `retry, or check the network: up chains verify ${chainId}` });
-        const usdOf = (wei) => price ? Math.round(Number(formatEther3(wei)) * price * 100) / 100 : void 0;
+        const usdOf = (wei) => price ? Math.round(Number(formatEther4(wei)) * price * 100) / 100 : void 0;
         const balanceWei = BigInt(balanceHex);
         const purpose = a.purpose === "refill" ? "refill" : "setup";
         const s = {
@@ -6813,8 +6822,8 @@ var init_funding = __esm({
           symbol,
           address,
           priceUsd: price,
-          deploymentCost: deployCost ? formatEther3(deployCost) : void 0,
-          balance: formatEther3(balanceWei),
+          deploymentCost: deployCost ? formatEther4(deployCost) : void 0,
+          balance: formatEther4(balanceWei),
           balanceUsd: usdOf(balanceWei),
           actionUsd: actionUsd !== void 0 ? Math.round(actionUsd * 1e4) / 1e4 : void 0,
           // setup: below the suggested start budget; refill: below half of it (a few actions left)
@@ -6876,7 +6885,7 @@ __export(lsp23_exports, {
   verifyManifest: () => verifyManifest,
   writeProfileRecord: () => writeProfileRecord
 });
-import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData12, encodePacked as encodePacked3, formatEther as formatEther4, getAddress as getAddress23, getContractAddress, keccak256 as keccak25613 } from "./vendor-viem.mjs";
+import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData12, encodePacked as encodePacked3, formatEther as formatEther5, getAddress as getAddress23, getContractAddress, keccak256 as keccak25613 } from "./vendor-viem.mjs";
 function erc1167InitCode(implementation) {
   return concat3(["0x3d602d80600a3d3981f3363d3d373d3d3d363d73", getAddress23(implementation), "0x5af43d82803e903d91602b57fd5bf3"]);
 }
@@ -7108,7 +7117,7 @@ async function deployFromManifest(ctx, signer, m, chainId, verb = "account deplo
       return "native";
     }
   })();
-  const gasInfo = { payer: signer.address, symbol, maxCost: formatEther4(g.maxCostWei), balance: formatEther4(g.balanceWei), enough: g.enough, ...g.enough ? {} : { missing: formatEther4(g.shortfallWei), suggestedFunding: formatEther4(g.suggestedFundingWei) } };
+  const gasInfo = { payer: signer.address, symbol, maxCost: formatEther5(g.maxCostWei), balance: formatEther5(g.balanceWei), enough: g.enough, ...g.enough ? {} : { missing: formatEther5(g.shortfallWei), suggestedFunding: formatEther5(g.suggestedFundingWei) } };
   confirmation.gas = gasInfo;
   if (!g.enough && !ctx.flags.dryRun) {
     throw new UpError("TX_FAILED", `the agent's key ${signer.address} needs gas on chain ${chainId}: it has ${gasInfo.balance} ${symbol}, the deployment may cost up to ${gasInfo.maxCost} ${symbol}`, {
@@ -7495,7 +7504,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "31097e1209ab" : "source";
+var SOURCE = true ? "50971fd78b91" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -9270,6 +9279,13 @@ function confirmationBlock(ctx, req, x) {
     warnings: x.warnings?.length ? x.warnings : void 0
   };
 }
+function assertControllerValueApproved(ctx, entryValue, confirmation) {
+  if (entryValue === 0n || ctx.flags.dryRun || (ctx.flags.approval?.trim().length ?? 0) >= 3) return;
+  throw new UpError("CONSENT_REQUIRED", "--fund-from-controller pays the call value from the agent's gas money instead of the profile's balance; only the human's own approval covers that", {
+    hint: 'drop --fund-from-controller so the profile pays from its own balance (if it lacks the amount, ask the human to send it to the profile address); use it only when the human asked for exactly this, with --approval "<their exact words>"',
+    details: { confirmation }
+  });
+}
 async function consentForRequest(ctx, req, confirmation) {
   const payload = upPayload(req);
   const decoded = req.calls?.length ? void 0 : decodeProfilePayload(payload);
@@ -9355,6 +9371,7 @@ var kmTransport = {
       warnings
     });
     await simulate(ctx, { chainId: req.chainId, from: signer.address, to: keyManager, data: entry.data, value: entry.value });
+    assertControllerValueApproved(ctx, entry.value, confirmation);
     await consentForRequest(ctx, req, confirmation);
     const tx = await sendTx(ctx, signer, { chainId: req.chainId, to: keyManager, data: entry.data, value: entry.value });
     if (tx.status === "dry-run") return { path: "km", chainId: req.chainId, profile: req.profile, keyManager, gasPayer: `controller EOA ${signer.address}`, status: "dry-run", entryCalldata: entry.data, confirmation, warnings };
@@ -9403,6 +9420,7 @@ var lsp0Transport = {
       warnings
     });
     await simulate(ctx, { chainId: req.chainId, from: signer.address, to: req.profile, data: entry.data, value: entry.value });
+    assertControllerValueApproved(ctx, entry.value, confirmation);
     await consentForRequest(ctx, req, confirmation);
     const tx = await sendTx(ctx, signer, { chainId: req.chainId, to: req.profile, data: entry.data, value: entry.value });
     if (tx.status === "dry-run") return { path: "lsp0", chainId: req.chainId, profile: req.profile, keyManager, gasPayer: `controller EOA ${signer.address}`, status: "dry-run", entryCalldata: entry.data, confirmation, warnings };
@@ -9712,7 +9730,7 @@ init_transport();
 init_secret_guard();
 import { readFileSync as readFileSync9, existsSync as existsSync15 } from "node:fs";
 import { join as join10 } from "node:path";
-import { encodeFunctionData as encodeFunctionData10, getAddress as getAddress21, isAddress as isAddress13, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData10, formatEther as formatEther3, getAddress as getAddress21, isAddress as isAddress13, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
 function parseValue(v) {
   if (v === void 0 || v === null || v === "") return 0n;
   if (typeof v === "bigint") return v;
@@ -9727,6 +9745,11 @@ function parseValue(v) {
   if (!m) throw new UpError("BAD_ARGS", `cannot parse value "${v}"`, { hint: 'use wei ("1000000000000000000") or a unit ("1ether", "0.5 lyx", "20gwei")' });
   const decimals = m[2] === "gwei" ? 9 : m[2] === "wei" ? 0 : 18;
   return parseUnits(m[1], decimals);
+}
+function bareValueWarning(raw, value, what = "--value") {
+  const s = typeof raw === "number" ? String(raw) : typeof raw === "string" ? raw.trim().replace(/_/g, "") : "";
+  if (!/^\d+$/.test(s) || value === 0n || value >= 1000000000n) return void 0;
+  return `${what} ${s} has no unit, so it is ${s} wei (${formatEther3(value)} of the native coin); for ${s} whole coins write ${s}lyx or ${s}ether, for wei write ${s}wei`;
 }
 function parseOperation(op) {
   if (op === void 0 || op === "") return OPERATION.CALL;
@@ -9855,7 +9878,7 @@ function buildCalls(inputs) {
 // src/exec/verbs.ts
 var CALL_PARAMS = [
   { name: "to", type: "string", description: "Target address the PROFILE calls (msg.sender at the target is the profile)." },
-  { name: "value", type: "string", description: "Native value sent BY THE PROFILE (from its own balance): wei, hex, or with a unit, e.g. 0.1ether / 0.5lyx / 20gwei." },
+  { name: "value", type: "string", description: "Native value sent BY THE PROFILE from its own balance (never from the agent's key). Give a unit: 5lyx = 5 LYX, 0.1ether, 20gwei; a bare number is wei (5 = 5 wei)." },
   { name: "data", type: "string", description: "Raw calldata (hex). Alternative to --fn/--args." },
   { name: "fn", type: "string", description: 'Function to call: a signature like "transfer(address,uint256)" or, with --abi, a name.' },
   { name: "args", type: "json", description: 'Function arguments as a JSON array (big integers as decimal strings), e.g. ["0xabc…","1000"].' },
@@ -9869,7 +9892,7 @@ var PATH_PARAMS = [
   { name: "validity", type: "integer", description: "Relay validity window in seconds from now (default 600; 0 = unlimited)." },
   { name: "valid-from", type: "integer", description: "Relay validity start (unix seconds); overrides --validity." },
   { name: "valid-until", type: "integer", description: "Relay validity end (unix seconds, 0 = no expiry); overrides --validity." },
-  { name: "fund-from-controller", type: "boolean", description: "Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance." }
+  { name: "fund-from-controller", type: "boolean", description: "Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds." }
 ];
 async function chainAndProfile(ctx, a) {
   await ctx.config();
@@ -9901,6 +9924,10 @@ function execOptions(a, via) {
 function callInputFrom(a) {
   return { to: a.to, value: a.value, data: a.data, fn: a.fn, args: a.args, abi: a.abi, operation: a.operation };
 }
+function allWarnings(unit, out) {
+  const w = [...unit.filter((x) => !!x), ...out ?? []];
+  return w.length ? w : void 0;
+}
 async function runSend(ctx, a, verb, via) {
   const { chainId, profile } = await chainAndProfile(ctx, a);
   const b = buildCall(callInputFrom(a));
@@ -9908,13 +9935,14 @@ async function runSend(ctx, a, verb, via) {
   const out = await executeAuto(ctx, req, execOptions(a, via));
   const auto = out.autoDecision ? `
 path chosen: ${out.autoDecision.path} — ${out.autoDecision.reason}` : "";
-  return { data: out, text: outcomeText(out) + auto, warnings: out.warnings };
+  return { data: out, text: outcomeText(out) + auto, warnings: allWarnings([bareValueWarning(a.value, b.call.value)], out.warnings) };
 }
+var batchValueWarnings = (inputs, calls) => inputs.map((c, i) => bareValueWarning(c?.value, calls[i].value, `calls[${i}].value`));
 defineVerb({
   name: "exec send",
   group: "execute",
   summary: "Execute one call AS THE PROFILE (--via auto|km|lsp0|relay|userop; auto = relay when a relayer with quota covers the chain, else direct Key Manager).",
-  description: "Builds the ERC725X call, simulates it with the exact transport, shows the confirmation block (actor = profile, chain, Key Manager, path, gas payer, target, value, decoded function, raw calldata), asks for consent, then signs and sends. Value always comes from the profile balance unless --fund-from-controller.",
+  description: "Builds the ERC725X call, simulates it with the exact transport, shows the confirmation block (actor = profile, chain, Key Manager, path, gas payer, target, value, decoded function, raw calldata), asks for consent, then signs and sends. Swaps, approvals and payments to any contract go this way: the target sees the profile as msg.sender, the value comes from the profile balance (unless --fund-from-controller) and outputs belong to the profile; the agent's key only signs and pays gas. A revert is fixed here and simulated again, never retried from the key or a wallet app.",
   risk: "write",
   params: [...CALL_PARAMS, ...PATH_PARAMS],
   examples: ["up exec send --to 0xRecipient --value 0.1ether", `up exec send --to 0xToken --fn "transfer(address,address,uint256,bool,bytes)" --args '["0xUP","0xTo","1000",false,"0x"]' --via relay`],
@@ -9939,7 +9967,7 @@ defineVerb({
     if (!Array.isArray(a.calls)) throw new UpError("BAD_ARGS", "--calls must be a JSON array");
     const { calls, abi: abi2 } = buildCalls(a.calls);
     const out = await executeAuto(ctx, { chainId, profile, calls, verb: "exec batch", abi: abi2 }, execOptions(a));
-    return { data: out, text: outcomeText(out), warnings: out.warnings };
+    return { data: out, text: outcomeText(out), warnings: allWarnings(batchValueWarnings(a.calls, calls), out.warnings) };
   }
 });
 defineVerb({
@@ -9953,16 +9981,19 @@ defineVerb({
     const sim = { ...ctx, flags: { ...ctx.flags, dryRun: true }, consent: async () => {
     } };
     let req;
+    let unit;
     if (a.calls !== void 0) {
       const { calls, abi: abi2 } = buildCalls(a.calls);
       req = { chainId, profile, calls, abi: abi2, verb: "exec simulate" };
+      unit = batchValueWarnings(a.calls, calls);
     } else {
       const b = buildCall(callInputFrom(a));
       req = { chainId, profile, calls: [b.call], abi: b.abi, verb: "exec simulate" };
+      unit = [bareValueWarning(a.value, b.call.value)];
     }
     const out = await executeAuto(sim, req, execOptions(a));
     return { data: { ...out, simulated: true }, text: `simulation OK (nothing signed or sent)
-${outcomeText(out)}`, warnings: out.warnings };
+${outcomeText(out)}`, warnings: allWarnings(unit, out.warnings) };
   }
 });
 defineVerb({
@@ -15447,9 +15478,8 @@ function valueMovingReason(fn, value, data) {
 }
 function parseNativeValue(v) {
   if (v === void 0 || v === null || v === "") return 0n;
-  const s = String(v).trim();
-  if (/(wei|gwei|ether|eth)$/i.test(s)) return parseInteger(s, "--value");
-  const n = toBaseUnits(s, 18, "--value");
+  const s = String(v).trim().replace(/\s*(lyxt|lyx|native)$/i, " ether");
+  const n = /(wei|gwei|ether|eth)$/i.test(s) ? parseInteger(s, "--value") : toBaseUnits(s, 18, "--value");
   if (n < 0n) throw new UpError("BAD_ARGS", "--value must not be negative");
   return n;
 }
@@ -16079,7 +16109,7 @@ defineVerb({
   summary: "Call a state-changing function on any contract AS THE PROFILE (ERC725X CALL via the chosen execution path); the decoded call is shown before consent.",
   description: "Value-moving calls (native --value, transfer/approve/operator/setData/execute/ownership …) need an ABI with trust bundled/onchain/exact/partial/proxy; with a caller-supplied ABI, a bare signature or a selector guess the human must approve (--approval). Use --dry-run to see the confirmation without sending.",
   risk: "write",
-  params: [...CALL_PARAMS2, { name: "value", type: "string", description: 'Native value sent with the call, in native units ("0.01") or with a unit ("1000 wei", "2 gwei").' }, ...EXEC_PARAMS],
+  params: [...CALL_PARAMS2, { name: "value", type: "string", description: 'Native value the PROFILE sends with the call, from its own balance: whole coins ("5", "5lyx", "0.01ether") or smaller units ("1000 wei", "2 gwei"). A bare number means whole coins here, but wei in exec send: always give a unit.' }, ...EXEC_PARAMS],
   async run(ctx, a) {
     const chainId = await chainOf(ctx, a);
     const profile = await ctx.profile(a.profile, chainId);

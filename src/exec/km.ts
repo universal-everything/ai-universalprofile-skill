@@ -5,14 +5,15 @@
 // sends with the KM call is forwarded to the UP together with the payload. By
 // default the profile pays call values from its OWN balance (ERC725X value field)
 // and msg.value is 0; with fundFromController the controller EOA funds the call
-// values (KM.execute{value: Σ} / executeBatch values[i] = call value, Σ == msg.value).
+// values (KM.execute{value: Σ} / executeBatch values[i] = call value, Σ == msg.value),
+// which spends the agent's gas money and therefore needs the human's own approval.
 import { encodeFunctionData, type Hex } from "viem";
 import type { Signer, VerbContext } from "../core/types.ts";
 import { sendTx, simulate } from "../chain/tx.ts";
 import { KM_ABI } from "../lsp/abis.ts";
 import { requireKeyManager } from "../lsp/profile.ts";
 import type { ExecOutcome, ExecTransport, ExecRequest } from "./transport.ts";
-import { confirmationBlock, consentForRequest, decodeReceiptEvents, encodeUpExecute, totalValue, upPayload, validateRequest, type ExecOptionsExt, type ExecRequestExt } from "./common.ts";
+import { assertControllerValueApproved, confirmationBlock, consentForRequest, decodeReceiptEvents, encodeUpExecute, totalValue, upPayload, validateRequest, type ExecOptionsExt, type ExecRequestExt } from "./common.ts";
 
 export function buildKmEntry(req: ExecRequest, fundFromController: boolean): { data: Hex; value: bigint; function: string } {
   const calls = req.calls ?? [];
@@ -49,7 +50,8 @@ export const kmTransport: ExecTransport = {
     });
     // 1) simulate the exact entry call as the controller (decodes LSP6 errors)
     await simulate(ctx, { chainId: req.chainId, from: signer.address, to: keyManager, data: entry.data, value: entry.value });
-    // 2) consent before any signature
+    // 2) consent before any signature (call value paid by the controller needs the human's own words)
+    assertControllerValueApproved(ctx, entry.value, confirmation);
     await consentForRequest(ctx, req, confirmation);
     // 3) sign + send (sendTx re-simulates, estimates, checks the EOA balance) — or stop in dry-run
     const tx = await sendTx(ctx, signer, { chainId: req.chainId, to: keyManager, data: entry.data, value: entry.value });

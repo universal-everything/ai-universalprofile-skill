@@ -11,14 +11,14 @@ import { ethCall } from "../lsp/read.ts";
 import { defaultChannel, getRelayNonce, splitNonce } from "../lsp/lsp25.ts";
 import { listRelayers } from "../relayer/registry.ts";
 import { controllerFor } from "../signer/select.ts";
-import type { ExecPath } from "./transport.ts";
+import type { ExecCall, ExecPath } from "./transport.ts";
 import { executeAuto } from "./auto.ts";
-import { buildCall, buildCalls, type CallInput } from "./inputs.ts";
+import { bareValueWarning, buildCall, buildCalls, type CallInput } from "./inputs.ts";
 import { decodeReceiptEvents, outcomeText, type ExecOptionsExt, type ExecRequestExt } from "./common.ts";
 
 export const CALL_PARAMS: ParamDef[] = [
   { name: "to", type: "string", description: "Target address the PROFILE calls (msg.sender at the target is the profile)." },
-  { name: "value", type: "string", description: "Native value sent BY THE PROFILE (from its own balance): wei, hex, or with a unit, e.g. 0.1ether / 0.5lyx / 20gwei." },
+  { name: "value", type: "string", description: "Native value sent BY THE PROFILE from its own balance (never from the agent's key). Give a unit: 5lyx = 5 LYX, 0.1ether, 20gwei; a bare number is wei (5 = 5 wei)." },
   { name: "data", type: "string", description: "Raw calldata (hex). Alternative to --fn/--args." },
   { name: "fn", type: "string", description: 'Function to call: a signature like "transfer(address,uint256)" or, with --abi, a name.' },
   { name: "args", type: "json", description: 'Function arguments as a JSON array (big integers as decimal strings), e.g. ["0xabc…","1000"].' },
@@ -33,7 +33,7 @@ export const PATH_PARAMS: ParamDef[] = [
   { name: "validity", type: "integer", description: "Relay validity window in seconds from now (default 600; 0 = unlimited)." },
   { name: "valid-from", type: "integer", description: "Relay validity start (unix seconds); overrides --validity." },
   { name: "valid-until", type: "integer", description: "Relay validity end (unix seconds, 0 = no expiry); overrides --validity." },
-  { name: "fund-from-controller", type: "boolean", description: "Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance." },
+  { name: "fund-from-controller", type: "boolean", description: "Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds." },
 ];
 
 /** The verb's chain and the profile's address on that chain (a linked chain-specific address when one exists). */
@@ -71,21 +71,29 @@ function callInputFrom(a: Record<string, any>): CallInput {
   return { to: a.to, value: a.value, data: a.data, fn: a.fn, args: a.args, abi: a.abi, operation: a.operation };
 }
 
+/** Bare-number value warnings first, then the outcome's own; undefined when there are none. */
+function allWarnings(unit: (string | undefined)[], out?: string[]): string[] | undefined {
+  const w = [...unit.filter((x): x is string => !!x), ...(out ?? [])];
+  return w.length ? w : undefined;
+}
+
 async function runSend(ctx: VerbContext, a: Record<string, any>, verb: string, via?: ExecPath | "auto") {
   const { chainId, profile } = await chainAndProfile(ctx, a);
   const b = buildCall(callInputFrom(a));
   const req: ExecRequestExt = { chainId, profile, calls: [b.call], verb, abi: b.abi };
   const out = await executeAuto(ctx, req, execOptions(a, via));
   const auto = out.autoDecision ? `\npath chosen: ${out.autoDecision.path} — ${out.autoDecision.reason}` : "";
-  return { data: out, text: outcomeText(out) + auto, warnings: out.warnings };
+  return { data: out, text: outcomeText(out) + auto, warnings: allWarnings([bareValueWarning(a.value, b.call.value)], out.warnings) };
 }
+
+const batchValueWarnings = (inputs: CallInput[], calls: ExecCall[]) => inputs.map((c, i) => bareValueWarning(c?.value, calls[i].value, `calls[${i}].value`));
 
 defineVerb({
   name: "exec send",
   group: "execute",
   summary: "Execute one call AS THE PROFILE (--via auto|km|lsp0|relay|userop; auto = relay when a relayer with quota covers the chain, else direct Key Manager).",
   description:
-    "Builds the ERC725X call, simulates it with the exact transport, shows the confirmation block (actor = profile, chain, Key Manager, path, gas payer, target, value, decoded function, raw calldata), asks for consent, then signs and sends. Value always comes from the profile balance unless --fund-from-controller.",
+    "Builds the ERC725X call, simulates it with the exact transport, shows the confirmation block (actor = profile, chain, Key Manager, path, gas payer, target, value, decoded function, raw calldata), asks for consent, then signs and sends. Swaps, approvals and payments to any contract go this way: the target sees the profile as msg.sender, the value comes from the profile balance (unless --fund-from-controller) and outputs belong to the profile; the agent's key only signs and pays gas. A revert is fixed here and simulated again, never retried from the key or a wallet app.",
   risk: "write",
   params: [...CALL_PARAMS, ...PATH_PARAMS],
   examples: ["up exec send --to 0xRecipient --value 0.1ether", 'up exec send --to 0xToken --fn "transfer(address,address,uint256,bool,bytes)" --args \'["0xUP","0xTo","1000",false,"0x"]\' --via relay'],
@@ -112,7 +120,7 @@ defineVerb({
     if (!Array.isArray(a.calls)) throw new UpError("BAD_ARGS", "--calls must be a JSON array");
     const { calls, abi } = buildCalls(a.calls as CallInput[]);
     const out = await executeAuto(ctx, { chainId, profile, calls, verb: "exec batch", abi } as ExecRequestExt, execOptions(a));
-    return { data: out, text: outcomeText(out), warnings: out.warnings };
+    return { data: out, text: outcomeText(out), warnings: allWarnings(batchValueWarnings(a.calls as CallInput[], calls), out.warnings) };
   },
 });
 
@@ -126,15 +134,18 @@ defineVerb({
     const { chainId, profile } = await chainAndProfile(ctx, a);
     const sim: VerbContext = { ...ctx, flags: { ...ctx.flags, dryRun: true }, consent: async () => {} };
     let req: ExecRequestExt;
+    let unit: (string | undefined)[];
     if (a.calls !== undefined) {
       const { calls, abi } = buildCalls(a.calls as CallInput[]);
       req = { chainId, profile, calls, abi, verb: "exec simulate" };
+      unit = batchValueWarnings(a.calls as CallInput[], calls);
     } else {
       const b = buildCall(callInputFrom(a));
       req = { chainId, profile, calls: [b.call], abi: b.abi, verb: "exec simulate" };
+      unit = [bareValueWarning(a.value, b.call.value)];
     }
     const out = await executeAuto(sim, req, execOptions(a));
-    return { data: { ...out, simulated: true }, text: `simulation OK (nothing signed or sent)\n${outcomeText(out)}`, warnings: out.warnings };
+    return { data: { ...out, simulated: true }, text: `simulation OK (nothing signed or sent)\n${outcomeText(out)}`, warnings: allWarnings(unit, out.warnings) };
   },
 });
 

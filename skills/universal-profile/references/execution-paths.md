@@ -38,6 +38,22 @@ Operation types: `0` CALL, `1` CREATE, `2` CREATE2, `3` STATICCALL, `4` DELEGATE
 
 To use a specific path, pass `--via` on every call; the policy does not pin paths.
 
+## Native value: who pays what (example: 5 LYX into a swap router)
+
+`up exec send --to <router> --data <calldata> --value 5lyx` builds one ERC725X call, `execute(0 CALL, router, 5000000000000000000, calldata)`: the value in base units (18 decimals for every native coin; `--value 5` would be 5 wei). `contract call --value` builds the same call. The profile sends the 5 LYX from its own balance; nothing else carries value:
+
+| Path | Transaction on chain | Its `value` | Pays the 5 LYX | Pays gas |
+| --- | --- | --- | --- | --- |
+| `km` | your key → `KeyManager.execute(payload)`; batch: `executeBatch(values, payloads)` with every value 0 (their sum must equal the transaction value) | 0 | the profile | your key |
+| `lsp0` | your key → `profile.execute(…)` (`executeBatch` for several calls) | 0 | the profile | your key |
+| `relay` | relayer → `KeyManager.executeRelayCall(…)`; the LSP25 signed value is 0 | 0 | the profile | the relayer; your key needs no coins |
+| `userop` | bundler → `EntryPoint.handleOps` → `profile.execute(…)` | 0 | the profile | the profile's EntryPoint deposit or a paymaster |
+
+- The router sees `msg.sender` = the profile and `msg.value` = 5 LYX. The confirmation block shows it: `actor`, `calls[].value` (wei) and `valueFormatted`, `valueSource` ("profile balance"), `entry.value` (what the transaction itself sends: 0) and `gasPayer`.
+- The profile's balance must cover the value (otherwise `ERC725X_InsufficientBalance`); your key's balance only pays gas. `up profile status` shows both separately. Coins sent to your key for gas are never the profile's money.
+- `--fund-from-controller` (`km` and `lsp0` only) is the one exception: the transaction carries the value from your key and the Key Manager forwards it through the profile. That spends gas money, so it always needs the human's `--approval` (the delegated policy never covers it), and it is never a fallback when the profile lacks funds.
+- The skill simulates exactly this entry call (from your key to the Key Manager or the profile, or the relay call). A direct `eth_call` from your key to the router proves nothing: wrong sender, wrong balance, no approvals.
+
 ## What the Key Manager checks (all paths)
 
 | Payload | Permission needed |
@@ -96,4 +112,4 @@ Every write shows (and `--dry-run` returns) the same block: chain name and id, a
 - Direct paths: the controller address pays gas in the chain's native coin; fund it per chain.
 - Relay: the relayer pays gas; your quota decreases. Quota does not pay for the value you send.
 - ERC-4337: the profile's EntryPoint deposit (or a paymaster) pays; the extension never pays the prefund itself, so a missing deposit fails with `AA21`.
-- Value sent by any action always comes from the profile's balance on that chain.
+- Value sent by any action comes from the profile's balance on that chain (only `--fund-from-controller`, with the human's approval, sends it from your key).

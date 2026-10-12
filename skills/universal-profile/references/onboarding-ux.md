@@ -172,3 +172,4 @@ Each step below has: **Goal** · **Message** (adapt the wording, keep the conten
 - Suggesting a testnet, a MetaMask contract call, or that the human signs the deployment.
 - After a successful dry run: "You'll sign the deployment in your wallet. Which wallet app do you use?" Wrong: the agent's own key sends and pays the deployment; the human only sent gas. Use the dry run's `data.say`.
 - Calling the gas address "my wallet" or "my account".
+- After a swap failed in simulation (`InsufficientETH`), offering the human an exchange website or wallet app instead of fixing the profile's call. A revert means the call needs fixing: check the value and its unit, the profile's balance and the recipient, and simulate again as the profile (SKILL.md, "Swaps and payments as the profile").
