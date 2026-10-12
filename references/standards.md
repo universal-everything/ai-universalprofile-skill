@@ -61,6 +61,6 @@ LUKSO Standard Proposals (LSPs) are specified in https://github.com/lukso-networ
 
 ## Not covered
 
-LSP28 (The Grid) and LSP30 (ERC725Account backup file) are data formats the skill does not use. LSP numbers 13, 19, 21, 22, 24, 27 and 29 do not exist in the LIPs repository.
+LSP28 (The Grid) is a data format the skill does not use. LSP30 (ERC725Account backup file) is used by `up backup` (see `references/security.md`, "Account backups"). LSP numbers 13, 19, 21, 22, 24, 27 and 29 do not exist in the LIPs repository.
 
 LUKSO's developer documentation (guides, permission tables, deployment pages): https://docs.lukso.tech

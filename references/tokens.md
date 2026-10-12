@@ -38,6 +38,7 @@ The skill decides `force` from the recipient unless you pass `--force`: a plain 
 ## Operators and allowances
 
 - Approvals let someone else move the profile's tokens. They are value-moving actions: approval-gated, exact amounts preferred, never "unlimited" without the human saying so explicitly.
+- The owner of every approval is the profile, and the spender is the contract that will pull the tokens (a router, Permit2, an allowance holder), never the agent's key. Approve from the profile (`up token approve`), never from the key.
 - LSP7 operator changes notify the operator through LSP1. To change an existing non-zero allowance, use `increaseAllowance` / `decreaseAllowance` (or revoke first) rather than overwriting it.
 - LSP8 operators are per token id; there is no "all tokens" operator.
 - ERC-20 `approve` front-running: when replacing a non-zero allowance, set it to zero first or use the protocol's permit flow.

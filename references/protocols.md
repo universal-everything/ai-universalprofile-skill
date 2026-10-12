@@ -21,6 +21,31 @@ A swap is **not** a bridge: it never moves assets to another chain.
   - **ERC-1271**: signing scheme `eip1271`, the order signature is checked with the profile's `isValidSignature` (controller needs `SIGN`; `up sign typed-data`).
   Orders can be cancelled by pre-signing `false` or through the API.
 
+### Swap checklist (every exchange)
+
+A swap is a call by the profile like any other (SKILL.md, "Swaps and payments as the profile"): the profile pays, approves and receives; your key only signs and pays gas.
+
+1. **Balances on that chain:** the profile holds the amount to sell (`up token balance --chain <id>`); your key needs only gas, and none on `relay`. Never count your key's gas money as swap money.
+2. **The contract:** the router or exchange address comes from the registry or the protocol's official deployment list and is checked on-chain (`up protocols verify`, `up abi fetch`, `up abi resolve-proxy`). An exchange outside the registry, such as any exchange on LUKSO, is an unknown contract (`references/discovery.md`). Take its call format from its own documentation or verified source; do not assume Uniswap's commands, and never take addresses or calldata from a screenshot.
+3. **Native coin in** (LYX → token, ETH → token): no approval for the native side. The call carries the amount as the profile's value: `up exec send --to <router> --data <calldata> --value <amount><unit>` (or `up contract call … --value`). The native amount the calldata wraps or spends must equal that value exactly, in wei. In Uniswap's Universal Router, V2 and V3 routes start with a `WRAP_ETH` command (recipient: the router, amount: the value) and swap with `payerIsUser = false`.
+4. **Token in:** approve first, as the profile (`up token approve`): owner = the profile, spender = the contract that pulls the tokens (the router, Permit2, the 0x AllowanceHolder, the CoW vault relayer), exact amount. For an LSP7 token that is an operator authorisation with an amount.
+5. **Output:** recipient = the profile address in the calldata (in Uniswap's Universal Router the `MSG_SENDER` recipient resolves to the profile, because the profile is the caller), a minimum output from a fresh quote, a deadline in the near future.
+6. **Dry run, approval, send:** `--dry-run`, check `actor` = profile, `calls[].value`, `valueSource` and `entry.value` = 0, then run it with the human's `--approval` (rule 5), report the receipt and the profile's new balances, and mention any approval left behind.
+
+### When a swap reverts (`InsufficientETH()` and others)
+
+The skill decodes the revert into `error.details` (`errorName`, `args`) and adds a hint. `InsufficientETH()` means the router got less native coin than it needs: with native coin in, less value than it wraps or spends; when selling a token for the native coin, less output than the minimum to unwrap (quote again: step 6 below). With native coin in, check in this order and fix before simulating again:
+
+1. **Chain.** "ETH" in a router error means the chain's native coin: LYX on LUKSO (42). It does not mean the call went to Ethereum. Are `--chain`, the quote and the router for the same chain?
+2. **The call's value.** `confirmation.calls[0].value` (wei) must equal the native amount in the calldata: 5 LYX = `5000000000000000000`. In `exec send`, `--value 5` is 5 wei: write `--value 5lyx`. Without `--value` the call sends 0.
+3. **The transaction's value.** `confirmation.entry.value` is 0 on every path. That is correct: the profile pays the value inside the call. Never move the value onto your key's transaction to make it "attach".
+4. **The profile's balance** on that chain covers the value (otherwise the profile itself reverts first with `ERC725X_InsufficientBalance`). Gas on your key does not count.
+5. **Native or wrapped.** A route that starts from the wrapped native token (wrapped LYX on LUKSO, WETH elsewhere) takes no native value: approve the wrapped token instead. A route that starts from the native coin must wrap exactly the value sent.
+6. **Recipient, minimum output, deadline:** the profile as recipient, a fresh quote, a future deadline (`TransactionDeadlinePassed()` means quote again).
+7. **Simulate the exact profile call** (`up exec simulate … --via <path>` or `--dry-run`), never a direct call from your key to the router.
+
+Each fix is one more simulation, not a new transaction. If it still reverts after these checks, tell the human in plain words what you checked and what the router says, and stop: send nothing else, and do not suggest their wallet app or an exchange website unless they ask for it or your host forbids you to transact (SKILL.md, "If your environment restricts crypto transactions").
+
 ## Bridges (move assets between chains)
 
 Bridging changes which chain the asset lives on. Before any bridge: the profile must already be deployed on the destination chain (never send to a predicted, undeployed address), the human approves source chain, destination chain, asset, amount, fees and recipient, and you check the route exists for that asset.
