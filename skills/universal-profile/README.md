@@ -1,4 +1,4 @@
-# Universal Profile Agent Skill
+# Universal Profile 🆙 Agent Skill
 
 **Give your AI agent a real account of its own: a smart account that you stay in control of, on LUKSO, Ethereum and 70+ other EVM networks.**
 
