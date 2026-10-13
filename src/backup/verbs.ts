@@ -1,5 +1,6 @@
-// Backup verbs (group "backup"): export, list, inspect, verify, import. LSP-30 backup files that
-// the Universal Profile mobile app can also read and write (see lsp30-crypto.ts / lsp30-format.ts).
+// Backup verbs (group "backup"): export, list, inspect, verify, import. LSP-30 backup files in the
+// Universal Profile mobile app's format, with the PBKDF2 count stated in the file (secrets.iterations);
+// the files the app writes are read too (see lsp30-crypto.ts / lsp30-format.ts).
 //
 // Rules the verbs keep:
 //  - The file is ciphertext; the agent never reads, prints or uploads its contents. It passes
@@ -24,11 +25,12 @@ const PASSWORD_HELP = [
 defineVerb({
   name: "backup export",
   group: "backup",
-  summary: "Make a backup file of the agent's profiles and keys that the Universal Profile mobile app can import (LSP-30), encrypted with a password by default.",
+  summary: "Make a backup file of the agent's profiles and keys in the Universal Profile mobile app's format (LSP-30), encrypted with a password by default.",
   description:
     "Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). " +
     "Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. " +
-    "Saved in <UP_HOME>/backups (never overwrites) as `<your display name> - universal-profiles-backup-YYYY-MM-DD.json` (pass --bot-name with your own display name; never guess another agent's or brand's name), or at --path exactly as given. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.",
+    "Saved in <UP_HOME>/backups (never overwrites) as `<your display name> - universal-profiles-backup-YYYY-MM-DD.json` (pass --bot-name with your own display name; never guess another agent's or brand's name), or at --path exactly as given. Send `data.path` to the human as a chat attachment; never read it. " +
+    "Encrypted files are locked with PBKDF2-HMAC-SHA256 at 600,000 iterations, stated in the file as `secrets.iterations` (`data.iterations`). Universal Profile app and extension versions that do not read that field cannot open them and report a wrong password (`data.appCompatible` is false): only if the human needs such a version, add --legacy (10,000 iterations, weaker). Prefer the generated password.",
   risk: "secret",
   params: [
     { name: "path", type: "string", positional: 0, description: "Where to write the file (must not exist; its folder must exist). Used exactly as given, without the agent prefix. Default: <UP_HOME>/backups/<agent display name> - universal-profiles-backup-YYYY-MM-DD.json." },
@@ -38,9 +40,10 @@ defineVerb({
     ...PASSWORD_HELP,
     { name: "hint", type: "string", description: "A hint for the password (up to 255 characters). It is stored unencrypted in the file and must not contain the password." },
     { name: "explicit-consent", type: "boolean", default: false, description: "Required for --mode unencrypted: the human explicitly wants the keys in a file without a password." },
+    { name: "legacy", type: "boolean", default: false, description: "LEGACY lock, encrypted mode only: 10,000 PBKDF2 iterations (stated in the file) instead of 600,000, so that Universal Profile app and extension versions that do not read secrets.iterations can open the file. A password guess then costs 60 times less: only when the human needs such an app version, with their approval." },
     { name: "refresh", type: "boolean", default: false, description: "Also read each profile's current controllers from the networks (best effort, 8 seconds per network)." },
   ],
-  examples: ["up backup export --bot-name \"<your display name>\" --approval \"<the human's words>\"", "up backup export --mode public --bot-name \"<your display name>\"", "up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval \"<their words>\""],
+  examples: ["up backup export --bot-name \"<your display name>\" --approval \"<the human's words>\"", "up backup export --mode public --bot-name \"<your display name>\"", "up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval \"<their words>\"", "up backup export --legacy --bot-name \"<your display name>\" --approval \"<their words, after hearing the lock is weaker>\""],
   run: (ctx, a) => import("./run.ts").then((m) => m.runExport(ctx, a)),
 });
 

@@ -2,6 +2,9 @@
 // (shared library BackupReportV2 and its sub-schemas, read on origin/develop ed6218b4). It turns the
 // spec-versus-app comparison (quirks Q7 to Q16) into a regression test: every file this skill writes
 // must pass it, so the app can import it. Same hand-written style as src/backup/lsp30-format.ts.
+// Given the password, it also opens the keys the way the app does: its zod schema (EncryptedSecretsReport)
+// strips `secrets.iterations` and its AesEncryptor derives with a hard-coded 10,000 iterations.
+import { createDecipheriv, pbkdf2Sync } from "node:crypto";
 import { getAddress } from "viem";
 
 const HEX = /^0x[a-fA-F0-9]*$/;
@@ -14,8 +17,24 @@ export interface AppReadResult {
   keptControllers: number;
 }
 
-/** Returns what the app's zod schemas and report builders would accept; errors name the field. */
-export function appReads(text: string): AppReadResult {
+/** The app's decryption: PBKDF2-HMAC-SHA256 (password as UTF-8, 10,000 iterations, whatever the file states), AES-GCM, two JSON.parse to its key list. */
+function appDecrypts(data: { secret: string; iv: string; salt: string }, password: string): boolean {
+  try {
+    const sealed = Buffer.from(data.secret, "base64");
+    const key = pbkdf2Sync(Buffer.from(password, "utf8"), Buffer.from(data.salt, "base64"), 10_000, 32, "sha256");
+    const d = createDecipheriv("aes-256-gcm", key, Buffer.from(data.iv, "base64"));
+    d.setAuthTag(sealed.subarray(sealed.length - 16));
+    const plain = Buffer.concat([d.update(sealed.subarray(0, sealed.length - 16)), d.final()]).toString("utf8");
+    const once = JSON.parse(plain);
+    const inner = typeof once === "string" ? JSON.parse(once) : undefined;
+    return isObj(inner) && Array.isArray(inner.privateKeys);
+  } catch {
+    return false;
+  }
+}
+
+/** Returns what the app's zod schemas and report builders would accept (and, with `password`, whether it opens the keys); errors name the field. */
+export function appReads(text: string, password?: string): AppReadResult {
   const errors: string[] = [];
   const need = (cond: unknown, msg: string) => {
     if (!cond) errors.push(msg);
@@ -77,6 +96,7 @@ export function appReads(text: string): AppReadResult {
       need(typeof s.encryptionType === "string", "secrets.encryptionType is required");
       for (const f of ["secret", "iv", "salt"]) need(typeof s.data?.[f] === "string" && /^[A-Za-z0-9+/]+={0,2}$/.test(s.data[f]), `secrets.data.${f} must be Base64`);
       need(Buffer.from(s.data?.salt ?? "", "base64").length === 32 && Buffer.from(s.data?.iv ?? "", "base64").length === 16, "salt must be 32 bytes and iv 16 bytes (what the app writes)");
+      if (password !== undefined && !errors.length) need(appDecrypts(s.data, password), "the app derives the key with 10,000 iterations whatever the file states: it reports a wrong password");
     } else {
       need(Array.isArray(s.data), "secrets.data must be a list");
       for (const [i, e] of (s.data ?? []).entries()) {

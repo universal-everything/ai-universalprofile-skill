@@ -35,7 +35,10 @@ export interface IndexEntry {
   /** Fingerprint of profiles and deployment data only (what a public backup covers). */
   profilesFingerprint: string;
   hintPresent: boolean;
+  /** Whether app versions that do not read `secrets.iterations` (they derive with 10,000) can import it. */
   appCompatible: boolean;
+  /** The PBKDF2 count an encrypted backup states (`secrets.iterations`); absent for the other modes and in lines written before the count was stated. */
+  iterations?: number;
 }
 
 /**

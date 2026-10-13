@@ -67,7 +67,7 @@ describe("export when the index cannot be written", () => {
     expect(r.data.say).toContain(r.data.password);
     expect(r.warnings!.join(" ")).toContain("could not be added to the backups index");
     // the file is complete and opens with that password
-    expect((await decryptSecrets(JSON.parse(readFileSync(custom, "utf8")).secrets.data, r.data.password)).keys.map((k) => k.address)).toEqual([privateKeyToAddress(A0)]);
+    expect((await decryptSecrets(JSON.parse(readFileSync(custom, "utf8")).secrets.data, r.data.password, JSON.parse(readFileSync(custom, "utf8")).secrets.iterations)).keys.map((k) => k.address)).toEqual([privateKeyToAddress(A0)]);
     // other readers are kept away although the final index line is missing (the path was reserved first)
     expect(() => assertNotKeyMaterialPath(custom)).toThrow(/backups or a backup file/);
     failing.on = null;

@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 5a878e567e01 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint d16fcd25dbea (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -8478,12 +8478,15 @@ var init_safe_text = __esm({
 
 // src/backup/lsp30-crypto.ts
 import { getAddress as getAddress47 } from "./vendor-viem.mjs";
+var MAX_ITERATIONS, ITERATIONS_RULE;
 var init_lsp30_crypto = __esm({
   "src/backup/lsp30-crypto.ts"() {
     "use strict";
     init_errors();
     init_secret_guard();
     init_local_signer();
+    MAX_ITERATIONS = 5e6;
+    ITERATIONS_RULE = `a whole number from 1 to ${MAX_ITERATIONS.toLocaleString("en-US")}`;
   }
 });
 
@@ -8924,7 +8927,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "5a878e567e01" : "source";
+var SOURCE = true ? "d16fcd25dbea" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -9417,8 +9420,8 @@ var PASSWORD_HELP = [
 defineVerb({
   name: "backup export",
   group: "backup",
-  summary: "Make a backup file of the agent's profiles and keys that the Universal Profile mobile app can import (LSP-30), encrypted with a password by default.",
-  description: "Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) as `<your display name> - universal-profiles-backup-YYYY-MM-DD.json` (pass --bot-name with your own display name; never guess another agent's or brand's name), or at --path exactly as given. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.",
+  summary: "Make a backup file of the agent's profiles and keys in the Universal Profile mobile app's format (LSP-30), encrypted with a password by default.",
+  description: "Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) as `<your display name> - universal-profiles-backup-YYYY-MM-DD.json` (pass --bot-name with your own display name; never guess another agent's or brand's name), or at --path exactly as given. Send `data.path` to the human as a chat attachment; never read it. Encrypted files are locked with PBKDF2-HMAC-SHA256 at 600,000 iterations, stated in the file as `secrets.iterations` (`data.iterations`). Universal Profile app and extension versions that do not read that field cannot open them and report a wrong password (`data.appCompatible` is false): only if the human needs such a version, add --legacy (10,000 iterations, weaker). Prefer the generated password.",
   risk: "secret",
   params: [
     { name: "path", type: "string", positional: 0, description: "Where to write the file (must not exist; its folder must exist). Used exactly as given, without the agent prefix. Default: <UP_HOME>/backups/<agent display name> - universal-profiles-backup-YYYY-MM-DD.json." },
@@ -9428,9 +9431,10 @@ defineVerb({
     ...PASSWORD_HELP,
     { name: "hint", type: "string", description: "A hint for the password (up to 255 characters). It is stored unencrypted in the file and must not contain the password." },
     { name: "explicit-consent", type: "boolean", default: false, description: "Required for --mode unencrypted: the human explicitly wants the keys in a file without a password." },
+    { name: "legacy", type: "boolean", default: false, description: "LEGACY lock, encrypted mode only: 10,000 PBKDF2 iterations (stated in the file) instead of 600,000, so that Universal Profile app and extension versions that do not read secrets.iterations can open the file. A password guess then costs 60 times less: only when the human needs such an app version, with their approval." },
     { name: "refresh", type: "boolean", default: false, description: "Also read each profile's current controllers from the networks (best effort, 8 seconds per network)." }
   ],
-  examples: [`up backup export --bot-name "<your display name>" --approval "<the human's words>"`, 'up backup export --mode public --bot-name "<your display name>"', 'up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval "<their words>"'],
+  examples: [`up backup export --bot-name "<your display name>" --approval "<the human's words>"`, 'up backup export --mode public --bot-name "<your display name>"', 'up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval "<their words>"', 'up backup export --legacy --bot-name "<your display name>" --approval "<their words, after hearing the lock is weaker>"'],
   run: (ctx, a) => import("./backup.mjs").then((m) => m.runExport(ctx, a))
 });
 defineVerb({
@@ -11507,7 +11511,7 @@ ${m.profile}`;
       next = [
         "Send the profile address with its QR (up display address <profile> --chain <id>) and say where money for the profile goes: the profile address, never the gas address.",
         ...metadataNext,
-        'Later, once, offer the human a backup of the account (a file plus a password they keep safe, restorable in the Universal Profile app): run up backup list; if data.ask is set, ask its question (references/onboarding.md, "Backup"). A new key or profile makes it ask again.'
+        'Later, once, offer the human a backup of the account (a file plus a password they keep safe, restorable by you on a new machine; Universal Profile app and extension versions that do not read secrets.iterations need a --legacy copy): run up backup list; if data.ask is set, ask its question (references/onboarding.md, "Backup"). A new key or profile makes it ask again.'
       ];
     } else if (out.status === "already-deployed") {
       say = `My profile already exists on ${chainName7}:

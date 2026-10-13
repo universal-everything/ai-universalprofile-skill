@@ -1,11 +1,11 @@
-// LSP-30 file: serializer (the app's exact bytes), validator, and the replica of the app's reader.
+// LSP-30 file: serializer (the app's exact bytes), validator, the stated iteration count, and the replica of the app's reader.
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAddress, type Address, type Hex } from "viem";
 import { privateKeyToAddress } from "viem/accounts";
 import { decodeDeployment, initialControllersFor } from "../../../src/backup/lsp23-decode.ts";
-import { ENCRYPTION_TYPE, encryptSecrets } from "../../../src/backup/lsp30-crypto.ts";
+import { DEFAULT_ITERATIONS, ENCRYPTION_TYPE, LEGACY_ITERATIONS, encryptSecrets } from "../../../src/backup/lsp30-crypto.ts";
 import { appIncompatibilities, backupDate, backupText, parseBackup, serializeBackup, type BackupFile } from "../../../src/backup/lsp30-format.ts";
 import { appReads, looksLikeAppWriter } from "../../support/app-reader.ts";
 import { fakeManifest, newKey } from "../../support/backup-fixtures.ts";
@@ -13,8 +13,8 @@ import { fakeManifest, newKey } from "../../support/backup-fixtures.ts";
 const kat = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "fixtures", "lsp30", "app-kat.json"), "utf8"));
 const katText = JSON.stringify(kat.backupFile, undefined, 2);
 
-/** A complete file with one deployed profile: the shape this skill writes. */
-async function sampleFile(): Promise<{ file: BackupFile; keys: Hex[]; profile: Address }> {
+/** A complete file with one deployed profile: the shape this skill writes (600,000 iterations, stated; `iterations` overrides). */
+async function sampleFile(iterations = DEFAULT_ITERATIONS): Promise<{ file: BackupFile; keys: Hex[]; profile: Address }> {
   const keys = [newKey(), newKey()];
   const m = fakeManifest({ controller: privateKeyToAddress(keys[0]), extra: [{ address: "0x4444444444444444444444444444444444444444", permissions: "0x0000000000000000000000000000000000000000000000000000000000000008" }], chainIds: [42, 8453] });
   const dec = decodeDeployment({ profileAddress: m.profile, factoryAddress: m.plan.factory, deploymentCalldata: m.deployCalldata });
@@ -24,7 +24,7 @@ async function sampleFile(): Promise<{ file: BackupFile; keys: Hex[]; profile: A
     backupDate: "2026-10-10T12:00:00Z",
     accounts: [{ type: "LSP0-ERC725Account", name: "", address: m.profile, networks: [8453, 42].map((c) => ({ chainID: c, name: "x", controllers: keys.map((k, i) => ({ address: privateKeyToAddress(k), type: "App", privateKeyIndex: i, name: `AI agent key ${i}` })) })) }],
     LSP23CrossChainDeployment: [{ profileAddress: m.profile, initialChainID: 42, factoryAddress: m.plan.factory, deploymentCalldata: m.deployCalldata, salt: m.salt, initialControllers: initialControllersFor(dec, idx) }],
-    secrets: { encrypted: true, passwordHint: "my hint", encryptionType: ENCRYPTION_TYPE, data: await encryptSecrets(keys.map((k) => ({ address: privateKeyToAddress(k), privateKey: k })), "format-test-password") },
+    secrets: { encrypted: true, passwordHint: "my hint", encryptionType: ENCRYPTION_TYPE, iterations, data: await encryptSecrets(keys.map((k) => ({ address: privateKeyToAddress(k), privateKey: k })), "format-test-password", iterations) },
   };
   return { file, keys, profile: m.profile };
 }
@@ -32,7 +32,8 @@ async function sampleFile(): Promise<{ file: BackupFile; keys: Hex[]; profile: A
 describe("serializer writes the app's bytes", () => {
   it("reproduces the app-shaped vector file byte for byte (key order, 2-space indent, no trailing newline)", () => {
     const { backup } = parseBackup(katText);
-    const s = backup!.secrets as { kind: "encrypted"; hint?: string; data: any };
+    const s = backup!.secrets as { kind: "encrypted"; hint?: string; iterations: number; iterationsInFile: boolean; data: any };
+    expect([s.iterations, s.iterationsInFile]).toEqual([10_000, false]); // the app's file states no count
     const out = serializeBackup({
       version: 2,
       backupDate: backup!.backupDate,
@@ -56,7 +57,8 @@ describe("serializer writes the app's bytes", () => {
     const keyed = v.LSP23CrossChainDeployment[0].initialControllers.find((c: any) => c.privateKeyIndex !== undefined);
     expect(Object.keys(keyed)).toEqual(["address", "privateKeyIndex", "addressPermissions"]);
     expect(Object.keys(keyed.addressPermissions)).toEqual(["permissions", "decodedPermissions", "allowedCalls", "allowedERC725YDataKeys"]);
-    expect(Object.keys(v.secrets)).toEqual(["encrypted", "passwordHint", "encryptionType", "data"]);
+    expect(Object.keys(v.secrets)).toEqual(["encrypted", "passwordHint", "encryptionType", "iterations", "data"]);
+    expect(v.secrets.iterations).toBe(600_000);
     expect(Object.keys(v.secrets.data)).toEqual(["secret", "iv", "salt"]);
     expect(v.version).toBe(2);
   });
@@ -81,6 +83,65 @@ describe("serializer writes the app's bytes", () => {
     const { file } = await sampleFile();
     const lower = { ...file, accounts: file.accounts.map((a) => ({ ...a, address: a.address.toLowerCase() as Address })) };
     expect(JSON.parse(serializeBackup(lower)).accounts[0].address).toBe(getAddress(file.accounts[0].address));
+  });
+});
+
+describe("secrets.iterations: the stated count (absent means exactly 10,000)", () => {
+  const SENTINEL = "SENTINEL-count-9f3a";
+  const fileWith = (secrets: Record<string, unknown>) => ({ version: 2, backupDate: "2026-10-12T12:00:00Z", accounts: [], LSP23CrossChainDeployment: [], secrets });
+  const encrypted = (extra: Record<string, unknown> = {}) => ({ encrypted: true, encryptionType: ENCRYPTION_TYPE, ...extra, data: { secret: Buffer.alloc(40, 1).toString("base64"), iv: Buffer.alloc(16, 2).toString("base64"), salt: Buffer.alloc(32, 3).toString("base64") } });
+
+  it("a file that states no count (the app's, this skill's earlier ones) is read as exactly 10,000", () => {
+    for (const text of [katText, JSON.stringify(fileWith(encrypted()))]) {
+      const { backup, issues } = parseBackup(text);
+      expect(issues.filter((i) => i.level === "error")).toEqual([]);
+      expect(backup!.secrets).toMatchObject({ kind: "encrypted", iterations: 10_000, iterationsInFile: false });
+    }
+  });
+
+  it("a stated count is kept exactly as stated, also 10,000 (a --legacy file) and the bounds", () => {
+    for (const n of [1, 10_000, 123_457, 600_000, 5_000_000]) {
+      const { backup, issues } = parseBackup(JSON.stringify(fileWith(encrypted({ iterations: n }))));
+      expect(issues, String(n)).toEqual([]);
+      expect(backup!.secrets, String(n)).toMatchObject({ kind: "encrypted", iterations: n, iterationsInFile: true });
+    }
+    // JSON spellings of the same whole number
+    for (const raw of ["6e5", "600000.0", "600000"]) expect((parseBackup(JSON.stringify(fileWith(encrypted({ iterations: 1 }))).replace('"iterations": 1', `"iterations": ${raw}`).replace('"iterations":1', `"iterations":${raw}`)).backup!.secrets as any).iterations, raw).toBe(600_000);
+  });
+
+  it("a stated count that is not a whole number from 1 to 5,000,000 is an error that names the place, never the value; nothing is left to decrypt", () => {
+    for (const bad of [null, "600000", "", 0, -1, 1.5, 600_000.5, 5_000_001, Number.MAX_SAFE_INTEGER, true, [600_000], {}, { value: 600_000 }, SENTINEL]) {
+      const { backup, issues } = parseBackup(JSON.stringify(fileWith(encrypted({ iterations: bad }))));
+      expect(backup, JSON.stringify(bad)).toBeUndefined();
+      expect(issues, JSON.stringify(bad)).toContainEqual({ level: "error", code: "bad-iterations", message: "secrets.iterations is not a whole number from 1 to 5,000,000" });
+      expect(JSON.stringify(issues)).not.toContain(SENTINEL);
+    }
+    // what JSON.stringify cannot write: an overflowing number (Infinity) and minus zero
+    const base = JSON.stringify(fileWith(encrypted({ iterations: 1 })));
+    for (const raw of ["1e400", "-1e400", "-0"]) {
+      const { backup, issues } = parseBackup(base.replace('"iterations":1', `"iterations":${raw}`));
+      expect(backup, raw).toBeUndefined();
+      expect(issues.map((i) => i.code), raw).toContain("bad-iterations");
+    }
+  });
+
+  it("unencrypted and public secrets: an iterations property means nothing there and is ignored", () => {
+    for (const v of [600_000, "junk", null]) {
+      const { backup, issues } = parseBackup(JSON.stringify(fileWith({ encrypted: false, data: [], iterations: v })));
+      expect(issues, String(v)).toEqual([]);
+      expect(backup!.secrets).toEqual({ kind: "public" });
+    }
+  });
+
+  it("the serializer states the count before data, and leaves it out only when none is given (the app's own shape)", async () => {
+    const { file } = await sampleFile(LEGACY_ITERATIONS);
+    const legacy = JSON.parse(serializeBackup(file)).secrets;
+    expect(Object.keys(legacy)).toEqual(["encrypted", "passwordHint", "encryptionType", "iterations", "data"]);
+    expect(legacy.iterations).toBe(10_000);
+    const { iterations, ...withoutCount } = file.secrets as any;
+    expect(Object.keys(JSON.parse(serializeBackup({ ...file, secrets: withoutCount })).secrets)).toEqual(["encrypted", "passwordHint", "encryptionType", "data"]);
+    const plain = JSON.parse(serializeBackup({ ...file, secrets: { encrypted: false, data: [] } }));
+    expect(plain.secrets).toEqual({ encrypted: false, data: [] });
   });
 });
 
@@ -118,6 +179,23 @@ describe("the app's reader (replica) accepts what the skill writes", () => {
     expect(mutate((v) => (v.LSP23CrossChainDeployment[0].initialControllers[0].addressPermissions.decodedPermissions = { SETDATA: false }))).toContain("only hold true");
     expect(mutate((v) => v.LSP23CrossChainDeployment[0].initialControllers.forEach((c: any) => delete c.privateKeyIndex))).toContain("privateKeyIndex");
     expect(mutate((v) => (v.secrets.data.iv = Buffer.alloc(12).toString("base64")))).toContain("16 bytes");
+  });
+});
+
+describe("the app's reader (replica) and the stated count", () => {
+  it("it drops secrets.iterations and always derives with 10,000: a --legacy file opens, a 600,000 file is a 'wrong password'", async () => {
+    const legacy = await sampleFile(LEGACY_ITERATIONS);
+    expect(appReads(serializeBackup(legacy.file), "format-test-password")).toMatchObject({ ok: true, errors: [] });
+    const strong = await sampleFile(DEFAULT_ITERATIONS);
+    const r = appReads(serializeBackup(strong.file), "format-test-password");
+    expect(r.ok).toBe(false);
+    expect(r.errors).toEqual(["the app derives the key with 10,000 iterations whatever the file states: it reports a wrong password"]);
+    expect(appReads(serializeBackup(strong.file)).errors).toEqual([]); // structurally the app accepts it: only the key derivation fails
+  });
+
+  it("the app-made vector opens in the replica with its password, and not with another", () => {
+    expect(appReads(katText, kat.password).ok).toBe(true);
+    expect(appReads(katText, "not-the-password").ok).toBe(false);
   });
 });
 

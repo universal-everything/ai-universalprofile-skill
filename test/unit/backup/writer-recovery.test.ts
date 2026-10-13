@@ -91,7 +91,7 @@ describe("the writer after publication (finding 7)", () => {
     expect(r.data.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(r.data.say).toContain(r.data.password);
     expect(r.warnings!.join(" ")).toMatch(/temporary copy .* could not be removed \(EBUSY\)/);
-    expect((await decryptSecrets(JSON.parse(readFileSync(dest, "utf8")).secrets.data, r.data.password)).keys.map((k) => k.address)).toEqual([privateKeyToAddress(A0)]);
+    expect((await decryptSecrets(JSON.parse(readFileSync(dest, "utf8")).secrets.data, r.data.password, JSON.parse(readFileSync(dest, "utf8")).secrets.iterations)).keys.map((k) => k.address)).toEqual([privateKeyToAddress(A0)]);
     expect(indexLines().some((l) => l.sha256 === r.data.sha256)).toBe(true);
     sim.rm = false;
     for (const f of readdirSync(join(dest, ".."))) if (f.endsWith(".tmp")) rmSync(join(dest, "..", f));

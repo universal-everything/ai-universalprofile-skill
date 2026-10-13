@@ -11,7 +11,7 @@ import { safeFileText } from "../core/safe-text.ts";
 import type { VerbContext, VerbResult } from "../core/types.ts";
 import { chooseBackend, internalBackend } from "../signer/index.ts";
 import { buildBackup, collectState, fingerprints, type BuiltBackup } from "./build.ts";
-import { ENCRYPTION_TYPE, KDF_DESCRIPTION, encryptSecrets, type SecretKey } from "./lsp30-crypto.ts";
+import { DEFAULT_ITERATIONS, ENCRYPTION_TYPE, LEGACY_ITERATIONS, encryptSecrets, kdfDescription, type SecretKey } from "./lsp30-crypto.ts";
 import { MAX_BACKUP_BYTES, parseBackup, serializeBackup, type BackupFile, type BackupMode, type BackupSecrets } from "./lsp30-format.ts";
 import { checkHint, choosePassword } from "./password.ts";
 import {
@@ -51,6 +51,13 @@ function hasPasswordArgs(a: Record<string, any>): boolean {
 
 const DELIVERY = "Attach the file at data.path to your reply with your chat's attachment mechanism (OpenClaw: the message tool, action send, media = that path). Never read, print, cat, open, copy or upload the file's contents yourself.";
 
+/** What an encrypted file's stated count means for the apps, for the agent (data.compatibility) and the confirmation. */
+const COMPATIBILITY = {
+  default: "The file states secrets.iterations = 600000. This skill and app versions that read secrets.iterations open it; Universal Profile app and extension versions that do not read it always derive with 10,000, so they cannot open it and report a wrong password. A copy for those: --legacy (weaker lock), only with the human's approval.",
+  legacy: "The file states secrets.iterations = 10000 (--legacy): the count app and extension versions that do not read secrets.iterations always use, so they open it, as do this skill and newer versions.",
+};
+const LEGACY_WARNING = "LEGACY: the keys are locked with 10,000 PBKDF2 iterations (the old app's count, stated in the file) so that app versions that do not read secrets.iterations can open it; a password guess costs 60 times less than with the default 600,000. Use it only when the human needs such an app version; a generated password is best";
+
 const VERDICT_TEXT: Record<string, string> = {
   restorable: "a key from the backup still controls it",
   "restorable-with-warning": "the file proves a key created it, but that key no longer has permissions on the network",
@@ -72,19 +79,26 @@ function decisionData(d: ProfileDecision, x: AccountAnalysis) {
 }
 
 /** Opens the file again with the importer's own code path and compares it with what was meant to be written. Nothing is written on a mismatch. */
-async function verifyRoundTrip(text: string, built: BuiltBackup, keys: SecretKey[], password: string | undefined): Promise<void> {
+async function verifyRoundTrip(text: string, built: BuiltBackup, keys: SecretKey[], password: string | undefined, iterations: number | undefined): Promise<void> {
   const fail = () => new UpError("INTERNAL", "backup verification failed: the file does not read back as intended; nothing was written");
   const opened = await openBackup(text, password).catch(() => {
     throw fail();
   });
   if (opened.keys.length !== keys.length || opened.keys.some((k, i) => k.index !== i || !sameAddress(k.address, keys[i].address) || k.privateKey !== keys[i].privateKey.toLowerCase() || k.claimedAddress)) throw fail();
   if (opened.parsed.accounts.length !== built.file.accounts.length || opened.parsed.lsp23.length !== built.file.LSP23CrossChainDeployment.length) throw fail();
-  if (opened.parsed.secrets.kind === "encrypted" && opened.decryption?.iterations !== 10_000) throw fail();
+  // an encrypted file states the count it was made with and opens with exactly that count
+  if (opened.parsed.secrets.kind === "encrypted" && (opened.decryption?.iterations !== iterations || opened.decryption?.iterationsInFile !== true)) throw fail();
 }
 
 export async function runExport(ctx: VerbContext, a: Record<string, any>): Promise<VerbResult> {
   const mode = a.mode as BackupMode;
+  const legacy = a.legacy === true;
   if (mode !== "encrypted" && (hasPasswordArgs(a) || a.hint)) throw new UpError("BAD_ARGS", `a password or hint only applies to an encrypted backup (this one is ${mode})`);
+  if (mode !== "encrypted" && legacy) throw new UpError("BAD_ARGS", `--legacy only applies to an encrypted backup (this one is ${mode})`);
+  // an encrypted file states its PBKDF2 count (secrets.iterations): 600,000, or the old app's 10,000 only when asked for (never chosen automatically)
+  const iterations = mode === "encrypted" ? (legacy ? LEGACY_ITERATIONS : DEFAULT_ITERATIONS) : undefined;
+  const kdf = iterations !== undefined ? kdfDescription(iterations) : undefined;
+  const compatibility = iterations !== undefined ? (legacy ? COMPATIBILITY.legacy : COMPATIBILITY.default) : undefined;
   if (mode === "unencrypted" && a["explicit-consent"] !== true) {
     throw new UpError("BAD_ARGS", "an unencrypted backup needs --explicit-consent: it puts the keys in a file anyone can use", { hint: "recommend the encrypted backup; only if the human insists, add --explicit-consent and their --approval" });
   }
@@ -97,6 +111,8 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
   if (!state.profiles.length && !state.keys.length) throw new UpError("BAD_ARGS", "there is nothing to back up yet: no profile and no key on this machine", { hint: "set up the profile first (up start)" });
   if (mode !== "public" && !state.keys.length) throw new UpError("NO_SIGNER", "none of the agent's keys is in a key store here, so there are no keys to back up", { hint: "a backup without keys is --mode public" });
   const built = buildBackup(ctx, cfg, state, mode);
+  // app versions that do not read secrets.iterations derive with 10,000: they import only what has no other count
+  const appCompatible = built.appIncompatible.length === 0 && (iterations === undefined || iterations === LEGACY_ITERATIONS);
   assertNoKeyMaterial("an account name, alias or label of the backup", built.file);
   const dest = await resolveDestination(ctx.home, a.path, label);
   assertNoKeyMaterial("the backup destination", { path: dest });
@@ -106,6 +122,7 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
   if (mode !== "public" && built.appIncompatible.length) warnings.push(...built.appIncompatible.map((w) => `the app may reject this file: ${w}`));
   if (mode === "public" && built.file.LSP23CrossChainDeployment.length) warnings.push("the Universal Profile app cannot import a public file that has deployment data (it needs a key)");
   if (mode === "unencrypted") warnings.push("UNENCRYPTED: this file holds the private keys in plain text. Anyone with a copy controls those keys and what they control. Delete it after use; if it was ever sent through a chat or e-mail, treat the keys as exposed and move the funds");
+  if (legacy) warnings.push(LEGACY_WARNING);
 
   if (mode !== "public") {
     const summary = {
@@ -115,7 +132,8 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
       chains: built.chains.map((c) => `${chainName(ctx, c)} (${c})`),
       keyAddresses: built.keys.map((k) => k.address),
       keyCount: built.keys.length,
-      format: mode === "encrypted" ? `LSP-30 version 2 (${KDF_DESCRIPTION})` : "LSP-30 version 2, keys not encrypted",
+      format: mode === "encrypted" ? `LSP-30 version 2, ${legacy ? "LEGACY lock: " : ""}${kdf}` : "LSP-30 version 2, keys not encrypted",
+      ...(compatibility ? { compatibility } : {}),
       password: mode === "encrypted" ? (hasPasswordArgs(a) && a["generate-password"] !== true ? "chosen by the human" : "generated (returned to the agent to tell the human)") : "none",
       note: mode === "encrypted" ? "anyone with the file AND the password controls these keys" : "anyone with the file controls these keys",
       warnings,
@@ -124,7 +142,7 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
     await ctx.consent({ verb: "backup export", risk: "secret", summary });
   }
   if (ctx.flags.dryRun) {
-    return { data: { dryRun: true, mode, path: dest, profiles, keys: built.keys.map((k) => k.address), chains: built.chains, appCompatible: built.appIncompatible.length === 0 }, text: `Dry run: a ${mode} backup of ${plural(profiles.length, "profile", "profiles")} and ${plural(built.keys.length, "key", "keys")} would be written to ${dest}.`, warnings };
+    return { data: { dryRun: true, mode, path: dest, profiles, keys: built.keys.map((k) => k.address), chains: built.chains, ...(iterations !== undefined ? { iterations, legacy, kdf } : {}), appCompatible }, text: `Dry run: a ${mode} backup of ${plural(profiles.length, "profile", "profiles")} and ${plural(built.keys.length, "key", "keys")} would be written to ${dest}${kdf ? ` (${kdf})` : ""}.`, warnings };
   }
 
   const choice = mode === "encrypted" ? await choosePassword(a, true) : undefined;
@@ -140,11 +158,11 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
   }
   const secrets: BackupSecrets =
     mode === "encrypted"
-      ? { encrypted: true, ...(hint ? { passwordHint: hint } : {}), encryptionType: ENCRYPTION_TYPE, data: await encryptSecrets(secretKeys, choice!.password) }
+      ? { encrypted: true, ...(hint ? { passwordHint: hint } : {}), encryptionType: ENCRYPTION_TYPE, iterations: iterations!, data: await encryptSecrets(secretKeys, choice!.password, iterations!) }
       : { encrypted: false, data: mode === "unencrypted" ? secretKeys.map((k, index) => ({ type: "privateKey" as const, index, address: k.address, secret: k.privateKey })) : [] };
   const file: BackupFile = { ...built.file, secrets };
   const text = serializeBackup(file);
-  await verifyRoundTrip(text, built, secretKeys, choice?.password);
+  await verifyRoundTrip(text, built, secretKeys, choice?.password, iterations);
 
   // the keys are registered now: the public text is checked once more against them
   assertNoKeyMaterial("an account name, alias, hint or the destination of the backup", { file: built.file, hint, path: dest });
@@ -184,18 +202,24 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
     fingerprint: fp.full,
     profilesFingerprint: fp.profiles,
     hintPresent: Boolean(hint),
-    appCompatible: built.appIncompatible.length === 0,
+    appCompatible,
+    ...(iterations !== undefined ? { iterations } : {}),
   }).catch(() => {
     indexed = false;
     warnings.push("the backup was written, but it could not be added to the backups index, so `up backup list` will not show it. The file is kept and still protected from other readers; use it as normal");
   });
 
   const what = profiles.length === 1 ? "my account" : profiles.length > 1 ? `my ${profiles.length} accounts` : "my keys";
+  // never promise that every app version opens a default file: only versions that read its count do
+  const made = legacy ? ", made so that the Universal Profile app can open it" : "";
+  const restoreWhere = legacy
+    ? "You can restore it in the Universal Profile app or with me. Its lock is weaker than my usual one, so keep the file especially safe."
+    : "You can restore it with me. The Universal Profile app opens it only in versions that support its stronger lock; if yours can't, ask me for an app-compatible copy.";
   const say =
     mode === "encrypted" && choice?.generated
-      ? `Here is the backup of ${what}. Its password is: ${choice.password}\nKeep the file and the password in different safe places (a password manager is ideal). You can restore it in the Universal Profile app or with me.`
+      ? `Here is the backup of ${what}${made}. Its password is: ${choice.password}\nKeep the file and the password in different safe places (a password manager is ideal). ${restoreWhere}`
       : mode === "encrypted"
-        ? `Here is the backup of ${what}. It is locked with the password you chose; without it the file cannot be opened. Keep the file and the password in different places. You can restore it in the Universal Profile app or with me.`
+        ? `Here is the backup of ${what}${made}. It is locked with the password you chose; without it the file cannot be opened. Keep the file and the password in different places. ${restoreWhere}`
         : mode === "unencrypted"
           ? `Here is the backup of ${what}, WITHOUT a password. Anyone who gets this file controls my keys and what they control: treat it like a recovery phrase, don't forward it, and delete it after use.`
           : `Here is a copy of the details of ${what}: no keys and no password are in it, so nobody can take control with it. It helps me set ${what === "my keys" ? "up" : "it up"} again, but it cannot restore control on its own${built.appIncompatible.length ? " and the Universal Profile app can't open it" : ""}.`;
@@ -209,8 +233,8 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
     keys: built.keys.map((k) => k.address),
     keyCount: built.keys.length,
     chains: built.chains,
-    appCompatible: built.appIncompatible.length === 0,
-    ...(mode === "encrypted" ? { kdf: KDF_DESCRIPTION } : {}),
+    appCompatible,
+    ...(iterations !== undefined ? { iterations, legacy, kdf, compatibility } : {}),
     hintPresent: Boolean(hint),
     indexed,
     ...(choice?.generated ? { password: choice.password, passwordGenerated: true } : {}),
@@ -219,13 +243,14 @@ export async function runExport(ctx: VerbContext, a: Record<string, any>): Promi
       DELIVERY,
       mode === "encrypted" && choice?.generated ? "Tell the human data.say (it has the password) with the attachment, and do not repeat the password elsewhere." : "Tell the human data.say with the attachment.",
       "Do not delete or read backup files. The human decides what to keep.",
+      ...(mode === "encrypted" && !legacy ? ["Only if the human needs to restore it in a Universal Profile app or extension version that cannot open it (it says the password is wrong): offer a copy made with up backup export --legacy, which has a weaker lock, and make it only with their approval."] : []),
       ...(mode === "unencrypted" ? ["Deliver the file only because the human explicitly asked, after hearing the warning in data.say."] : []),
     ],
   };
   if (choice?.generated) releaseKeys(data, "password");
   return {
     data,
-    text: [say, "", `File: ${dest}`, `sha256: ${written.sha256}`, `Contents: ${plural(profiles.length, "profile", "profiles")}, ${plural(built.keys.length, "key", "keys")}${mode === "encrypted" ? `; ${KDF_DESCRIPTION}` : ""}`].join("\n"),
+    text: [say, "", `File: ${dest}`, `sha256: ${written.sha256}`, `Contents: ${plural(profiles.length, "profile", "profiles")}, ${plural(built.keys.length, "key", "keys")}${kdf ? `; ${legacy ? "LEGACY lock, " : ""}${kdf}` : ""}`].join("\n"),
     warnings,
   };
 }
@@ -242,7 +267,7 @@ export async function runList(ctx: VerbContext, a: Record<string, any>): Promise
       const oversized = exists && st!.size > MAX_BACKUP_BYTES;
       let changed = oversized;
       if (exists && !oversized) changed = sha256Hex(await readFile(b.file)) !== b.sha256;
-      return { file: b.file, at: b.at, mode: b.mode, encrypted: b.encrypted, profiles: b.profiles, keys: b.keys, chains: b.chains, appCompatible: b.appCompatible, exists, changed, oversized, covers: { keys: b.mode !== "public" && b.fingerprint === fp.full, profiles: b.profilesFingerprint === fp.profiles } };
+      return { file: b.file, at: b.at, mode: b.mode, encrypted: b.encrypted, profiles: b.profiles, keys: b.keys, chains: b.chains, ...(typeof b.iterations === "number" ? { iterations: b.iterations } : {}), appCompatible: b.appCompatible, exists, changed, oversized, covers: { keys: b.mode !== "public" && b.fingerprint === fp.full, profiles: b.profilesFingerprint === fp.profiles } };
     }),
   );
   const usable = (r: (typeof rows)[number]) => r.exists && !r.changed;
@@ -258,8 +283,8 @@ export async function runList(ctx: VerbContext, a: Record<string, any>): Promise
       reason,
       kind: "keys",
       say: newestWithKeys
-        ? "My account or my keys have changed since the last backup. Do you want a fresh backup? I'd give you a file and a password; keep them in different safe places and you can restore it in the Universal Profile app, or with me."
-        : "Do you want a backup of my account? I'd give you a file and a password; keep them in different safe places and you can restore it in the Universal Profile app, or with me.",
+        ? "My account or my keys have changed since the last backup. Do you want a fresh backup? I'd give you a file and a password; keep them in different safe places and you can restore it with me."
+        : "Do you want a backup of my account? I'd give you a file and a password; keep them in different safe places and you can restore it with me.",
     };
   }
   if (a["mark-asked"] === true) await appendIndex(ctx.home, { at: new Date().toISOString(), event: "asked", fingerprint: fp.full, kind: ask?.kind ?? "keys" });
@@ -310,7 +335,7 @@ export async function runInspect(ctx: VerbContext, a: Record<string, any>): Prom
   const s = backup.secrets;
   const keyMaterial =
     s.kind === "encrypted"
-      ? { kind: "encrypted", encryptionType: s.encryptionType ?? null, hintPresent: Boolean(s.hint), ...(s.hint ? { hint: safeFileText(s.hint, 255) } : {}), sizes: { secretBytes: Buffer.from(s.data.secret, "base64").length, ivBytes: Buffer.from(s.data.iv, "base64").length, saltBytes: Buffer.from(s.data.salt, "base64").length } }
+      ? { kind: "encrypted", encryptionType: s.encryptionType ?? null, iterations: s.iterations, iterationsInFile: s.iterationsInFile, hintPresent: Boolean(s.hint), ...(s.hint ? { hint: safeFileText(s.hint, 255) } : {}), sizes: { secretBytes: Buffer.from(s.data.secret, "base64").length, ivBytes: Buffer.from(s.data.iv, "base64").length, saltBytes: Buffer.from(s.data.salt, "base64").length } }
       : s.kind === "plain"
         ? { kind: "plain-text keys", keyCount: opened?.keys.length ?? 0, keyAddresses: opened?.keys.map((k) => k.address) ?? [] }
         : { kind: "public (no keys)" };
@@ -333,7 +358,7 @@ export async function runInspect(ctx: VerbContext, a: Record<string, any>): Prom
     canRebuildLocalManifest: Boolean(it.manifest),
   }));
   const text = [
-    `Backup of ${plural(accounts.length, "profile", "profiles")} (version 2, made ${backup.backupDate || "at an unknown time"}); ${keyMaterial.kind === "encrypted" ? "keys are password protected" : keyMaterial.kind === "plain-text keys" ? "KEYS ARE IN PLAIN TEXT" : "no keys in it"}.`,
+    `Backup of ${plural(accounts.length, "profile", "profiles")} (version 2, made ${backup.backupDate || "at an unknown time"}); ${s.kind === "encrypted" ? `keys are password protected (${kdfDescription(s.iterations)}${s.iterationsInFile ? "" : "; the file states no count, so 10,000"}${s.iterations === LEGACY_ITERATIONS ? "" : "; app versions that do not read secrets.iterations cannot open it"})` : keyMaterial.kind === "plain-text keys" ? "KEYS ARE IN PLAIN TEXT" : "no keys in it"}.`,
     ...accounts.map((x) => `- ${x.address}${x.name ? ` "${x.name}"` : ""}: ${x.networks.map((n) => n.network).join(", ") || "no networks"}`),
     ...allIssues.map((i) => `${i.level === "error" ? "Problem" : "Note"}: ${i.message}`),
   ].join("\n");

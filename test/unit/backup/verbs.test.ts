@@ -1,7 +1,9 @@
 // The backup verbs end to end on a temp UP_HOME with the in-memory test key store (never an OS key
-// store): export in every mode, list, inspect, verify, import into a fresh home, and the rule that
+// store): export in every mode, list, inspect, verify, import into a fresh home, the iteration count
+// stated in the file (600,000, or 10,000 with --legacy; absent means exactly 10,000), and the rule that
 // no private key ever appears in any result, error, index line or log.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createDecipheriv, pbkdf2Sync } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,6 +58,19 @@ const noKeys = (v: unknown) => {
 };
 const backupFiles = (h = home) => (existsSync(paths.backups(h)) ? readdirSync(paths.backups(h)).filter((f) => f.endsWith(".json")) : []);
 const fileOf = (r: { data: any }) => readFileSync(r.data.path, "utf8");
+/** An independent opener (node:crypto only, not the skill's code): does `iterations` open the file's key list with `password`? */
+function nodeOpens(secrets: { data: { secret: string; iv: string; salt: string } }, password: string, iterations: number): boolean {
+  try {
+    const sealed = Buffer.from(secrets.data.secret, "base64");
+    const key = pbkdf2Sync(Buffer.from(password, "utf8"), Buffer.from(secrets.data.salt, "base64"), iterations, 32, "sha256");
+    const d = createDecipheriv("aes-256-gcm", key, Buffer.from(secrets.data.iv, "base64"));
+    d.setAuthTag(sealed.subarray(sealed.length - 16));
+    const inner = JSON.parse(JSON.parse(Buffer.concat([d.update(sealed.subarray(0, sealed.length - 16)), d.final()]).toString("utf8")));
+    return Array.isArray(inner.privateKeys);
+  } catch {
+    return false;
+  }
+}
 
 beforeEach(async () => {
   joined = addr(newKey());
@@ -82,11 +97,16 @@ describe("backup export (encrypted)", () => {
     expect(r.data.say).toContain(r.data.password);
     expect(r.data.say).toMatch(/^Here is the backup of my 3 accounts\./);
     expect(r.data.say).toContain("Universal Profile app");
-    expect(r.data.say).not.toMatch(/\b(json|pbkdf2|aes|keystore|calldata|manifest)\b/i);
+    expect(r.data.say).not.toMatch(/\b(json|pbkdf2|aes|keystore|calldata|manifest|iterations?)\b/i);
+    expect(r.data.say).toContain("You can restore it with me.");
+    expect(r.data.say).toContain("ask me for an app-compatible copy"); // never promises that every app version opens it
     expect(r.data.next[0]).toContain("attachment");
     expect(r.data.next[0]).toContain("Never read");
-    expect(r.data.kdf).toBe("PBKDF2-HMAC-SHA256 (10,000 iterations), AES-256-GCM");
-    expect(r.data.appCompatible).toBe(true);
+    expect(r.data.next.join(" ")).toContain("--legacy");
+    expect(r.data.kdf).toBe("PBKDF2-HMAC-SHA256 (600,000 iterations), AES-256-GCM");
+    expect(r.data).toMatchObject({ iterations: 600_000, legacy: false });
+    expect(r.data.appCompatible).toBe(false); // app versions that do not read secrets.iterations derive with 10,000
+    expect(r.data.compatibility).toContain("secrets.iterations");
     noKeys(r);
     // the real output path keeps the password (released) and would withhold a key
     const out = guardOutput(renderResult("backup export", r, true), true);
@@ -94,7 +114,7 @@ describe("backup export (encrypted)", () => {
     expect(guardOutput(`leak ${K.def}`, false)).toContain("output withheld");
   });
 
-  it("writes the file the app can read: its format, mode 0600 in a 0700 folder, under <UP_HOME>/backups", async () => {
+  it("writes the app's format with the count stated (600,000), mode 0600 in a 0700 folder, under <UP_HOME>/backups", async () => {
     const r = await run("backup export", {}, { approval: APPROVAL });
     const text = fileOf(r);
     expect(r.data.path).toBe(join(paths.backups(home), `universal-profiles-backup-${new Date().toISOString().slice(0, 10)}.json`));
@@ -103,9 +123,14 @@ describe("backup export (encrypted)", () => {
       expect(statSync(r.data.path).mode & 0o777).toBe(0o600);
       expect(statSync(paths.backups(home)).mode & 0o777).toBe(0o700);
     }
-    expect(appReads(text).errors).toEqual([]);
+    expect(appReads(text).errors).toEqual([]); // the app accepts its structure ...
+    expect(appReads(text, r.data.password).errors).toEqual(["the app derives the key with 10,000 iterations whatever the file states: it reports a wrong password"]); // ... but cannot open the keys
     expect(looksLikeAppWriter(text)).toBe(true);
     const f = JSON.parse(text);
+    expect(Object.keys(f.secrets)).toEqual(["encrypted", "encryptionType", "iterations", "data"]);
+    expect(f.secrets.iterations).toBe(600_000);
+    expect(nodeOpens(f.secrets, r.data.password, 600_000)).toBe(true);
+    expect(nodeOpens(f.secrets, r.data.password, 10_000)).toBe(false);
     expect(f.accounts).toHaveLength(3);
     expect(f.accounts.map((a: any) => a.networks.map((n: any) => n.chainID))).toContainEqual([42, 8453]); // LUKSO first, whatever the order they were deployed in (Q19)
     expect(f.LSP23CrossChainDeployment.map((l: any) => l.profileAddress).sort()).toEqual([m1.profile, m2.profile].sort());
@@ -113,7 +138,7 @@ describe("backup export (encrypted)", () => {
     expect(f.LSP23CrossChainDeployment.find((l: any) => l.profileAddress === m2.profile).initialChainID).toBe(42);
     expect(r.data.sha256).toBe((await import("node:crypto")).createHash("sha256").update(text).digest("hex"));
     // the keys inside are exactly the agent's, in privateKeyIndex order
-    const opened = await decryptSecrets(f.secrets.data, r.data.password);
+    const opened = await decryptSecrets(f.secrets.data, r.data.password, f.secrets.iterations);
     expect(opened.keys.map((k) => [k.index, k.privateKey])).toEqual([[0, K.def], [1, K.prev], [2, K.extra]]);
     const controllers = f.accounts.find((a: any) => a.address === m1.profile).networks[0].controllers;
     expect(controllers.find((c: any) => c.address === addr(K.def))).toMatchObject({ type: "Device", privateKeyIndex: 0, name: "AI agent key" }); // what the app writes for a controller whose key it holds
@@ -132,7 +157,7 @@ describe("backup export (encrypted)", () => {
     expect(JSON.parse(lines[0])).toMatchObject({ event: "reserved", file: r.data.path });
     expect(JSON.parse(lines[1])).toMatchObject({ event: "committed", file: r.data.path });
     const e = JSON.parse(lines[2]);
-    expect(e).toMatchObject({ file: r.data.path, sha256: r.data.sha256, mode: "encrypted", encrypted: true, hintPresent: true, appCompatible: true });
+    expect(e).toMatchObject({ file: r.data.path, sha256: r.data.sha256, mode: "encrypted", encrypted: true, hintPresent: true, appCompatible: false, iterations: 600_000 });
     expect(e.keys).toEqual(r.data.keys);
     expect(r.data.indexed).toBe(true);
     for (const line of lines) {
@@ -165,7 +190,7 @@ describe("backup export (encrypted)", () => {
     expect(r.data.password).toBeUndefined();
     expect(JSON.stringify(r)).not.toContain(pw);
     expect(r.data.say).toContain("locked with the password you chose");
-    expect((await decryptSecrets(JSON.parse(fileOf(r)).secrets.data, pw)).keys).toHaveLength(3);
+    expect((await decryptSecrets(JSON.parse(fileOf(r)).secrets.data, pw, JSON.parse(fileOf(r)).secrets.iterations)).keys).toHaveLength(3);
     expect((await fail(run("backup export", { password: "short" }, { approval: APPROVAL }))).message).toMatch(/at least 6 characters/);
     expect((await fail(run("backup export", { password: pw, hint: `it is ${pw}` }, { approval: APPROVAL }))).message).toMatch(/contains the password/);
     expect(backupFiles()).toHaveLength(1);
@@ -174,7 +199,7 @@ describe("backup export (encrypted)", () => {
   it("--password-env and --generate-password; two sources are refused", async () => {
     process.env.TEST_BACKUP_PW = "From-an-env-variable-12";
     const r = await run("backup export", { "password-env": "TEST_BACKUP_PW" }, { approval: APPROVAL });
-    expect((await decryptSecrets(JSON.parse(fileOf(r)).secrets.data, "From-an-env-variable-12")).keys).toHaveLength(3);
+    expect((await decryptSecrets(JSON.parse(fileOf(r)).secrets.data, "From-an-env-variable-12", JSON.parse(fileOf(r)).secrets.iterations)).keys).toHaveLength(3);
     expect(process.env.TEST_BACKUP_PW).toBeUndefined();
     expect((await run("backup export", { "generate-password": true }, { approval: APPROVAL })).data.passwordGenerated).toBe(true);
     expect((await fail(run("backup export", { password: "twelve-chars-x", "generate-password": true }, { approval: APPROVAL }))).message).toMatch(/only one of/);
@@ -269,7 +294,9 @@ describe("backup list", () => {
     const before = await run("backup list");
     expect(before.data.ask).toMatchObject({ reason: "no-backup", kind: "keys" });
     expect(before.data.ask.say).toMatch(/Do you want a backup of my account\?/);
-    expect(before.data.ask.say).not.toMatch(/json|pbkdf2|file format|keystore/i);
+    expect(before.data.ask.say).toContain("a file and a password");
+    expect(before.data.ask.say).not.toMatch(/json|pbkdf2|file format|keystore|iteration/i);
+    expect(before.data.ask.say).not.toContain("Universal Profile app"); // a default backup opens only in app versions that read its count
     await run("backup list", { "mark-asked": true });
     expect((await run("backup list")).data.ask).toBeNull(); // asked once for this state
     // a new key: asked again
@@ -309,7 +336,7 @@ describe("backup inspect", () => {
     const r = await run("backup export", { hint: "a hint" }, { approval: APPROVAL });
     const file = JSON.parse(fileOf(r));
     const i = await run("backup inspect", { path: r.data.path });
-    expect(i.data).toMatchObject({ valid: true, version: 2, keyMaterial: { kind: "encrypted", hintPresent: true, hint: "a hint", sizes: { ivBytes: 16, saltBytes: 32 } } });
+    expect(i.data).toMatchObject({ valid: true, version: 2, keyMaterial: { kind: "encrypted", iterations: 600_000, iterationsInFile: true, hintPresent: true, hint: "a hint", sizes: { ivBytes: 16, saltBytes: 32 } } });
     expect(i.data.accounts).toHaveLength(3);
     expect(i.data.deployments).toHaveLength(2);
     expect(i.data.deployments.every((d: any) => d.rederivesProfile && d.supported && d.canonicalFactory && d.canRebuildLocalManifest)).toBe(true);
@@ -356,7 +383,7 @@ describe("backup verify", () => {
     const v = await run("backup verify", { path: r.data.path, password: r.data.password });
     expect(v.data.valid).toBe(true);
     expect(v.data.keys).toEqual([{ index: 0, address: addr(K.def), status: "exists" }, { index: 1, address: addr(K.prev), status: "exists" }, { index: 2, address: addr(K.extra), status: "exists" }]);
-    expect(v.data.decryption).toMatchObject({ iterations: 10_000, shape: "app" });
+    expect(v.data.decryption).toEqual({ iterations: 600_000, iterationsInFile: true, passwordForm: "as-typed", shape: "app" });
     expect(v.data.profiles).toHaveLength(3);
     expect(v.data.profiles.find((p: any) => p.address === m1.profile)).toMatchObject({ proofFromFile: true, deployment: [{ rederivesProfile: true, canRebuildLocalManifest: true }] });
     expect(v.data.profiles[0].decision).toBeUndefined(); // not checked on the network without --online
@@ -591,16 +618,185 @@ describe("backup import into a fresh machine", () => {
   });
 });
 
+describe("the iteration count in the file (secrets.iterations)", () => {
+  /** A copy of an exported file with `edit` applied, in a new folder (the original is never changed). */
+  const writeCopy = (path: string, edit: (f: any) => void, name = "edited.json") => {
+    const f = JSON.parse(readFileSync(path, "utf8"));
+    edit(f);
+    const out = join(mkdtempSync(join(tmpdir(), "up-count-")), name);
+    writeFileSync(out, JSON.stringify(f, undefined, 2));
+    return out;
+  };
+  const fresh = () => {
+    const h = mkdtempSync(join(tmpdir(), "up-fresh-"));
+    process.env.UP_HOME = h;
+    resetMemoryBackend();
+    return h;
+  };
+  const offline = { approval: "yes, restore it, offline please" };
+  const nothingWritten = async (h: string) => {
+    expect(existsSync(paths.profiles(h))).toBe(false);
+    expect(existsSync(join(h, "config.json"))).toBe(false);
+    for (const k of allKeys) expect(await getBackend("memory").has(addr(k))).toBe(false);
+  };
+
+  it("the actual file round trip at 600,000: export, read back from disk, inspect, verify and import into a fresh machine", async () => {
+    const pw = "Round-trip-600k!";
+    const r = await run("backup export", { password: pw }, { approval: APPROVAL });
+    expect(JSON.parse(readFileSync(r.data.path, "utf8")).secrets.iterations).toBe(600_000);
+    expect((await run("backup inspect", { path: r.data.path })).data.keyMaterial).toMatchObject({ kind: "encrypted", iterations: 600_000, iterationsInFile: true });
+    const h = fresh();
+    const v = await run("backup verify", { path: r.data.path, password: pw }, {}, h);
+    expect(v.data.decryption).toEqual({ iterations: 600_000, iterationsInFile: true, passwordForm: "as-typed", shape: "app" });
+    expect(v.data.keys.map((k: any) => [k.address, k.status])).toEqual([[addr(K.def), "new"], [addr(K.prev), "new"], [addr(K.extra), "new"]]);
+    const imp = await run("backup import", { path: r.data.path, password: pw, offline: true, "all-keys": true }, offline, h);
+    expect(imp.data.keysResult.map((k: any) => k.status)).toEqual(["restored", "restored", "restored"]);
+    for (const k of allKeys) expect(await getBackend("memory").has(addr(k))).toBe(true);
+    expect(verifyManifest(JSON.parse(readFileSync(paths.profile(h, m1.profile), "utf8")).deployment).ok).toBe(true);
+    noKeys(imp);
+  });
+
+  it("--legacy: an explicitly labelled copy at 10,000 (stated in the file) that app versions without the count can open; it is never the default", async () => {
+    const pw = "Legacy-copy-pass-1";
+    expect(getVerb("backup export")!.params.find((p) => p.name === "legacy")).toMatchObject({ type: "boolean", default: false });
+    const asked = await fail(run("backup export", { password: pw, legacy: true }));
+    expect(asked.code).toBe("CONSENT_REQUIRED");
+    const confirmation = (e: UpError) => (e.details as { confirmation: Record<string, any> }).confirmation;
+    expect(confirmation(asked).format).toBe("LSP-30 version 2, LEGACY lock: PBKDF2-HMAC-SHA256 (10,000 iterations), AES-256-GCM");
+    expect(confirmation(asked).warnings.join("\n")).toMatch(/^LEGACY: /m);
+    const usual = await fail(run("backup export", { password: pw }));
+    expect(confirmation(usual).format).toBe("LSP-30 version 2, PBKDF2-HMAC-SHA256 (600,000 iterations), AES-256-GCM");
+    expect(confirmation(usual).compatibility).toContain("secrets.iterations");
+    expect(JSON.stringify(usual.details)).not.toContain("LEGACY");
+    expect(backupFiles()).toEqual([]);
+    const r = await run("backup export", { password: pw, legacy: true }, { approval: APPROVAL });
+    expect(r.data).toMatchObject({ iterations: 10_000, legacy: true, kdf: "PBKDF2-HMAC-SHA256 (10,000 iterations), AES-256-GCM", appCompatible: true });
+    expect(r.warnings!.join("\n")).toMatch(/^LEGACY: /m);
+    expect(r.data.say).toContain("You can restore it in the Universal Profile app or with me.");
+    expect(r.data.next.join(" ")).not.toContain("--legacy");
+    const f = JSON.parse(fileOf(r));
+    expect(Object.keys(f.secrets)).toEqual(["encrypted", "encryptionType", "iterations", "data"]);
+    expect(f.secrets.iterations).toBe(10_000);
+    expect(appReads(fileOf(r), pw)).toMatchObject({ ok: true, errors: [] });
+    expect(nodeOpens(f.secrets, pw, 10_000)).toBe(true);
+    expect(nodeOpens(f.secrets, pw, 600_000)).toBe(false);
+    expect((await run("backup verify", { path: r.data.path, password: pw })).data.decryption).toMatchObject({ iterations: 10_000, iterationsInFile: true });
+    const line = readFileSync(join(paths.backups(home), "index.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).find((e) => e.sha256 === r.data.sha256);
+    expect(line).toMatchObject({ iterations: 10_000, appCompatible: true });
+  });
+
+  it("--legacy only applies to an encrypted backup", async () => {
+    expect((await fail(run("backup export", { mode: "public", legacy: true }))).message).toMatch(/--legacy only applies to an encrypted backup \(this one is public\)/);
+    expect((await fail(run("backup export", { mode: "unencrypted", "explicit-consent": true, legacy: true }, { approval: APPROVAL }))).message).toMatch(/--legacy only applies to an encrypted backup/);
+    expect(backupFiles()).toEqual([]);
+  });
+
+  it("absent means exactly 10,000: the 600,000 file without secrets.iterations is not opened (no fallback); verify and import fail and write nothing", async () => {
+    const r = await run("backup export", {}, { approval: APPROVAL });
+    const stripped = writeCopy(r.data.path, (f) => delete f.secrets.iterations, "stripped.json");
+    expect(JSON.parse(readFileSync(stripped, "utf8")).secrets).not.toHaveProperty("iterations");
+    expect((await run("backup inspect", { path: stripped })).data.keyMaterial).toMatchObject({ iterations: 10_000, iterationsInFile: false });
+    const v = await fail(run("backup verify", { path: stripped, password: r.data.password }));
+    expect(v.message).toBe("wrong password or damaged file");
+    expect(v.details).toMatchObject({ iterations: 10_000 });
+    const h = fresh();
+    const imp = await fail(run("backup import", { path: stripped, password: r.data.password, offline: true, "all-keys": true }, offline, h));
+    expect(imp.message).toBe("wrong password or damaged file");
+    await nothingWritten(h);
+    // the same ciphertext with its count stated again opens
+    const back = writeCopy(stripped, (f) => (f.secrets.iterations = 600_000), "count-back.json");
+    expect((await run("backup verify", { path: back, password: r.data.password }, {}, h)).data.decryption).toMatchObject({ iterations: 600_000, iterationsInFile: true });
+  });
+
+  it("a changed count fails like a wrong password and is never retried with another", async () => {
+    const r = await run("backup export", {}, { approval: APPROVAL });
+    for (const n of [10_000, 599_999, 600_001, 5_000_000]) {
+      const p = writeCopy(r.data.path, (f) => (f.secrets.iterations = n), `count-${n}.json`);
+      const e = await fail(run("backup verify", { path: p, password: r.data.password }));
+      expect(e.message, String(n)).toBe("wrong password or damaged file");
+      expect(e.details, String(n)).toMatchObject({ iterations: n });
+    }
+    const legacy = await run("backup export", { legacy: true }, { approval: APPROVAL });
+    const raised = writeCopy(legacy.data.path, (f) => (f.secrets.iterations = 600_000), "raised.json");
+    expect((await fail(run("backup verify", { path: raised, password: legacy.data.password }))).message).toBe("wrong password or damaged file");
+  });
+
+  it("a malformed count is refused before anything is decrypted (inspect, verify, import); the messages name the field, never its value", async () => {
+    const r = await run("backup export", {}, { approval: APPROVAL });
+    const message = "secrets.iterations is not a whole number from 1 to 5,000,000";
+    const raw = readFileSync(r.data.path, "utf8");
+    const overflow = join(mkdtempSync(join(tmpdir(), "up-count-")), "overflow.json");
+    writeFileSync(overflow, raw.replace('"iterations": 600000', '"iterations": 1e400'));
+    const files = [...[null, "600000", 0, -600_000, 600_000.5, 5_000_001, true, ["SENTINEL-7c1"]].map((bad) => writeCopy(r.data.path, (f) => (f.secrets.iterations = bad))), overflow];
+    for (const p of files) {
+      const i = await run("backup inspect", { path: p });
+      expect(i.data.valid, p).toBe(false);
+      expect(i.data.issues).toContainEqual({ level: "error", code: "bad-iterations", message });
+      expect(JSON.stringify(i)).not.toContain("SENTINEL-7c1");
+      const v = await fail(run("backup verify", { path: p, password: r.data.password }));
+      expect(v.message).toBe(`the backup file is not valid: bad-iterations: ${message}`);
+      const h = fresh();
+      const imp = await fail(run("backup import", { path: p, password: r.data.password, offline: true, "all-keys": true }, offline, h));
+      expect(imp.message).toBe(`the backup file is not valid: bad-iterations: ${message}`);
+      await nothingWritten(h);
+      await getBackend("memory").importKey!(K.def).catch(() => undefined);
+    }
+  });
+
+  it("a file made by the app (it states no count) opens with exactly 10,000; with the count stated as 10,000 it opens the same", async () => {
+    const kat = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "fixtures", "lsp30", "app-kat.json"), "utf8"));
+    const dir = mkdtempSync(join(tmpdir(), "up-app-"));
+    const appFile = join(dir, "universal-profiles-backup-2026-10-10.json");
+    writeFileSync(appFile, JSON.stringify(kat.backupFile, undefined, 2));
+    expect((await run("backup inspect", { path: appFile })).data.keyMaterial).toMatchObject({ kind: "encrypted", iterations: 10_000, iterationsInFile: false });
+    const h = fresh();
+    const v = await run("backup verify", { path: appFile, password: kat.password }, {}, h);
+    expect(v.data.decryption).toEqual({ iterations: 10_000, iterationsInFile: false, passwordForm: "as-typed", shape: "app" });
+    expect(v.data.keys).toEqual([{ index: 0, address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", status: "new" }]);
+    const stated = writeCopy(appFile, (f) => (f.secrets.iterations = 10_000), "stated-10000.json");
+    expect((await run("backup verify", { path: stated, password: kat.password }, {}, h)).data.decryption).toEqual({ iterations: 10_000, iterationsInFile: true, passwordForm: "as-typed", shape: "app" });
+  });
+
+  it("public and unencrypted files carry no count, and neither do their results; dry runs show the count of an encrypted one", async () => {
+    const pub = await run("backup export", { mode: "public" });
+    expect(JSON.parse(fileOf(pub)).secrets).toEqual({ encrypted: false, data: [] });
+    expect(pub.data).not.toHaveProperty("iterations");
+    expect(pub.data).not.toHaveProperty("kdf");
+    const plain = await run("backup export", { mode: "unencrypted", "explicit-consent": true }, { approval: APPROVAL });
+    expect(Object.keys(JSON.parse(fileOf(plain)).secrets)).toEqual(["encrypted", "data"]);
+    expect(plain.data).not.toHaveProperty("iterations");
+    expect((await run("backup inspect", { path: plain.data.path })).data.keyMaterial).not.toHaveProperty("iterations");
+    expect((await run("backup export", { mode: "public" }, { dryRun: true })).data).not.toHaveProperty("iterations");
+    expect((await run("backup export", {}, { dryRun: true })).data).toMatchObject({ iterations: 600_000, legacy: false, appCompatible: false });
+    expect((await run("backup export", { legacy: true }, { dryRun: true })).data).toMatchObject({ iterations: 10_000, legacy: true, appCompatible: true });
+  });
+
+  it("backup list shows each backup's count from the index (none for a public one)", async () => {
+    await run("backup export", {}, { approval: APPROVAL });
+    await run("backup export", { legacy: true }, { approval: APPROVAL });
+    await run("backup export", { mode: "public" });
+    const l = await run("backup list");
+    expect(l.data.backups.map((b: any) => [b.mode, b.iterations, b.appCompatible])).toEqual([["encrypted", 600_000, false], ["encrypted", 10_000, true], ["public", undefined, false]]);
+  });
+});
+
 describe("MCP", () => {
   it("export over MCP returns the generated password in structured data and text, never a key; the tools are listed", async () => {
     const list: any = await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     const names = list.result.tools.map((t: any) => t.name);
     expect(names).toEqual(expect.arrayContaining(["up_backup_export", "up_backup_list", "up_backup_inspect", "up_backup_verify", "up_backup_import"]));
     expect(list.result.tools.find((t: any) => t.name === "up_backup_inspect").annotations.readOnlyHint).toBe(true);
-    expect(list.result.tools.find((t: any) => t.name === "up_backup_export").annotations.destructiveHint).toBe(true);
+    const exportTool = list.result.tools.find((t: any) => t.name === "up_backup_export");
+    expect(exportTool.annotations.destructiveHint).toBe(true);
+    expect(exportTool.inputSchema.properties.legacy).toMatchObject({ type: "boolean", default: false });
+    expect(exportTool.inputSchema.properties.legacy.description).toContain("10,000");
+    expect(exportTool.description).toContain("600,000");
+    expect(exportTool.description).toContain("secrets.iterations");
+    expect(exportTool.description).not.toMatch(/only 10,000 times/);
     const res: any = await handleMcpMessage({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "up_backup_export", arguments: { approval: APPROVAL } } });
     expect(res.result.isError).toBe(false);
     const pw = res.result.structuredContent.data.password;
+    expect(res.result.structuredContent.data).toMatchObject({ iterations: 600_000, legacy: false });
     expect(pw).toMatch(/^[A-HJ-NP-Za-km-z2-9]{5}(-[A-HJ-NP-Za-km-z2-9]{5}){3}$/);
     expect(res.result.content[0].text).toContain(pw);
     noKeys(res);

@@ -31,7 +31,8 @@ export interface OpenedBackup {
   /** Keys from the file (empty for a public file). Their addresses are derived, never read from the file. */
   keys: OpenedKey[];
   seedPhraseEntries: number;
-  decryption?: { iterations: number; passwordForm: string; shape: string };
+  /** How an encrypted file opened: the count used (the one it states, or 10,000 when `iterationsInFile` is false), the password spelling and the payload shape. */
+  decryption?: { iterations: number; iterationsInFile: boolean; passwordForm: string; shape: string };
 }
 
 export function issueSummary(issues: Issue[]): string {
@@ -48,10 +49,10 @@ export async function openBackup(text: string, password: string | undefined): Pr
   let decryption: OpenedBackup["decryption"];
   if (s.kind === "encrypted") {
     if (!password) throw new UpError("BAD_ARGS", "this backup is password protected: its password is needed", { hint: "ask the human for the password and pass it with --password (or --password-env / --password-stdin)", details: { passwordHint: s.hint ?? null } });
-    const opened = await decryptSecrets(s.data, password);
+    const opened = await decryptSecrets(s.data, password, s.iterations);
     keys = opened.keys;
     seedPhraseEntries = opened.seedPhraseEntries;
-    decryption = { iterations: opened.iterations, passwordForm: opened.passwordForm, shape: opened.shape };
+    decryption = { iterations: opened.iterations, iterationsInFile: s.iterationsInFile, passwordForm: opened.passwordForm, shape: opened.shape };
   } else if (s.kind === "plain") {
     keys = s.entries.map((e) => openKey(e.secret, e.index, e.address));
     seedPhraseEntries = s.skippedSeedEntries;

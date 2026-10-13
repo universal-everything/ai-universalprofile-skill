@@ -1,15 +1,19 @@
-// LSP-30 encrypted secrets, byte-compatible with the Universal Profile mobile app.
+// LSP-30 encrypted secrets in the Universal Profile mobile app's encryption.
 //
 // The app (src/shared/keychain/controllers/AesEncryptor.ts, a port of MetaMask browser-passworder)
-// writes and reads exactly this, and its reader hard-codes the parameters:
-//   key        = PBKDF2-HMAC-SHA256(password as UTF-8, salt, 10,000 iterations, 32 bytes)
+// writes and reads exactly this, and its reader hard-codes the iteration count to 10,000:
+//   key        = PBKDF2-HMAC-SHA256(password as UTF-8, salt, iterations, 32 bytes)
 //   cipher     = AES-256-GCM, 16-byte random IV, 128-bit tag appended to the ciphertext, no AAD
 //   salt / iv / secret = standard Base64 with padding (salt 32 bytes)
 //   plaintext  = UTF-8 of JSON.stringify(JSON.stringify({"privateKeys":[{"address","privateKey"}],"seedPhrases":[]}))
 //                (the object is encoded twice; the key index is the position in privateKeys)
-// Writing always uses these values. Reading is more tolerant (quirks Q1 to Q5 in the design):
-// the payload as a single-encoded object or as the spec's entry array, 12 to 16 byte IVs, 600,000
-// iterations (the spec recommendation), and NFC/NFKC forms of a non-ASCII password.
+// The iteration count is stated in the file as `secrets.iterations` (lsp30-format.ts): this skill writes
+// 600,000 (LSP-30's recommendation), or 10,000 with `--legacy` for app versions that do not read the
+// field. A file without it (the app's, earlier versions of this skill's) was made with exactly 10,000.
+// The count is authoritative: exactly that count is derived, no other one is ever tried, and a count
+// outside 1 to 5,000,000 is refused before any derivation (a file must not make the reader spin).
+// Reading is otherwise tolerant (quirks Q1, Q2, Q4, Q5 in the design): the payload as a single-encoded
+// object or as the spec's entry array, 12 to 16 byte IVs, and NFC/NFKC forms of a non-ASCII password.
 //
 // Errors never contain the password, a key, ciphertext or any decrypted byte.
 import { createCipheriv, createDecipheriv, pbkdf2, randomBytes } from "node:crypto";
@@ -20,9 +24,12 @@ import { addressOf, isValidPrivateKey, normalizePrivateKey } from "../signer/loc
 import type { Address, Hex } from "../core/types.ts";
 
 export const ENCRYPTION_TYPE = "Key from PBKDF2. Encrypted with AES-GCM.";
-export const KDF_DESCRIPTION = "PBKDF2-HMAC-SHA256 (10,000 iterations), AES-256-GCM";
-export const APP_ITERATIONS = 10_000;
-const SPEC_ITERATIONS = 600_000; // LSP-30 recommendation; the app does not use it, future writers might
+/** What a new encrypted backup is made with (LSP-30's recommendation), stated as `secrets.iterations`. */
+export const DEFAULT_ITERATIONS = 600_000;
+/** What a file without `secrets.iterations` was made with (the app, earlier versions of this skill), and what `--legacy` writes. */
+export const LEGACY_ITERATIONS = 10_000;
+/** The highest count a file may state (the app's automatic backup accepts the same maximum), so that a crafted file cannot make the reader spin. */
+export const MAX_ITERATIONS = 5_000_000;
 const KEY_BYTES = 32;
 const SALT_BYTES = 32;
 const IV_BYTES = 16;
@@ -60,6 +67,19 @@ export interface OpenedSecrets {
 
 const WRONG_PASSWORD = "wrong password or damaged file";
 
+/** A stated iteration count is usable when it is a whole number from 1 to MAX_ITERATIONS (anything else is refused before any derivation). */
+export function isValidIterations(v: unknown): v is number {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 1 && v <= MAX_ITERATIONS;
+}
+
+/** The rule a stated count breaks, for messages that name the field and never its value. */
+export const ITERATIONS_RULE = `a whole number from 1 to ${MAX_ITERATIONS.toLocaleString("en-US")}`;
+
+/** How the keys are locked, in words: "PBKDF2-HMAC-SHA256 (600,000 iterations), AES-256-GCM". */
+export function kdfDescription(iterations: number): string {
+  return `PBKDF2-HMAC-SHA256 (${iterations.toLocaleString("en-US")} iterations), AES-256-GCM`;
+}
+
 function derive(password: string, salt: Buffer, iterations: number): Promise<Buffer> {
   return new Promise((resolve, reject) => pbkdf2(Buffer.from(password, "utf8"), salt, iterations, KEY_BYTES, "sha256", (e, k) => (e ? reject(e) : resolve(k))));
 }
@@ -70,12 +90,16 @@ export function payloadText(keys: SecretKey[]): string {
   return JSON.stringify(inner);
 }
 
-/** Encrypts the key list the way the app does. `fixed` pins salt and IV (known-answer tests only). */
-export async function encryptSecrets(keys: SecretKey[], password: string, fixed: { salt?: Buffer; iv?: Buffer } = {}): Promise<EncryptedData> {
+/**
+ * Encrypts the key list the way the app does, with `iterations` (the caller states the same count in the file as
+ * `secrets.iterations`). `fixed` pins salt and IV (known-answer tests only).
+ */
+export async function encryptSecrets(keys: SecretKey[], password: string, iterations: number, fixed: { salt?: Buffer; iv?: Buffer } = {}): Promise<EncryptedData> {
+  if (!isValidIterations(iterations)) throw new UpError("INTERNAL", `the iteration count for a backup must be ${ITERATIONS_RULE}`);
   const salt = fixed.salt ?? randomBytes(SALT_BYTES);
   const iv = fixed.iv ?? randomBytes(IV_BYTES);
   if (salt.length !== SALT_BYTES || iv.length !== IV_BYTES) throw new UpError("INTERNAL", "salt or IV has the wrong length");
-  const key = await derive(password, salt, APP_ITERATIONS);
+  const key = await derive(password, salt, iterations);
   const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: TAG_BYTES });
   const ct = Buffer.concat([cipher.update(payloadText(keys), "utf8"), cipher.final()]);
   return { secret: Buffer.concat([ct, cipher.getAuthTag()]).toString("base64"), iv: iv.toString("base64"), salt: salt.toString("base64") };
@@ -155,28 +179,29 @@ function passwordForms(password: string): { form: OpenedSecrets["passwordForm"];
 }
 
 /**
- * Opens the encrypted secrets with the password. Tries the app's 10,000 iterations first, then the
- * spec's 600,000 (Q3). A wrong password and a damaged file are indistinguishable by design (Q6).
+ * Opens the encrypted secrets with the password, deriving the key with exactly `iterations`: the count the file
+ * states, or 10,000 when it states none (lsp30-format.ts decides that). No other count is tried: a wrong count,
+ * a wrong password and a damaged file are indistinguishable by design (Q6). An invalid count is refused before
+ * any derivation.
  */
-export async function decryptSecrets(data: EncryptedData, password: string): Promise<OpenedSecrets> {
+export async function decryptSecrets(data: EncryptedData, password: string, iterations: number): Promise<OpenedSecrets> {
+  if (!isValidIterations(iterations)) throw new UpError("BAD_ARGS", `the backup's iterations is not ${ITERATIONS_RULE}`, { hint: "check the file with: up backup inspect <file>" });
   const salt = decodeField(data.salt, "salt", 8, 128);
   const iv = decodeField(data.iv, "iv", 12, 16);
   const sealed = decodeField(data.secret, "secret", TAG_BYTES + 1, 5 * 1024 * 1024);
   const ct = sealed.subarray(0, sealed.length - TAG_BYTES);
   const tag = sealed.subarray(sealed.length - TAG_BYTES);
-  for (const iterations of [APP_ITERATIONS, SPEC_ITERATIONS]) {
-    for (const { form, text } of passwordForms(password)) {
-      const key = await derive(text, salt, iterations);
-      let plain: Buffer;
-      try {
-        const d = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: TAG_BYTES });
-        d.setAuthTag(tag);
-        plain = Buffer.concat([d.update(ct), d.final()]);
-      } catch {
-        continue;
-      }
-      return { ...readPayload(plain.toString("utf8")), iterations, passwordForm: form };
+  for (const { form, text } of passwordForms(password)) {
+    const key = await derive(text, salt, iterations);
+    let plain: Buffer;
+    try {
+      const d = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: TAG_BYTES });
+      d.setAuthTag(tag);
+      plain = Buffer.concat([d.update(ct), d.final()]);
+    } catch {
+      continue;
     }
+    return { ...readPayload(plain.toString("utf8")), iterations, passwordForm: form };
   }
-  throw new UpError("BAD_ARGS", WRONG_PASSWORD, { hint: "check the password; if it is right, the file is damaged or was not made by the Universal Profile app or this skill", details: { reason: "wrong-password-or-damaged-file" } });
+  throw new UpError("BAD_ARGS", WRONG_PASSWORD, { hint: "check the password; if it is right, the file is damaged or was not made by the Universal Profile app or this skill", details: { reason: "wrong-password-or-damaged-file", iterations } });
 }

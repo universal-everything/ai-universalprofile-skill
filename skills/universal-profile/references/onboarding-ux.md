@@ -95,18 +95,19 @@ Each step below has: **Goal** · **Message** (adapt the wording, keep the conten
 
 ## Backup (offer once after the first profile; again after a new key or profile)
 
-- **Goal:** the human has a backup file and its password, kept in different places, so the account can be restored in the Universal Profile app or by the agent on a new machine.
+- **Goal:** the human has a backup file and its password, kept in different places, so the account can be restored by the agent on a new machine, and in the Universal Profile app (versions that open its stronger lock, or an app-compatible copy).
 - **Message (the question):** from `up backup list` → `data.ask.say`. It reads like:
-  > Do you want a backup of my account? I'd give you a file and a password. Keep them in different safe places and you can restore it in the Universal Profile app, or with me.
+  > Do you want a backup of my account? I'd give you a file and a password. Keep them in different safe places and you can restore it with me.
   > Reply "yes" or "later".
 - **Attach:** nothing yet.
 - **Expected reply:** "yes" or "later". Default: later. A "yes" is the approval for `up backup export`. If they decline, record it (`up backup list --mark-asked`) and don't ask again until something changes.
 - **Message (the password):** "Please choose a password for it that you will remember: at least 6 characters with a lowercase and an uppercase letter, a number and a symbol, for example `Sunny-Day7!`. Or shall I make one up for you?" Expected reply: their password, or "make one". If the skill says something is missing, tell them exactly what, in one line.
 - **Message (the delivery):** `up backup export` → `data.say` (with a generated password it contains the password):
   > Here is the backup of my account. Its password is: XXXXX-XXXXX-XXXXX-XXXXX
-  > Keep the file and the password in different safe places (the password in a password manager is ideal). You can restore it in the Universal Profile app or with me.
+  > Keep the file and the password in different safe places (the password in a password manager is ideal). You can restore it with me. The Universal Profile app opens it only in versions that support its stronger lock; if yours can't, ask me for an app-compatible copy.
 - **Attach:** the **one** backup file (`data.path`), by path through the chat's attachment mechanism, in the same message as the text. Never paste, print or open its contents.
 - **Expected reply:** "ok" or a question. Nothing else is needed.
+- **If their app can't open it** (it says the password is wrong): "I can make a copy your app can open. Its lock is weaker, so keep that file extra safe. Shall I?" A "yes" is the approval for `up backup export --legacy`; deliver it the same way.
 - **Never:** read, quote or summarise the file; say "JSON", "encrypted with AES", "keystore", "private key" or "seed phrase"; send the password anywhere but the message with the file; offer an unencrypted backup unprompted (if they insist: warn first that anyone with the file controls the account, deliver only because they asked, tell them to delete it afterwards); ask for their own wallet's key, ever; ask again after "later" without a change.
 
 ### Restore from a backup (new machine, or the human sends a file)

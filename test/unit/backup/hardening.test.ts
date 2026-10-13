@@ -213,7 +213,7 @@ describe("an imported profile can be exported again at once (finding 6)", () => 
     expect(shape(f2)).toEqual(shape(f1));
     const items = (f: any) => f.LSP23CrossChainDeployment.map((l: any) => [l.profileAddress, l.initialChainID, l.deploymentCalldata]).sort();
     expect(items(f2)).toEqual(items(f1));
-    expect((await decryptSecrets(f2.secrets.data, again.data.password)).keys.map((k) => k.address).sort()).toEqual([addr(A0), addr(A1)].sort());
+    expect((await decryptSecrets(f2.secrets.data, again.data.password, f2.secrets.iterations)).keys.map((k) => k.address).sort()).toEqual([addr(A0), addr(A1)].sort());
     // and that file imports once more
     const h2 = fresh();
     const third = await run("backup import", { path: again.data.path, password: again.data.password, offline: true, "all-keys": true }, OFFLINE, h2);
@@ -241,7 +241,7 @@ describe("a profile lists only its own controllers (finding 7)", () => {
     expect(new Set(controllersOf(JOINED))).toEqual(new Set([addr(A0)])); // the key that joined it
     const keyed = f.accounts.find((a: any) => a.address === mb.profile).networks[0].controllers.find((c: any) => c.address === addr(A1));
     expect(keyed).toMatchObject({ type: "Device", privateKeyIndex: expect.any(Number) });
-    expect((await decryptSecrets(f.secrets.data, r.data.password)).keys.map((k) => k.address).sort()).toEqual([addr(A0), addr(A1)].sort());
+    expect((await decryptSecrets(f.secrets.data, r.data.password, f.secrets.iterations)).keys.map((k) => k.address).sort()).toEqual([addr(A0), addr(A1)].sort());
   });
 
   it("restoring one profile restores its key only, with no edit of the file; --all-keys adds the rest", async () => {

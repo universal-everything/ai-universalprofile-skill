@@ -267,7 +267,7 @@ defineVerb({
       next = [
         "Send the profile address with its QR (up display address <profile> --chain <id>) and say where money for the profile goes: the profile address, never the gas address.",
         ...metadataNext,
-        "Later, once, offer the human a backup of the account (a file plus a password they keep safe, restorable in the Universal Profile app): run up backup list; if data.ask is set, ask its question (references/onboarding.md, \"Backup\"). A new key or profile makes it ask again.",
+        "Later, once, offer the human a backup of the account (a file plus a password they keep safe, restorable by you on a new machine; Universal Profile app and extension versions that do not read secrets.iterations need a --legacy copy): run up backup list; if data.ask is set, ask its question (references/onboarding.md, \"Backup\"). A new key or profile makes it ask again.",
       ];
     } else if (out.status === "already-deployed") {
       say = `My profile already exists on ${chainName}:\n${m.profile}`;

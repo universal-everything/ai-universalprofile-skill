@@ -114,7 +114,8 @@ describe("export from a machine with three deployed profiles and two keys", () =
     expect(r.data.profiles.sort()).toEqual([p1.profile, p2.profile, p3.profile].sort());
     expect(r.data.keys).toEqual([key1, key2]);
     expect(r.data.chains).toEqual([A]);
-    expect(r.data.appCompatible).toBe(true);
+    expect(r.data).toMatchObject({ iterations: 600_000, legacy: false });
+    expect(r.data.appCompatible).toBe(false); // 600,000 iterations: app versions that do not read secrets.iterations cannot open it
     expect(r.warnings ?? []).toEqual([]);
     expect(appReads(readFileSync(r.data.path, "utf8")).errors).toEqual([]);
     const f = JSON.parse(readFileSync(r.data.path, "utf8"));
@@ -178,7 +179,7 @@ describe("import into a fresh machine (online checks)", () => {
     const again = await clone(m.ctx, "backup export", {});
     expect(again.data.profiles.sort()).toEqual([p1.profile, p2.profile, p3.profile].sort());
     expect(again.data.keys.sort()).toEqual([key1, key2].sort());
-    expect(again.data.appCompatible).toBe(true);
+    expect(again.data.appCompatible).toBe(false); // a default (600,000) file again
     expect(again.warnings ?? []).toEqual([]);
     const f = JSON.parse(readFileSync(again.data.path, "utf8"));
     expect(f.LSP23CrossChainDeployment.map((l: any) => [l.profileAddress, l.initialChainID]).sort()).toEqual([p1, p2, p3].map((x) => [x.profile, A]).sort());

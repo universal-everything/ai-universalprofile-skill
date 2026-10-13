@@ -2,17 +2,22 @@
 //
 // The serializer writes exactly what the Universal Profile mobile app writes (see lsp30-crypto.ts
 // for the encryption): JSON.stringify(file, undefined, 2), UTF-8, no trailing newline, keys in the
-// app's order, EIP-55 addresses, `version` the number 2, `backupDate` UTC without milliseconds.
+// app's order, EIP-55 addresses, `version` the number 2, `backupDate` UTC without milliseconds, plus
+// one field the app does not write: the PBKDF2 iteration count of encrypted secrets, stated as
+// `secrets.iterations` before `data`. The app's reader drops that field and always derives with
+// 10,000, so it opens a file stating 10,000 (`--legacy`) and reports a wrong password for any other.
 //
 // The validator is hand-written and more tolerant than the app's reader (quirks Q7 to Q16 in the
 // design): optional fields stay optional, unknown fields are ignored, bad checksums only warn.
+// `secrets.iterations` is the exception: when present it must be a whole number from 1 to 5,000,000
+// (an error otherwise, so nothing is derived); when absent the file was made with exactly 10,000.
 // Its messages name the place of a problem ("accounts[0].address"), never the value found there.
 import { getAddress } from "viem";
 import { UpError } from "../core/errors.ts";
 import { PERMISSION_NAMES, type PermissionName } from "../lsp/constants.ts";
 import { canonicalDateTime, KEY_WITHHELD, safeFileText } from "../core/safe-text.ts";
 import type { Address, Hex } from "../core/types.ts";
-import { decodeField, ENCRYPTION_TYPE, type EncryptedData } from "./lsp30-crypto.ts";
+import { decodeField, ENCRYPTION_TYPE, isValidIterations, ITERATIONS_RULE, LEGACY_ITERATIONS, type EncryptedData } from "./lsp30-crypto.ts";
 
 export const BACKUP_VERSION = 2;
 /** What an encryptionType other than the known one is shown as. */
@@ -66,7 +71,8 @@ export interface PlainSecretEntry {
   secret: Hex;
 }
 export type BackupSecrets =
-  | { encrypted: true; passwordHint?: string; encryptionType: string; data: EncryptedData }
+  /** `iterations`: the PBKDF2 count `data` was encrypted with, written as `secrets.iterations` (this skill always states it; left out, the file reads as 10,000). */
+  | { encrypted: true; passwordHint?: string; encryptionType: string; iterations?: number; data: EncryptedData }
   | { encrypted: false; data: PlainSecretEntry[] };
 
 export interface BackupFile {
@@ -82,7 +88,7 @@ export function backupDate(now = new Date()): string {
   return now.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-/** The file as text, in the app's key order. Undefined fields are left out (an empty hint is omitted). */
+/** The file as text, in the app's key order (`secrets.iterations` before `data`). Undefined fields are left out (an empty hint is omitted). */
 export function serializeBackup(f: BackupFile): string {
   const out = {
     version: BACKUP_VERSION,
@@ -115,7 +121,7 @@ export function serializeBackup(f: BackupFile): string {
       })),
     })),
     secrets: f.secrets.encrypted
-      ? { encrypted: true, passwordHint: f.secrets.passwordHint || undefined, encryptionType: f.secrets.encryptionType, data: { secret: f.secrets.data.secret, iv: f.secrets.data.iv, salt: f.secrets.data.salt } }
+      ? { encrypted: true, passwordHint: f.secrets.passwordHint || undefined, encryptionType: f.secrets.encryptionType, iterations: f.secrets.iterations, data: { secret: f.secrets.data.secret, iv: f.secrets.data.iv, salt: f.secrets.data.salt } }
       : { encrypted: false, data: f.secrets.data.map((e) => ({ type: e.type, index: e.index, address: getAddress(e.address), secret: e.secret })) },
   };
   return JSON.stringify(out, undefined, 2);
@@ -146,7 +152,8 @@ export interface Issue {
 export type ParsedSecrets =
   | { kind: "public" }
   | { kind: "plain"; entries: { index: number; address?: Address; secret: unknown }[]; skippedSeedEntries: number }
-  | { kind: "encrypted"; hint?: string; encryptionType?: string; data: EncryptedData };
+  /** `iterations`: the count to derive with, exactly; `iterationsInFile`: whether the file states it (false: 10,000, what every file without the field was made with). */
+  | { kind: "encrypted"; hint?: string; encryptionType?: string; iterations: number; iterationsInFile: boolean; data: EncryptedData };
 
 export interface ParsedBackup {
   backupDate: string;
@@ -308,14 +315,17 @@ export function parseBackup(text: string): { backup?: ParsedBackup; issues: Issu
   if (!isObj(s) || typeof s.encrypted !== "boolean") error("bad-secrets", "secrets is missing or has no true/false 'encrypted'");
   else if (s.encrypted) {
     const d = s.data;
+    // the count is authoritative: only a missing property means 10,000; a present one is used as stated or refused here, before anything is derived
+    const iterationsInFile = Object.hasOwn(s, "iterations");
+    if (iterationsInFile && !isValidIterations(s.iterations)) error("bad-iterations", `secrets.iterations is not ${ITERATIONS_RULE}`);
     try {
       if (!isObj(d)) throw new Error("data");
       decodeField(d.salt, "salt", 8, 128);
       decodeField(d.iv, "iv", 12, 16);
       decodeField(d.secret, "secret", 17, MAX_BACKUP_BYTES);
       // only the one known label is passed on; any other value is replaced by a fixed one
-      secrets = { kind: "encrypted", ...(typeof s.passwordHint === "string" && s.passwordHint ? { hint: free(s.passwordHint, "secrets.passwordHint", 255) } : {}), ...(typeof s.encryptionType === "string" ? { encryptionType: s.encryptionType === ENCRYPTION_TYPE ? ENCRYPTION_TYPE : UNRECOGNIZED_ENCRYPTION_TYPE } : {}), data: { secret: d.secret as string, iv: d.iv as string, salt: d.salt as string } };
-      if (s.encryptionType !== ENCRYPTION_TYPE) warn("encryption-type", "encryptionType is not the one this skill and the app write; decryption is tried with the app's parameters");
+      secrets = { kind: "encrypted", ...(typeof s.passwordHint === "string" && s.passwordHint ? { hint: free(s.passwordHint, "secrets.passwordHint", 255) } : {}), ...(typeof s.encryptionType === "string" ? { encryptionType: s.encryptionType === ENCRYPTION_TYPE ? ENCRYPTION_TYPE : UNRECOGNIZED_ENCRYPTION_TYPE } : {}), iterations: iterationsInFile ? (s.iterations as number) : LEGACY_ITERATIONS, iterationsInFile, data: { secret: d.secret as string, iv: d.iv as string, salt: d.salt as string } };
+      if (s.encryptionType !== ENCRYPTION_TYPE) warn("encryption-type", "encryptionType is not the one this skill and the app write; it is opened as PBKDF2-HMAC-SHA256 with AES-256-GCM all the same");
     } catch (e) {
       error("bad-secrets", e instanceof UpError ? e.message : "secrets.data needs Base64 secret, iv and salt");
     }
