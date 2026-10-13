@@ -525,9 +525,9 @@ up profile url --profile 0xProfile
 
 ### backup export
 
-Make a backup file of the agent's profiles and keys that the Universal Profile mobile app can import (LSP-30), encrypted with a password by default.
+Make a backup file of the agent's profiles and keys in the Universal Profile mobile app's format (LSP-30), encrypted with a password by default.
 
-Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) as `<your display name> - universal-profiles-backup-YYYY-MM-DD.json` (pass --bot-name with your own display name; never guess another agent's or brand's name), or at --path exactly as given. Send `data.path` to the human as a chat attachment; never read it. The app's format hashes the password only 10,000 times: prefer the generated one.
+Covers every profile and every key the agent has (--profiles narrows the profiles); each profile lists only its own controllers, the other keys are only in the file's secrets. Mode encrypted (default): keys locked with the password the human chose (--password, 12+ characters) or, if omitted, a generated one returned once in `data.password`: tell it to the human with the file (`data.say`). Mode public: no keys, no password. Mode unencrypted: keys in plain text; needs --explicit-consent and a human --approval, loud warning. Saved in <UP_HOME>/backups (never overwrites) as `<your display name> - universal-profiles-backup-YYYY-MM-DD.json` (pass --bot-name with your own display name; never guess another agent's or brand's name), or at --path exactly as given. Send `data.path` to the human as a chat attachment; never read it. Encrypted files are locked with PBKDF2-HMAC-SHA256 at 600,000 iterations, stated in the file as `secrets.iterations` (`data.iterations`). Universal Profile app and extension versions that do not read that field cannot open them and report a wrong password (`data.appCompatible` is false): only if the human needs such a version, add --legacy (10,000 iterations, weaker). Prefer the generated password.
 
 - CLI: `up backup export [path] [options]`
 - MCP tool: `up_backup_export` · risk: **secret**
@@ -544,6 +544,7 @@ Covers every profile and every key the agent has (--profiles narrows the profile
 | `--generate-password` | boolean |  | Generate a strong password (the default for export when no password is given); it is returned in data.password so you can tell the human. |
 | `--hint` | string |  | A hint for the password (up to 255 characters). It is stored unencrypted in the file and must not contain the password. |
 | `--explicit-consent` | boolean |  | Required for --mode unencrypted: the human explicitly wants the keys in a file without a password. Default: `false`. |
+| `--legacy` | boolean |  | LEGACY lock, encrypted mode only: 10,000 PBKDF2 iterations (stated in the file) instead of 600,000, so that Universal Profile app and extension versions that do not read secrets.iterations can open the file. A password guess then costs 60 times less: only when the human needs such an app version, with their approval. Default: `false`. |
 | `--refresh` | boolean |  | Also read each profile's current controllers from the networks (best effort, 8 seconds per network). Default: `false`. |
 
 Examples:
@@ -552,6 +553,7 @@ Examples:
 up backup export --bot-name "<your display name>" --approval "<the human's words>"
 up backup export --mode public --bot-name "<your display name>"
 up backup export --profiles 0x… --password-env MY_BACKUP_PASSWORD --approval "<their words>"
+up backup export --legacy --bot-name "<your display name>" --approval "<their words, after hearing the lock is weaker>"
 ```
 
 ### backup import
