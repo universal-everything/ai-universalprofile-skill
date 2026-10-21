@@ -87,6 +87,16 @@ export function inputSchema(v: VerbDef): Record<string, unknown> {
   return { type: "object", properties, required, additionalProperties: false };
 }
 
+/**
+ * A JSON number above 2^53 - 1 has already lost precision when the JSON was parsed (an MCP client
+ * sending a channel, nonce or wei amount as a number): refuse it instead of passing on a rounded value.
+ */
+function assertExactNumber(name: string, val: unknown): void {
+  if (typeof val === "number" && Number.isInteger(val) && !Number.isSafeInteger(val)) {
+    throw new UpError("BAD_ARGS", `--${name}: a JSON number above 2^53 - 1 is not exact (it was rounded when the JSON was parsed); pass large integers as a decimal or 0x string`);
+  }
+}
+
 /** Coerces and validates raw arguments (strings from the CLI, JSON from MCP) against the verb's params. */
 export function coerceArgs(v: VerbDef, raw: Record<string, unknown>): Record<string, any> {
   const out: Record<string, any> = {};
@@ -110,13 +120,19 @@ export function coerceArgs(v: VerbDef, raw: Record<string, unknown>): Record<str
       case "integer": {
         const n = typeof val === "number" ? val : Number(val);
         if (!Number.isFinite(n) || (d.type === "integer" && !Number.isInteger(n))) throw new UpError("BAD_ARGS", `--${d.name} must be a ${d.type}`);
+        if (d.type === "integer" && !Number.isSafeInteger(n)) throw new UpError("BAD_ARGS", `--${d.name} is too large to be exact (above 2^53 - 1)`);
         val = n;
         break;
       }
       case "string[]":
         if (typeof val === "string") val = val.split(",").map((s) => s.trim()).filter(Boolean);
-        else if (!Array.isArray(val)) val = [String(val)];
-        else val = val.map(String);
+        else if (!Array.isArray(val)) {
+          assertExactNumber(d.name, val);
+          val = [String(val)];
+        } else {
+          for (const x of val) assertExactNumber(d.name, x);
+          val = val.map(String);
+        }
         break;
       case "json":
         if (typeof val === "string") {
@@ -128,6 +144,7 @@ export function coerceArgs(v: VerbDef, raw: Record<string, unknown>): Record<str
         }
         break;
       case "string":
+        assertExactNumber(d.name, val); // before String(): precision cannot be recovered afterwards
         val = String(val);
         break;
     }

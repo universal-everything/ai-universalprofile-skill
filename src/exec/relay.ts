@@ -2,12 +2,16 @@
 // Order of operations (never sign before consent, never sign in dry-run):
 //   resolve KM → pick relayer + capabilities → permission pre-check (EXECUTE_RELAY_CALL)
 //   → pre-simulate KM.execute(payload) as the controller (no signature needed)
-//   → nonce (channel per relayer×chain) + validity window from chain time → quota
+//   → nonce: the profile's saved relay channel (src/lsp/relay-channel.ts; created at the first relayed
+//     send, never in a dry run; --channel overrides one call) and its live counter (getNonce)
+//     + validity window from chain time → quota
 //   → consent → [dry-run stops here] → RPC chainId binding check → sign LSP25 digest
 //   → simulate the exact KM.executeRelayCall (from any address) → POST /execute (with chainId)
-//   → track task/hash → receipt on the SAME chain → verify the relayed tx really executed
-//     this signed call (PermissionsVerified(signer) from our KM + nonce consumed).
-import { getAddress, keccak256, toBytes, zeroAddress, type Hex } from "viem";
+//   → track task/hash → receipt on the SAME chain → attribution: the transaction must be a direct call
+//     to this Key Manager that carries exactly this signed call (decoded with the KM ABI) and succeeded.
+//     A used nonce alone never proves that THIS call executed: another call signed with the same key on
+//     the same channel uses it too.
+import { decodeFunctionData, getAddress, keccak256, toBytes, zeroAddress, type Address, type Hex } from "viem";
 import type { Signer, VerbContext } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
 import { explorerTxUrl, simulate, waitForReceipt } from "../chain/tx.ts";
@@ -17,13 +21,17 @@ import { requireKeyManager, readControllerPermissions, resolveKeyManager } from 
 import { hasPermission } from "../lsp/permissions.ts";
 import { assertRpcChainId, latestBlock } from "../lsp/read.ts";
 import { checkValidity, decodeValidityTimestamps, defaultChannel, encodeExecuteRelayCall, encodeValidityTimestamps, getRelayNonce, recoverLsp25Signer, signLsp25, splitNonce, validityWindow } from "../lsp/lsp25.ts";
-import { clientFor, getCapabilities, selectRelayer } from "../relayer/registry.ts";
+import { ensureRelayChannel, profileIdentityFor, relayChannelState, restoredWithoutChannel } from "../lsp/relay-channel.ts";
+import { clientFor, getCapabilities, listRelayers, selectRelayer } from "../relayer/registry.ts";
 import { quotaPositive, type QuotaResult, RelayerClient } from "../relayer/client.ts";
 import type { ExecOutcome, ExecRequest, ExecTransport } from "./transport.ts";
 import { confirmationBlock, consentForRequest, decodeReceiptEvents, upPayload, validateRequest, type ExecOptionsExt, type ExecRequestExt } from "./common.ts";
 
 const POLL_MS = () => Number(process.env.UP_POLL_MS ?? 2000);
 const TIMEOUT_MS = () => Number(process.env.UP_RECEIPT_TIMEOUT_MS ?? 180_000);
+const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+const LIVE_NONCE_NOTE =
+  "LUKSO's live relayer documents the nonce as a JSON number; this relay nonce has more than 53 bits (channel × 2^128 + counter), so it is sent as an exact decimal string, and that this relayer accepts it is not verified. If it refuses, it did not execute the call";
 
 async function waitForTask(client: RelayerClient, taskId: string): Promise<Hex> {
   const deadline = Date.now() + TIMEOUT_MS();
@@ -77,14 +85,41 @@ export const relayTransport: ExecTransport = {
     // Pre-simulation without a signature: same payload checks as the relay (except EXECUTE_RELAY_CALL, checked above).
     await simulate(ctx, { chainId, from: signer.address, to: keyManager, data: encodeFunctionData({ abi: KM_ABI, functionName: "execute", args: [payload] }) });
 
-    const channel = opts.channel ?? (relayer.profile === "lukso-live" ? 0n : defaultChannel(relayer.name, chainId));
-    const nonce = await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
-    const now = (await latestBlock(ctx, chainId)).timestamp || BigInt(Math.floor(Date.now() / 1000));
+    // The nonce channel: the profile's saved channel, created at its first relayed send (never in a dry run);
+    // --channel replaces it for this one call and never changes it. No other default, never an implicit 0.
+    const identity = await profileIdentityFor(ctx, chainId, req.profile);
+    let channel = opts.channel;
+    let channelSource: string;
+    if (opts.channel !== undefined) {
+      const saved = (await relayChannelState(ctx.home, identity).catch(() => undefined))?.saved;
+      channelSource = `--channel for this call only; the saved channel (${saved ? saved.channel : "none yet"}) is unchanged`;
+      warnings.push(`--channel ${opts.channel} is used for this call only, instead of ${saved ? `the saved relay channel ${saved.channel}` : "the profile's relay channel"} (advanced): calls on different channels are not ordered with each other`);
+    } else if (ctx.flags.dryRun) {
+      const st = await relayChannelState(ctx.home, identity);
+      if (!st.saved && st.restored) throw restoredWithoutChannel(identity);
+      channel = st.saved?.channel;
+      channelSource = st.saved ? "saved" : "none yet: the first relayed send creates one random channel for this profile and saves it (a dry run saves nothing)";
+    } else {
+      const c = await ensureRelayChannel(ctx.home, identity);
+      channel = c.channel;
+      channelSource = c.created ? "created now (random, saved)" : "saved";
+      if (c.created) {
+        // migration from the earlier defaults: say so only when this key really used one of them here
+        const earlier = await earlierChannelsInUse(ctx, chainId, keyManager, signer.address);
+        if (earlier.length) warnings.push(`this profile's relay channel ${c.channel} was created now (random, saved in this state folder, used from now on on every chain and relayer). This key relayed before on ${earlier.map((e) => `channel ${e.channel} (sequence ${e.sequence})`).join(", ")}: those counters stay on chain (up nonce shows them); if a call signed there may still be pending, check it before repeating its action`);
+      }
+    }
+    // the nonce read below is unused at this block, so whatever uses it later is in a later block (small margin for RPC failover)
+    const start = await latestBlock(ctx, chainId);
+    const nonce = channel === undefined ? undefined : await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
+    const now = start.timestamp || BigInt(Math.floor(Date.now() / 1000));
     const validityTimestamps =
       opts.validFrom !== undefined || opts.validUntil !== undefined ? encodeValidityTimestamps(opts.validFrom ?? 0n, opts.validUntil ?? 0n) : validityWindow(now, opts.validitySeconds ?? 600);
     const vstate = checkValidity(validityTimestamps, now);
     if (vstate !== "ok") warnings.push(`validity window is ${vstate} at the current block time ${now}`);
     if (validityTimestamps === 0n) warnings.push("unlimited validity: the signed call stays executable until its nonce is used");
+    const stringNonce = relayer.profile === "lukso-live" && (nonce === undefined || nonce > MAX_SAFE);
+    if (stringNonce) warnings.push(LIVE_NONCE_NOTE);
 
     const v = decodeValidityTimestamps(validityTimestamps);
     const confirmation = confirmationBlock(ctx, req, {
@@ -97,7 +132,7 @@ export const relayTransport: ExecTransport = {
       warnings,
       extra: {
         relayer: { name: relayer.name, baseUrl: relayer.baseUrl, profile: relayer.profile, legacy: caps.legacy, lsp15Version: caps.lsp15Version },
-        lsp25: { nonce: nonce.toString(), channel: channel.toString(), sequence: splitNonce(nonce).sequence.toString(), validityTimestamps: "0x" + validityTimestamps.toString(16), validFrom: v.start.toString(), validUntil: v.unlimited ? "unlimited" : v.end.toString(), signedValue: "0" },
+        lsp25: { nonce: nonce?.toString() ?? null, channel: channel?.toString() ?? null, channelSource, sequence: nonce !== undefined ? splitNonce(nonce).sequence.toString() : "0", validityTimestamps: "0x" + validityTimestamps.toString(16), validFrom: v.start.toString(), validUntil: v.unlimited ? "unlimited" : v.end.toString(), signedValue: "0" },
         quota: ctx.flags.dryRun ? "not checked in dry-run (no signatures in dry-run)" : opts.skipQuota ? "skipped" : `checked AFTER approval and before the LSP25 signature, with the LSP15 /quota login message only: personal_sign(keccak256(abi.encodePacked(address, uint256 timestamp[, uint256 chainId]))) — authorises nothing`,
         relayEntry: "KeyManager.executeRelayCall(signature, nonce, validityTimestamps, payload) — the signature is created only after approval; the relayer receives {address, chainId, transaction:{abi: payload, signature, nonce, validityTimestamps}}",
       },
@@ -105,6 +140,7 @@ export const relayTransport: ExecTransport = {
 
     await consentForRequest(ctx, req, confirmation);
     if (ctx.flags.dryRun) return { path: "relay", chainId, profile: req.profile, keyManager, gasPayer: `relayer ${relayer.name}`, status: "dry-run", confirmation, warnings };
+    if (nonce === undefined || channel === undefined) throw new UpError("INTERNAL", "relay nonce missing outside a dry run");
 
     // Quota (LSP15 login message) only after approval; nothing is signed for the call yet.
     if (!opts.skipQuota) {
@@ -130,14 +166,14 @@ export const relayTransport: ExecTransport = {
     }
 
     // From here on the signed call exists and may land on chain at any time within its validity window.
-    const pending: PendingRelay = { ctx, chainId, keyManager, signer: signer.address, nonce, channel, validityTimestamps, relayer: relayer.name, fromBlock: (await latestBlock(ctx, chainId)).number };
+    const pending: PendingRelay = { ctx, chainId, keyManager, signer: signer.address, nonce, channel, validityTimestamps, payload, relayer: relayer.name, fromBlock: start.number > 5n ? start.number - 5n : 0n };
     const base = { path: "relay" as const, chainId, profile: req.profile, keyManager, gasPayer: `relayer ${relayer.name}`, entryCalldata, warnings };
 
     let res: Awaited<ReturnType<RelayerClient["execute"]>>;
     try {
       res = await client.execute({ address: req.profile, chainId, transaction: { abi: payload, signature, nonce, validityTimestamps } });
     } catch (e) {
-      if (!isAmbiguousSubmitError(e)) throw e; // explicit rejection before submission: nothing can land
+      if (!isAmbiguousSubmitError(e)) throw stringNonce ? liveRefusal(e, validityTimestamps) : e; // explicit rejection before submission
       return settleAmbiguous(pending, base, confirmation, `relayer ${relayer.name} answered /execute ambiguously (${(e as Error).message})`, e);
     }
     let hash: Hex | undefined;
@@ -154,11 +190,11 @@ export const relayTransport: ExecTransport = {
       return settleAmbiguous(pending, base, confirmation, `relayer ${relayer.name} returned transaction ${hash}, but no receipt appeared on chain ${chainId}`, e, res.taskId);
     }
     const events = decodeReceiptEvents(receipt);
-    const ours = events.some((e) => e.event === "PermissionsVerified" && getAddress(e.address) === getAddress(keyManager) && String(e.args.signer).toLowerCase() === signer.address.toLowerCase());
-    const nonceAfter = await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
-    if (receipt.status !== "success" || !ours || nonceAfter <= nonce) {
-      const why = receipt.status !== "success" ? `relayed transaction ${hash} reverted on chain ${chainId}` : `relayer ${relayer.name} returned transaction ${hash}, but it did not execute this signed call (no PermissionsVerified for the controller from the Key Manager or nonce not consumed)`;
-      return settleAmbiguous(pending, base, confirmation, why, undefined, res.taskId);
+    const match = await matchRelayCall(await ctx.rpc.request<any>(chainId, "eth_getTransactionByHash", [hash]).catch(() => null), pending);
+    const verified = events.some((e) => e.event === "PermissionsVerified" && getAddress(e.address) === getAddress(keyManager) && String(e.args.signer).toLowerCase() === signer.address.toLowerCase());
+    if (receipt.status !== "success" || match.kind !== "ours" || !verified || (await getRelayNonce(ctx, chainId, keyManager, signer.address, channel)) <= nonce) {
+      const why = receipt.status !== "success" ? `relayed transaction ${hash} reverted on chain ${chainId}` : `relayer ${relayer.name} returned transaction ${hash}, but it did not execute this signed call (${match.kind === "undecodable" ? match.reason : match.kind === "other" ? `it carries another call with this nonce (${match.entry})` : match.kind === "unrelated" ? "it does not carry this call" : "no PermissionsVerified for the controller or nonce not used"})`;
+      return settleAmbiguous(pending, base, confirmation, why, undefined, res.taskId, hash);
     }
     return {
       ...base,
@@ -168,21 +204,85 @@ export const relayTransport: ExecTransport = {
       blockNumber: receipt.blockNumber.toString(),
       gasUsed: receipt.gasUsed.toString(),
       explorerUrl: explorerTxUrl(ctx, chainId, hash),
-      confirmation: { ...confirmation, events },
+      confirmation: { ...confirmation, events, attribution: { transaction: hash, entry: match.entry } },
     };
   },
 };
 
-interface PendingRelay {
-  ctx: VerbContext;
+/** The earlier default channels (channel 0, each relayer's hashed channel) on which this key already relayed on this chain. */
+async function earlierChannelsInUse(ctx: VerbContext, chainId: number, keyManager: Address, signer: Address): Promise<{ channel: bigint; sequence: bigint }[]> {
+  const channels = [0n];
+  for (const r of await listRelayers(ctx, chainId)) {
+    const c = r.profile === "lukso-live" ? 0n : defaultChannel(r.name, chainId);
+    if (!channels.includes(c)) channels.push(c);
+  }
+  const out: { channel: bigint; sequence: bigint }[] = [];
+  for (const channel of channels) {
+    const sequence = splitNonce(await getRelayNonce(ctx, chainId, keyManager, signer, channel)).sequence;
+    if (sequence > 0n) out.push({ channel, sequence });
+  }
+  return out;
+}
+
+/** One signed relay call, as far as attribution needs it (value is always 0: the skill never signs msg.value). */
+export interface SignedRelay {
+  keyManager: Address;
   chainId: number;
-  keyManager: Hex;
-  signer: Hex;
+  signer: Address;
   nonce: bigint;
-  channel: bigint;
   validityTimestamps: bigint;
+  payload: Hex;
+}
+
+interface PendingRelay extends SignedRelay {
+  ctx: VerbContext;
+  channel: bigint;
   relayer: string;
   fromBlock: bigint;
+}
+
+export type RelayMatch = { kind: "ours" | "other"; entry: string } | { kind: "unrelated" } | { kind: "undecodable"; reason: string };
+
+/**
+ * What one transaction (raw eth_getTransactionByHash object) proves about one signed relay call, from its
+ * calldata decoded with the Key Manager ABI — never from bytes found somewhere in it:
+ * - ours: a direct call to this Key Manager (executeRelayCall, or an item of executeRelayCallBatch) with this
+ *   nonce, signed by this controller over the identical message (validity window, value 0, payload);
+ * - other: a direct call to this Key Manager in which this controller signed a DIFFERENT call with this nonce;
+ * - unrelated: a direct Key Manager call without this controller's nonce;
+ * - undecodable: anything else (another contract such as a wrapper or aggregator, unreadable calldata, no
+ *   transaction): it proves nothing either way.
+ * Whether it executed is the receipt's part (a reverted transaction uses no nonce).
+ */
+export async function matchRelayCall(tx: any, c: SignedRelay): Promise<RelayMatch> {
+  if (!tx || typeof tx.input !== "string") return { kind: "undecodable", reason: "the transaction could not be read" };
+  if (typeof tx.to !== "string" || tx.to.toLowerCase() !== c.keyManager.toLowerCase()) return { kind: "undecodable", reason: `it calls ${tx.to ?? "no contract"}, not the Key Manager directly` };
+  let d;
+  try {
+    d = decodeFunctionData({ abi: KM_ABI, data: tx.input as Hex });
+  } catch {
+    return { kind: "undecodable", reason: "its calldata is not a Key Manager call" };
+  }
+  const a = d.args as unknown as any[];
+  const items =
+    d.functionName === "executeRelayCall"
+      ? [{ entry: "executeRelayCall", signature: a[0], nonce: a[1], validityTimestamps: a[2], value: BigInt(tx.value ?? 0), payload: a[3] }]
+      : d.functionName === "executeRelayCallBatch"
+        ? (a[0] as Hex[]).map((signature, i) => ({ entry: `executeRelayCallBatch[${i}]`, signature, nonce: a[1][i], validityTimestamps: a[2][i], value: a[3][i], payload: a[4][i] }))
+        : [];
+  for (const it of items) {
+    if (it.nonce !== c.nonce || typeof it.payload !== "string") continue;
+    let who: Address;
+    try {
+      who = await recoverLsp25Signer({ keyManager: c.keyManager, chainId: c.chainId, nonce: it.nonce, validityTimestamps: it.validityTimestamps, value: it.value, payload: it.payload as Hex }, it.signature);
+    } catch {
+      continue;
+    }
+    if (getAddress(who) !== getAddress(c.signer)) continue; // another key's nonce space
+    const same = it.validityTimestamps === c.validityTimestamps && it.value === 0n && it.payload.toLowerCase() === c.payload.toLowerCase();
+    return { kind: same ? "ours" : "other", entry: it.entry };
+  }
+  return { kind: "unrelated" };
 }
 
 /** Errors after which the signed call may or may not have been submitted (timeouts, 5xx, nonce conflicts, missing hash). */
@@ -195,18 +295,54 @@ export function isAmbiguousSubmitError(e: unknown): boolean {
   return d.status >= 500 || d.status === 409 || d.code === "nonce_conflict" || d.code === "chain_submission_failed";
 }
 
-export function ambiguousRelayHint(validityTimestamps: bigint): string {
+const untilText = (validityTimestamps: bigint) => {
   const v = decodeValidityTimestamps(validityTimestamps);
-  return `do not resend; check \`up nonce\` (has the nonce been used?) or wait until the validity window ends${v.unlimited || v.end === 0n ? " — this call has NO expiry, so it stays executable until its nonce is used" : ` (unix ${v.end})`}`;
+  return v.unlimited || v.end === 0n ? "has NO expiry, so it stays executable until its nonce is used" : `stays executable until unix ${v.end}`;
+};
+
+export function ambiguousRelayHint(validityTimestamps: bigint): string {
+  return `do not resend and do not re-sign: this signed call ${untilText(validityTimestamps)}. A used nonce (up nonce) alone does not show that it was this call: find the transaction that used it (up exec receipt <hash>) or wait until the window ends before repeating the action`;
+}
+
+/** An explicit refusal by LUKSO's live relayer of a nonce sent as a decimal string: nothing executed, and no reason to switch channel or path. */
+function liveRefusal(e: unknown, validityTimestamps: bigint): unknown {
+  if (!(e instanceof UpError)) return e;
+  return new UpError(e.code, e.message, {
+    hint: `LUKSO's live relayer may not accept a nonce sent as an exact decimal string (it has more than 53 bits; its docs show a JSON number) and refused this call, so it did not execute it. Retrying on the same channel is safe (it reuses this nonce). Do not switch to another channel, relayer or path while this signed call ${untilText(validityTimestamps)}, or both could execute${e.hint ? `. ${e.hint}` : ""}`,
+    details: { ...((e.details as object) ?? {}), nonceFormat: "exact decimal string", fallback: "none" },
+    cause: e,
+  });
+}
+
+const MAX_CANDIDATES = 25;
+
+/** The transaction that used this call's nonce, decoded: this exact call, another call of the same key, or not provable. */
+async function findNonceUse(p: PendingRelay, knownHash?: Hex): Promise<{ kind: "ours" | "other"; hash: Hex; entry: string; receipt: any } | { kind: "unresolved"; reason: string; hashes: Hex[] }> {
+  const topic = keccak256(toBytes("PermissionsVerified(address,uint256,bytes4)"));
+  const signerTopic = ("0x" + p.signer.slice(2).toLowerCase().padStart(64, "0")) as Hex;
+  const logs = await p.ctx.rpc.request<any[]>(p.chainId, "eth_getLogs", [{ address: p.keyManager, fromBlock: "0x" + p.fromBlock.toString(16), toBlock: "latest", topics: [topic, signerTopic] }]).catch(() => undefined);
+  // newest first; the relayer's own hash (if any) is checked first
+  const hashes = [...new Set([...(knownHash ? [knownHash.toLowerCase()] : []), ...[...(logs ?? [])].reverse().map((l) => String(l.transactionHash).toLowerCase())])] as Hex[];
+  const undecodable: Hex[] = [];
+  for (const hash of hashes.slice(0, MAX_CANDIDATES)) {
+    const receipt = await p.ctx.rpc.request<any>(p.chainId, "eth_getTransactionReceipt", [hash]).catch(() => null);
+    if (!receipt || receipt.status !== "0x1") continue; // failed or unknown: it used no nonce
+    const m = await matchRelayCall(await p.ctx.rpc.request<any>(p.chainId, "eth_getTransactionByHash", [hash]).catch(() => null), p);
+    if (m.kind === "ours" || m.kind === "other") return { kind: m.kind, hash, entry: m.entry, receipt };
+    if (m.kind === "undecodable") undecodable.push(hash);
+  }
+  if (undecodable.length) return { kind: "unresolved", reason: `the Key Manager was reached through another contract or unreadable calldata in ${undecodable.join(", ")}, which the skill cannot decode`, hashes: undecodable };
+  return { kind: "unresolved", reason: logs ? "no transaction that used it was found" : "the Key Manager's logs could not be read", hashes: [] };
 }
 
 /**
- * The relayer's answer is not conclusive. Poll the chain for the nonce being consumed
- * (the only proof). If it is, report the transaction that used it; otherwise fail WITHOUT
- * suggesting another path: the signed LSP25 call stays valid for its window, so a second
- * execution through another path could pay twice.
+ * The relayer's answer is not conclusive. Poll the chain until the nonce is used; then decode the
+ * transaction that used it: success only when it carries exactly this signed call; a different call of the
+ * same key with this nonce is proof that this call did not (and cannot) execute; anything else stays
+ * unresolved. Never suggests another path or a new signature: the signed LSP25 call stays valid for its
+ * window, so a second execution through another path could pay twice.
  */
-async function settleAmbiguous(p: PendingRelay, base: Omit<ExecOutcome, "status" | "confirmation">, confirmation: Record<string, unknown>, why: string, cause?: unknown, taskId?: string): Promise<ExecOutcome> {
+async function settleAmbiguous(p: PendingRelay, base: Omit<ExecOutcome, "status" | "confirmation">, confirmation: Record<string, unknown>, why: string, cause?: unknown, taskId?: string, knownHash?: Hex): Promise<ExecOutcome> {
   const waitMs = Number(process.env.UP_RELAY_AMBIGUOUS_WAIT_MS ?? 60_000);
   const deadline = Date.now() + waitMs;
   let current = await getRelayNonce(p.ctx, p.chainId, p.keyManager, p.signer, p.channel);
@@ -228,29 +364,36 @@ async function settleAmbiguous(p: PendingRelay, base: Omit<ExecOutcome, "status"
     relayTaskId: taskId,
     reason: why,
   };
-  if (current > p.nonce) {
-    const topic = keccak256(toBytes("PermissionsVerified(address,uint256,bytes4)"));
-    const signerTopic = ("0x" + p.signer.slice(2).toLowerCase().padStart(64, "0")) as Hex;
-    const logs = await p.ctx.rpc.request<any[]>(p.chainId, "eth_getLogs", [{ address: p.keyManager, fromBlock: "0x" + p.fromBlock.toString(16), toBlock: "latest", topics: [topic, signerTopic] }]).catch(() => []);
-    const hash = logs.length ? (logs[logs.length - 1].transactionHash as Hex) : undefined;
-    const warning = `${why}; the chain shows the nonce was consumed, so the signed call WAS executed${hash ? ` in ${hash}` : " (transaction not identified)"}`;
-    if (!hash) return { ...base, status: "submitted", relayTaskId: taskId, confirmation: { ...confirmation, relayResolution: pendingDetails }, warnings: [...(base.warnings ?? []), warning] };
-    const receipt = await waitForReceipt(p.ctx, p.chainId, hash);
-    return {
-      ...base,
-      status: receipt.status === "success" ? "success" : "reverted",
-      txHash: hash,
-      relayTaskId: taskId,
-      blockNumber: receipt.blockNumber.toString(),
-      gasUsed: receipt.gasUsed.toString(),
-      explorerUrl: explorerTxUrl(p.ctx, p.chainId, hash),
-      confirmation: { ...confirmation, events: decodeReceiptEvents(receipt), relayResolution: pendingDetails },
-      warnings: [...(base.warnings ?? []), warning],
-    };
+  if (current <= p.nonce) {
+    throw new UpError("RELAYER_ERROR", `${why}; the nonce was NOT used after ${waitMs} ms — the signed call is still valid and may still land`, {
+      hint: ambiguousRelayHint(p.validityTimestamps),
+      details: { ...pendingDetails, code: "relay_outcome_unknown", fallback: "none", cause: cause instanceof Error ? cause.message : undefined },
+      cause,
+    });
   }
-  throw new UpError("RELAYER_ERROR", `${why}; the nonce was NOT consumed after ${waitMs} ms — the signed call is still valid and may still land`, {
-    hint: ambiguousRelayHint(p.validityTimestamps),
-    details: { ...pendingDetails, code: "relay_outcome_unknown", fallback: "none", cause: cause instanceof Error ? cause.message : undefined },
-    cause,
-  });
+  const use = await findNonceUse(p, knownHash);
+  if (use.kind === "unresolved") {
+    throw new UpError("RELAYER_ERROR", `${why}; the nonce of this call was used on chain, but ${use.reason}, so whether THIS call executed is not proven`, {
+      hint: "do not resend and do not re-sign: look at the transaction(s) in details.transactions (up exec receipt <hash> decodes their events) and repeat the action only once it is proven that it did not execute, with the human's consent",
+      details: { ...pendingDetails, code: "relay_outcome_unresolved", fallback: "none", transactions: use.hashes },
+      cause,
+    });
+  }
+  if (use.kind === "other") {
+    throw new UpError("RELAYER_ERROR", `${why}; this signed call did NOT execute and can no longer execute: its nonce ${p.nonce} (channel ${p.channel}) was used by another call signed with the same key, in ${use.hash}`, {
+      hint: "the same key signed a different call on this channel (another copy of this state folder, another agent or a script using this key and channel): find out what that call did before anything else, and repeat this action only if it is still wanted, with the human's consent. Never re-sign it automatically and never switch channel or path to get around it",
+      details: { ...pendingDetails, code: "nonce_used_by_other_call", fallback: "none", otherTransaction: use.hash, otherEntry: use.entry },
+    });
+  }
+  return {
+    ...base,
+    status: "success",
+    txHash: use.hash,
+    relayTaskId: taskId,
+    blockNumber: BigInt(use.receipt.blockNumber).toString(),
+    gasUsed: BigInt(use.receipt.gasUsed).toString(),
+    explorerUrl: explorerTxUrl(p.ctx, p.chainId, use.hash),
+    confirmation: { ...confirmation, events: decodeReceiptEvents({ logs: use.receipt.logs ?? [] }), attribution: { transaction: use.hash, entry: use.entry }, relayResolution: pendingDetails },
+    warnings: [...(base.warnings ?? []), `${why}; the chain shows that this exact signed call executed in ${use.hash} (${use.entry}, decoded from that transaction)`],
+  };
 }

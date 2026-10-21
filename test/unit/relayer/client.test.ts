@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { encodePacked, keccak256, recoverMessageAddress, type Hex } from "viem";
 import { testSigner } from "../../support/context.ts";
-import { RelayerClient, joinUrl, mapRelayerError, quotaMessageHash, quotaPositive, signQuota, type FetchLike, type RelayerEntry } from "../../../src/relayer/client.ts";
+import { AMBIGUOUS_HINT, RelayerClient, joinUrl, mapRelayerError, quotaMessageHash, quotaPositive, signQuota, type FetchLike, type RelayerEntry } from "../../../src/relayer/client.ts";
 import { UpError } from "../../../src/core/errors.ts";
 
 const PK = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" as Hex; // hardhat account #1 (public test key)
@@ -120,7 +120,8 @@ describe("error map (relay-api-plan §3.5)", () => {
       const e = mapRelayerError({ name: "r", profile: "lsp15" }, status, body, "execute");
       expect((e.details as any).ambiguous, String(status)).toBe(true);
       expect((e.details as any).fallback).toBe("none");
-      expect(e.hint).toBe("do not resend; check `up nonce` (has the nonce been used?) or wait until the validity window ends");
+      expect(e.hint).toBe(AMBIGUOUS_HINT);
+      expect(e.hint).toMatch(/^do not resend; check whether this call executed .*a used nonce alone does not prove it/);
       expect(e.hint).not.toMatch(/--via km/);
     }
     expect((mapRelayerError({ name: "l", profile: "lukso-live" }, 500, {}, "execute").details as any).fallback).toBe("none");

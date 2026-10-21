@@ -9,6 +9,7 @@ import { UP_ABI } from "../lsp/abis.ts";
 import { resolveKeyManager } from "../lsp/profile.ts";
 import { ethCall } from "../lsp/read.ts";
 import { defaultChannel, getRelayNonce, splitNonce } from "../lsp/lsp25.ts";
+import { ensureRelayChannel, profileIdentityFor, relayChannelState, type RelayChannel } from "../lsp/relay-channel.ts";
 import { listRelayers } from "../relayer/registry.ts";
 import { controllerFor } from "../signer/select.ts";
 import type { ExecCall, ExecPath } from "./transport.ts";
@@ -29,7 +30,7 @@ export const CALL_PARAMS: ParamDef[] = [
 export const PATH_PARAMS: ParamDef[] = [
   { name: "via", type: "string", description: "Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only).", enum: ["auto", "km", "lsp0", "relay", "userop"], default: "auto" },
   { name: "relayer", type: "string", description: "Relayer name or base URL (relay path). Default: first relayer configured for the chain." },
-  { name: "channel", type: "string", description: "LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered." },
+  { name: "channel", type: "string", description: "Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change." },
   { name: "validity", type: "integer", description: "Relay validity window in seconds from now (default 600; 0 = unlimited)." },
   { name: "valid-from", type: "integer", description: "Relay validity start (unix seconds); overrides --validity." },
   { name: "valid-until", type: "integer", description: "Relay validity end (unix seconds, 0 = no expiry); overrides --validity." },
@@ -43,15 +44,21 @@ export async function chainAndProfile(ctx: VerbContext, a: Record<string, any>):
   return { chainId, profile: await ctx.profile(a.profile, chainId) };
 }
 
-function parseU(v: unknown, name: string): bigint | undefined {
+const U128 = (1n << 128n) - 1n;
+
+/**
+ * A uint128 option (nonce channel, validity timestamps): a decimal or 0x string, or a JSON number that is a
+ * safe integer. Anything else (fractions, signs, exponents, other bases, out of range) is refused here,
+ * before any chain read, signature or relayer request.
+ */
+export function parseU(v: unknown, name: string, max = U128): bigint | undefined {
   if (v === undefined || v === null || v === "") return undefined;
-  let b: bigint;
-  try {
-    b = BigInt(v as any);
-  } catch {
-    throw new UpError("BAD_ARGS", `--${name} must be a non-negative integer`);
-  }
-  if (b < 0n) throw new UpError("BAD_ARGS", `--${name} must be a non-negative integer`);
+  let b: bigint | undefined;
+  if (typeof v === "number") b = Number.isSafeInteger(v) ? BigInt(v) : undefined;
+  else if (typeof v === "bigint") b = v;
+  else if (typeof v === "string" && /^(0[xX][0-9a-fA-F]+|[0-9]+)$/.test(v)) b = BigInt(v);
+  if (b === undefined || b < 0n) throw new UpError("BAD_ARGS", `--${name} must be a non-negative integer, given as a decimal or 0x string`);
+  if (b > max) throw new UpError("BAD_ARGS", `--${name} is out of range (at most ${max === U128 ? "2^128 - 1" : max})`);
   return b;
 }
 
@@ -259,27 +266,36 @@ export async function defaultControllerAddress(ctx: VerbContext): Promise<Addres
   return (await ctx.signer()).address;
 }
 
+const NOT_CREATED = "not created yet: the first relayed send creates one random channel for this profile and saves it (or create it now: up nonce channel --create)";
+const channelView = (c: RelayChannel) => ({ channel: c.channel.toString(), hex: "0x" + c.channel.toString(16), createdAt: c.createdAt, source: c.source });
+
 defineVerb({
   name: "nonce",
   group: "execute",
-  summary: "Show the LSP25 relay nonces of a controller (channel 0, default relayer channels, --channel) and its EOA transaction nonce.",
+  summary: "Show the live LSP25 relay nonces of a controller (the profile's saved relay channel, channel 0, earlier default channels, --channel) and its EOA transaction nonce. Read-only: never creates a channel.",
+  description:
+    "Three separate counters: the relay (LSP25) nonce per chain, Key Manager, controller key and channel (value = channel × 2^128 + sequence, read live with getNonce), the key's own transaction nonce (pending count, direct paths only) and, only for --via userop, the EntryPoint nonce. The saved relay channel is one random channel per profile in this state folder; channel 0 and the earlier per-relayer default channels are listed so that calls signed on them before can be checked. A used nonce shows that some call with it executed, not which one.",
   risk: "read",
   params: [
-    { name: "controller", type: "string", description: "Controller address (default: this agent's controller)." },
-    { name: "channel", type: "string", description: "Extra nonce channel (uint128) to read." },
+    { name: "controller", type: "string", description: "Controller address (default: this agent's key for the chain)." },
+    { name: "channel", type: "string", description: "Extra nonce channel to read (uint128, as a decimal or 0x string)." },
   ],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
     if (a.controller && !isAddress(a.controller, { strict: false })) throw new UpError("BAD_ARGS", "--controller must be an address");
+    const extra = parseU(a.channel, "channel");
     const controller = a.controller ? getAddress(a.controller) : await controllerAddress(ctx, chainId);
     const km = await resolveKeyManager(ctx, chainId, profile);
     if (!km.keyManager) throw new UpError("NOT_SUPPORTED", `profile owner ${km.owner} is not a Key Manager`);
-    const channels: { channel: bigint; label: string }[] = [{ channel: 0n, label: "channel 0 (ordered)" }];
+    const identity = await profileIdentityFor(ctx, chainId, profile);
+    const { saved } = await relayChannelState(ctx.home, identity);
+    const channels: { channel: bigint; label: string }[] = [];
+    if (saved) channels.push({ channel: saved.channel, label: "saved relay channel of this profile (every relayed call uses it)" });
+    channels.push({ channel: 0n, label: "channel 0 (strictly ordered; shared with tools that pick it by hand)" });
     for (const r of await listRelayers(ctx, chainId)) {
       const c = r.profile === "lukso-live" ? 0n : defaultChannel(r.name, chainId);
-      if (!channels.some((x) => x.channel === c)) channels.push({ channel: c, label: `default channel of relayer ${r.name}` });
+      if (!channels.some((x) => x.channel === c)) channels.push({ channel: c, label: `earlier default channel of relayer ${r.name} (before saved channels)` });
     }
-    const extra = parseU(a.channel, "channel");
     if (extra !== undefined && !channels.some((x) => x.channel === extra)) channels.push({ channel: extra, label: "requested channel" });
     const relay = [];
     for (const c of channels) {
@@ -287,6 +303,41 @@ defineVerb({
       relay.push({ label: c.label, channel: c.channel.toString(), nonce: n.toString(), sequence: splitNonce(n).sequence.toString() });
     }
     const eoaNonce = Number(BigInt(await ctx.rpc.request<Hex>(chainId, "eth_getTransactionCount", [controller, "pending"])));
-    return { data: { chainId, profile, keyManager: km.keyManager, controller, eoaNonce, relay }, text: [`controller ${controller} on chain ${chainId}: EOA nonce ${eoaNonce}`, ...relay.map((r) => `  ${r.label}: nonce ${r.nonce} (sequence ${r.sequence})`)].join("\n") };
+    return {
+      data: { chainId, profile, identity, keyManager: km.keyManager, controller, eoaNonce, relayChannel: saved ? channelView(saved) : null, ...(saved ? {} : { relayChannelNote: NOT_CREATED }), relay },
+      text: [`controller ${controller} on chain ${chainId}: EOA nonce ${eoaNonce}`, ...(saved ? [] : [`  relay channel: ${NOT_CREATED}`]), ...relay.map((r) => `  ${r.label}: nonce ${r.nonce} (sequence ${r.sequence})`)].join("\n"),
+    };
+  },
+});
+
+defineVerb({
+  name: "nonce channel",
+  group: "execute",
+  summary: "Show this agent's saved LSP25 relay channel for the profile (one random uint128 per profile in this state folder, used by every relayed call on every chain and relayer); --create creates it now.",
+  description:
+    "The channel is public (not a secret) and is never replaced: no new channel per chat, restart, upgrade, relayer or chain, and never one to get around a pending call. It is saved in this state folder's profile record, not in key backups. Without --create nothing is written. After a restore from a key backup it is not known here: first make sure no relayed action from before is still pending, then --create (new random channel) or --create --channel <earlier channel> to continue the one this agent used before. A missing channel is not a missing key: the key is never regenerated.",
+  risk: "local",
+  params: [
+    { name: "create", type: "boolean", description: "Create and save the channel now if this profile has none in this state folder (random, from the operating system's CSPRNG); an existing one is kept." },
+    { name: "channel", type: "string", description: "With --create, only when none is saved yet: save this earlier channel of the same agent and profile instead of a new random one (decimal or 0x string, 4 to 2^128 - 1)." },
+  ],
+  examples: ["up nonce channel", "up nonce channel --create"],
+  async run(ctx, a) {
+    await ctx.config();
+    const adopt = parseU(a.channel, "channel");
+    if (adopt !== undefined && a.create !== true) throw new UpError("BAD_ARGS", "--channel needs --create: it only sets the channel of a profile that has none saved yet");
+    let identity = await ctx.identity(a.profile);
+    let chainId: number | undefined;
+    try {
+      chainId = ctx.chainId(a.chain);
+    } catch {}
+    if (chainId !== undefined) identity = await profileIdentityFor(ctx, chainId, identity); // a chain-specific address names its profile
+    const r = a.create === true ? await ensureRelayChannel(ctx.home, identity, { explicit: true, adopt }) : (await relayChannelState(ctx.home, identity)).saved;
+    const created = !!(r && "created" in r && r.created);
+    const scope = "this state folder (this agent) and this profile, on every chain and relayer; the counter is on chain per chain, Key Manager, key and channel (read with: up nonce)";
+    return {
+      data: { profile: identity, relayChannel: r ? channelView(r) : null, created, scope, ...(r ? {} : { note: NOT_CREATED }) },
+      text: r ? `relay channel of ${identity}: ${r.channel}${created ? " (created now)" : ""}` : `relay channel of ${identity}: ${NOT_CREATED}`,
+    };
   },
 });

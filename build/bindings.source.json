@@ -182,10 +182,9 @@
   "0xa20856a5": {
    "signature": "executeRelayCallBatch(bytes[],uint256[],uint256[],uint256[],bytes[])",
    "standard": "LSP25",
-   "binding": "verb `exec relay --batch`",
-   "kind": "verb",
-   "test": "W,P,R",
-   "verb": "exec relay"
+   "binding": "library only (`signRelayBatch` + `encodeExecuteRelayCallBatch`); no verb sends it: `exec batch --via relay` signs one `executeRelayCall` with a `UP.executeBatch` payload",
+   "kind": "internal",
+   "test": "W,P,R"
   },
   "0x1a17ccbf": {
    "signature": "generateSalt(bytes32,bool,bytes)",

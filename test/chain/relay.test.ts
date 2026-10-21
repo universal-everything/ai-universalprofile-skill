@@ -124,12 +124,22 @@ describe("relayer verbs and the relay path", () => {
     expect(relayer.requests.slice(n).some((x) => x.path === "POST /api/execute")).toBe(false);
   });
 
-  it("nonce verb shows channel 0 and the relayer's default channel (advanced by the relays above)", async () => {
+  it("nonce verb shows the saved relay channel (advanced by the relays above), channel 0 and the relayer's earlier default channel", async () => {
     const r = await run(actx, "nonce", {});
     expect(r.data.keyManager).toBe(keyManager);
-    const def = r.data.relay.find((x: any) => x.label.includes("mock"));
-    expect(Number(def.sequence)).toBeGreaterThanOrEqual(3);
+    expect(r.data.relayChannel.channel).toMatch(/^\d+$/);
+    const saved = r.data.relay.find((x: any) => x.label.startsWith("saved relay channel"));
+    expect(saved.channel).toBe(r.data.relayChannel.channel);
+    expect(Number(saved.sequence)).toBeGreaterThanOrEqual(3);
+    expect(r.data.relay.find((x: any) => x.label.includes("earlier default channel of relayer mock")).sequence).toBe("0");
+    expect(r.data.relay.some((x: any) => x.channel === "0")).toBe(true);
     expect(r.data.eoaNonce).toBe(0);
+    // the explicit verb shows the same channel and never replaces it
+    const c = await run(actx, "nonce channel", {});
+    expect(c.data).toMatchObject({ profile, created: false, relayChannel: { channel: r.data.relayChannel.channel } });
+    const again = await run(actx, "nonce channel", { create: true });
+    expect(again.data).toMatchObject({ created: false, relayChannel: { channel: r.data.relayChannel.channel } });
+    await expect(run(actx, "nonce channel", { create: true, channel: "12345" })).rejects.toMatchObject({ code: "BAD_ARGS", message: /never replaced/ });
   });
 
   it("dry-run relay: no signature, no relayer request, no state change", async () => {

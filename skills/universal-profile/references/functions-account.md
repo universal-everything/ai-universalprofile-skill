@@ -64,7 +64,7 @@ Packages with **zero deployable contracts**: lsp1-contracts (interfaces + librar
 | 0xbf0176ff | `executeBatch(uint256[],bytes[])` | payable | ILSP6KeyManager | verb `exec batch` (KM) |
 | 0x28c4d14e | `executePostDeployment(address,address,bytes)` | nonpayable | IPostDeploymentModule | internal (called by factory) |
 | 0x4c8a4e74 | `executeRelayCall(bytes,uint256,uint256,bytes)` | payable | ILSP25ExecuteRelayCall | verb `exec relay` |
-| 0xa20856a5 | `executeRelayCallBatch(bytes[],uint256[],uint256[],uint256[],bytes[])` | payable | ILSP25ExecuteRelayCall | verb `exec relay` (batch) |
+| 0xa20856a5 | `executeRelayCallBatch(bytes[],uint256[],uint256[],uint256[],bytes[])` | payable | ILSP25ExecuteRelayCall | internal: library only (`signRelayBatch`); `exec batch --via relay` signs one `executeRelayCall` with an `executeBatch` payload |
 | 0x1a17ccbf | `generateSalt(bytes32,bool,bytes)` | pure | LSP16UniversalFactory | knowledge |
 | 0x6289a163 | `getCommitmentInfoOf(address,uint256,address)` | view | ILSP11SocialRecovery | generic |
 | 0x54f6127f | `getData(bytes32)` | view | IERC725Y | verb `account data get` |

@@ -56,9 +56,10 @@ export function splitNonce(nonce: bigint): { channelId: bigint; sequence: bigint
 }
 
 /**
- * Default nonce channel per relayer × chain (relay-api-plan §5.2): keccak256("<relayer>:<chainId>")
- * truncated to 128 bits, so two relayers never race on the same channel. Channel 0 stays
- * reserved for strictly ordered flows.
+ * The EARLIER default nonce channel per relayer × chain (relay-api-plan §5.2): keccak256("<relayer>:<chainId>")
+ * truncated to 128 bits. Kept for library compatibility and so that `up nonce` can show the counters of
+ * calls signed on it before; it is never a default any more: relayed calls use the profile's saved random
+ * channel (src/lsp/relay-channel.ts), or an explicit --channel.
  */
 export function defaultChannel(relayerName: string, chainId: number): bigint {
   const h = BigInt(keccak256(toBytes(`${relayerName.toLowerCase()}:${chainId}`)));

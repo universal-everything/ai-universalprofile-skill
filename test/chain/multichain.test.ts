@@ -319,6 +319,30 @@ describe("a different address on one chain: profile link", () => {
     expect(s.data.confirmation.calls[0].to).toBe(profile);
   });
 
+  it("one saved relay channel per profile on every chain: B at its linked address with B's key, A with the default key (own on-chain counters)", async () => {
+    const saved = (await run(ctx, "nonce channel", {})).data.relayChannel; // created by the first relayed send on B above
+    expect(saved.channel).toMatch(/^\d+$/);
+    const rb = await run(ctx, "exec send", { chain: String(B), to: hB.accounts[6], value: "0", data: "0x01", via: "relay" });
+    expect(rb.data).toMatchObject({ status: "success", profile: other });
+    expect(rb.data.confirmation.lsp25).toMatchObject({ channel: saved.channel, channelSource: "saved", sequence: "0" }); // the linked address: keyB's first call there
+    const bodyB = relayer.requests.filter((r) => r.path === "POST /api/execute").at(-1)!.body;
+    expect(bodyB.address).toBe(other);
+    expect((BigInt(bodyB.transaction.nonce) >> 128n).toString()).toBe(saved.channel);
+    const relayerA = await startMockRelayer({ request: hA.request, chainId: A, relayerAccount: hA.accounts[1], chainIdRequired: true });
+    try {
+      await run(ctx, "relayer add", { url: relayerA.url, name: "mock-a", chains: [String(A)] });
+      const ra = await run(ctx, "exec send", { chain: String(A), to: hA.accounts[6], value: "0", data: "0x01", via: "relay" });
+      expect(ra.data).toMatchObject({ status: "success", profile });
+      expect(ra.data.confirmation.lsp25).toMatchObject({ channel: saved.channel, channelSource: "saved" });
+      expect(getAddress(ra.data.confirmation.events.find((x: any) => x.event === "PermissionsVerified").args.signer)).toBe(keyA);
+      expect((BigInt(relayerA.requests.filter((r) => r.path === "POST /api/execute").at(-1)!.body.transaction.nonce) >> 128n).toString()).toBe(saved.channel);
+      await run(ctx, "relayer remove", { name: "mock-a" });
+    } finally {
+      await relayerA.close();
+    }
+    expect((await run(ctx, "nonce channel", {})).data.relayChannel.channel).toBe(saved.channel);
+  });
+
   it("unlink restores the usual address on B (and also always needs the human's words)", async () => {
     await savePolicy(home, { ...DEFAULT_POLICY, allowAdmin: true });
     await expect(run(testContext(home, undefined, { yes: true }), "profile link", { unlink: true, chain: String(B) })).rejects.toMatchObject({ code: "CONSENT_REQUIRED" });

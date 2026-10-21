@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint d16fcd25dbea (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 6b0148a81890 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -129,6 +129,11 @@ function inputSchema(v) {
   }
   return { type: "object", properties, required, additionalProperties: false };
 }
+function assertExactNumber(name, val) {
+  if (typeof val === "number" && Number.isInteger(val) && !Number.isSafeInteger(val)) {
+    throw new UpError("BAD_ARGS", `--${name}: a JSON number above 2^53 - 1 is not exact (it was rounded when the JSON was parsed); pass large integers as a decimal or 0x string`);
+  }
+}
 function coerceArgs(v, raw) {
   const out = {};
   const defs = [...v.params, ...GLOBAL_PARAMS.filter((g) => !v.params.some((p) => p.name === g.name))];
@@ -151,13 +156,19 @@ function coerceArgs(v, raw) {
       case "integer": {
         const n = typeof val === "number" ? val : Number(val);
         if (!Number.isFinite(n) || d.type === "integer" && !Number.isInteger(n)) throw new UpError("BAD_ARGS", `--${d.name} must be a ${d.type}`);
+        if (d.type === "integer" && !Number.isSafeInteger(n)) throw new UpError("BAD_ARGS", `--${d.name} is too large to be exact (above 2^53 - 1)`);
         val = n;
         break;
       }
       case "string[]":
         if (typeof val === "string") val = val.split(",").map((s) => s.trim()).filter(Boolean);
-        else if (!Array.isArray(val)) val = [String(val)];
-        else val = val.map(String);
+        else if (!Array.isArray(val)) {
+          assertExactNumber(d.name, val);
+          val = [String(val)];
+        } else {
+          for (const x of val) assertExactNumber(d.name, x);
+          val = val.map(String);
+        }
         break;
       case "json":
         if (typeof val === "string") {
@@ -168,6 +179,7 @@ function coerceArgs(v, raw) {
         }
         break;
       case "string":
+        assertExactNumber(d.name, val);
         val = String(val);
         break;
     }
@@ -1561,7 +1573,7 @@ function hintForRevert(d) {
     case "NoERC725YDataKeysAllowed":
       return "the data key is not in AllowedERC725YDataKeys for this controller";
     case "InvalidRelayNonce":
-      return "relay nonce is stale or reused; fetch a fresh one with: up nonce";
+      return "the relay nonce on this channel was already used (or the signature does not match): first check whether your previous call on this channel executed (up exec receipt <hash>; up nonce shows only that some call used it); if it did, do not repeat it; if it did not, run the same command again (the skill reads the current nonce itself; never type or compute a nonce, never switch channel to get around it)";
     case "RelayCallBeforeStartTime":
     case "RelayCallExpired":
       return "the relay call validity window is not satisfied; re-sign with a fresh window";
@@ -4651,8 +4663,9 @@ var init_signer = __esm({
 });
 
 // src/core/lock.ts
-import { writeFile as writeFile3, link, readFile as readFile5, unlink, mkdir as mkdir2, stat as stat3, open as open2 } from "node:fs/promises";
+import { link, mkdir as mkdir2, open as open2, readFile as readFile5, rename as rename2, stat as stat3, unlink, utimes, writeFile as writeFile3 } from "node:fs/promises";
 import { randomBytes as randomBytes4 } from "node:crypto";
+import { hostname } from "node:os";
 import { join as join7 } from "node:path";
 function alive(pid) {
   try {
@@ -4662,76 +4675,169 @@ function alive(pid) {
     return e?.code === "EPERM";
   }
 }
-async function withLock(home, name, fn) {
-  const dir = join7(home, "locks");
-  await mkdir2(dir, { recursive: true, mode: 448 });
-  const file2 = join7(dir, `${name}.lock`);
-  const started = Date.now();
-  let delay = 50;
-  for (; ; ) {
-    const tmp = `${file2}.${process.pid}.${randomBytes4(4).toString("hex")}`;
-    await writeFile3(tmp, JSON.stringify({ pid: process.pid, at: Date.now() }), { mode: 384 });
+async function createExclusive(file2, content) {
+  const tmp = `${file2}.${process.pid}.${randomBytes4(4).toString("hex")}`;
+  await writeFile3(tmp, content, { mode: 384 });
+  try {
+    await link(tmp, file2);
+    return true;
+  } catch (e) {
+    if (e?.code === "EEXIST") return false;
+    if (!["EPERM", "ENOTSUP", "ENOSYS", "EXDEV", "EOPNOTSUPP"].includes(e?.code)) throw e;
     try {
-      await link(tmp, file2);
-      await unlink(tmp).catch(() => {
-      });
-      break;
-    } catch (e) {
-      await unlink(tmp).catch(() => {
-      });
-      if (["EPERM", "ENOTSUP", "ENOSYS", "EXDEV", "EOPNOTSUPP"].includes(e?.code)) {
-        try {
-          const fh = await open2(file2, "wx", 384);
-          await fh.writeFile(JSON.stringify({ pid: process.pid, at: Date.now() }));
-          await fh.close();
-          break;
-        } catch (e2) {
-          if (e2?.code !== "EEXIST") throw e2;
-        }
-      } else if (e?.code !== "EEXIST") throw e;
-    }
-    let stale = false;
-    try {
-      const info = JSON.parse(await readFile5(file2, "utf8"));
-      stale = !alive(info.pid) || Date.now() - info.at > STALE_MS;
-    } catch {
-      const st = await stat3(file2).catch(() => void 0);
-      stale = st ? Date.now() - st.mtimeMs > 3e4 : true;
-    }
-    if (stale) {
-      const again = await readFile5(file2, "utf8").catch(() => void 0);
-      const st = await stat3(file2).catch(() => void 0);
-      if (again !== void 0 && st && (() => {
-        try {
-          const i = JSON.parse(again);
-          return !alive(i.pid) || Date.now() - i.at > STALE_MS;
-        } catch {
-          return Date.now() - st.mtimeMs > 3e4;
-        }
-      })()) {
-        await unlink(file2).catch(() => {
-        });
+      const fh = await open2(file2, "wx", 384);
+      try {
+        await fh.writeFile(content);
+      } finally {
+        await fh.close();
       }
-      continue;
+      return true;
+    } catch (e2) {
+      if (e2?.code === "EEXIST") return false;
+      throw e2;
     }
-    if (Date.now() - started > WAIT_MS) throw new UpError("INTERNAL", `another up process is still sending (lock ${file2})`, { hint: "wait for it to finish, then retry" });
-    await new Promise((r) => setTimeout(r, delay));
-    delay = Math.min(delay * 2, 1e3);
+  } finally {
+    await unlink(tmp).catch(() => {
+    });
+  }
+}
+async function inspect(file2) {
+  try {
+    const raw = await readFile5(file2, "utf8");
+    const st = await stat3(file2);
+    let o = {};
+    try {
+      const j = JSON.parse(raw);
+      if (j && typeof j === "object") o = j;
+    } catch {
+    }
+    return {
+      raw,
+      pid: Number.isInteger(o.pid) ? o.pid : void 0,
+      host: typeof o.host === "string" ? o.host : void 0,
+      token: typeof o.token === "string" ? o.token : void 0,
+      beat: Math.max(st.mtimeMs, typeof o.at === "number" ? o.at : 0)
+    };
+  } catch (e) {
+    if (e?.code === "ENOENT") return void 0;
+    throw e;
+  }
+}
+function holderState(l, now) {
+  if (l.pid !== void 0 && (l.host === void 0 || l.host === HOST) && !alive(l.pid)) return "dead";
+  if (l.pid === void 0) return now - l.beat > Math.min(UNREADABLE_MS, staleMs()) ? "dead" : "live";
+  return now - l.beat > staleMs() ? "quiet" : "live";
+}
+async function replaceFile(file2, content) {
+  const tmp = `${file2}.${process.pid}.${randomBytes4(4).toString("hex")}`;
+  await writeFile3(tmp, content, { mode: 384 });
+  for (let i = 0; ; i++) {
+    try {
+      await rename2(tmp, file2);
+      return;
+    } catch (e) {
+      if (i >= 20 || !["EPERM", "EBUSY", "EACCES"].includes(e?.code)) {
+        await unlink(tmp).catch(() => {
+        });
+        throw e;
+      }
+      await sleep3(25);
+    }
+  }
+}
+async function clearAbandoned(breaker, seen) {
+  const moved = `${breaker}.${process.pid}.${randomBytes4(4).toString("hex")}`;
+  try {
+    await rename2(breaker, moved);
+  } catch {
+    return;
+  }
+  const got = await readFile5(moved, "utf8").catch(() => void 0);
+  if (got !== seen.raw) await link(moved, breaker).catch(() => {
+  });
+  await unlink(moved).catch(() => {
+  });
+}
+async function underBreaker(file2, fn) {
+  const breaker = `${file2}.break`;
+  const mine = JSON.stringify({ pid: process.pid, host: HOST, token: randomBytes4(8).toString("hex"), at: Date.now() });
+  const until = Date.now() + BREAKER_MS;
+  for (let d = 5; ; d = Math.min(d * 2, 200)) {
+    if (await createExclusive(breaker, mine)) break;
+    const b = await inspect(breaker);
+    if (b && (b.pid !== void 0 && (b.host === void 0 || b.host === HOST) && !alive(b.pid) || Date.now() - b.beat > BREAKER_MS)) await clearAbandoned(breaker, b);
+    if (Date.now() > until) return false;
+    await sleep3(d);
   }
   try {
     return await fn();
   } finally {
-    await unlink(file2).catch(() => {
+    if ((await inspect(breaker).catch(() => void 0))?.raw === mine) await unlink(breaker).catch(() => {
     });
   }
 }
-var STALE_MS, WAIT_MS;
+async function withLock(home, name, fn) {
+  const dir = join7(home, "locks");
+  await mkdir2(dir, { recursive: true, mode: 448 });
+  const file2 = join7(dir, `${name}.lock`);
+  const token = randomBytes4(16).toString("hex");
+  const record = () => JSON.stringify({ pid: process.pid, host: HOST, token, at: Date.now() });
+  const started = Date.now();
+  let delay = 50;
+  let watched;
+  for (; ; ) {
+    if (await createExclusive(file2, record())) break;
+    const cur = await inspect(file2);
+    if (!cur) continue;
+    const now = Date.now();
+    const state = holderState(cur, now);
+    let takeOver = state === "dead";
+    if (state === "quiet") {
+      if (!watched || watched.raw !== cur.raw || watched.beat !== cur.beat) watched = { raw: cur.raw, beat: cur.beat, since: now };
+      else takeOver = now - watched.since >= 2 * beatMs();
+    } else if (state === "live") watched = void 0;
+    if (takeOver && await underBreaker(file2, async () => {
+      const again = await inspect(file2);
+      if (!again || again.raw !== cur.raw || again.beat > cur.beat || holderState(again, Date.now()) === "live") return false;
+      await replaceFile(file2, record());
+      return true;
+    }))
+      break;
+    if (Date.now() - started > waitMs()) {
+      const who = cur.pid !== void 0 ? `, held by process ${cur.pid}${cur.host && cur.host !== HOST ? ` on ${cur.host}` : ""}` : "";
+      throw new UpError("INTERNAL", `another up process is still sending (lock ${file2}${who})`, { hint: "wait for it to finish, then retry" });
+    }
+    await sleep3(delay);
+    delay = Math.min(delay * 2, 1e3);
+  }
+  const heartbeat = setInterval(() => {
+    void inspect(file2).then((cur) => cur?.token === token ? utimes(file2, /* @__PURE__ */ new Date(), /* @__PURE__ */ new Date()) : void 0).catch(() => {
+    });
+  }, beatMs());
+  heartbeat.unref?.();
+  try {
+    return await fn();
+  } finally {
+    clearInterval(heartbeat);
+    await underBreaker(file2, async () => {
+      if ((await inspect(file2))?.token === token) await unlink(file2);
+      return true;
+    }).catch(() => {
+    });
+  }
+}
+var staleMs, waitMs, beatMs, UNREADABLE_MS, BREAKER_MS, HOST, sleep3;
 var init_lock = __esm({
   "src/core/lock.ts"() {
     "use strict";
     init_errors();
-    STALE_MS = Number(process.env.UP_LOCK_STALE_MS ?? 15 * 6e4);
-    WAIT_MS = Number(process.env.UP_LOCK_WAIT_MS ?? 10 * 6e4);
+    staleMs = () => Number(process.env.UP_LOCK_STALE_MS ?? 15 * 6e4);
+    waitMs = () => Number(process.env.UP_LOCK_WAIT_MS ?? 10 * 6e4);
+    beatMs = () => Math.max(20, Math.min(staleMs() / 4, 6e4));
+    UNREADABLE_MS = 3e4;
+    BREAKER_MS = 3e4;
+    HOST = hostname();
+    sleep3 = (ms) => new Promise((r) => setTimeout(r, ms));
   }
 });
 
@@ -6798,12 +6904,12 @@ var init_client = __esm({
       quota_exhausted: { message: "relayer quota exhausted", hint: "wait for the quota reset or execute directly with a funded controller (--via km)", retryable: false, fallback: "km" },
       auth_required: { message: "the relayer requires authentication", hint: "LSP15 relayers need no credentials; this relayer is not LSP15-conformant (lukso-live needs a LUKSO account)", retryable: false, fallback: "km" },
       profile_not_authorised: { message: "the relayer does not serve this profile or the controller is not authorised", hint: "register the profile with the relayer / check the controller's EXECUTE_RELAY_CALL permission", retryable: false, fallback: "km" },
-      nonce_conflict: { message: "the relay nonce is already used or pending", hint: "check up nonce: if the nonce was used the call already executed; never re-submit or re-sign elsewhere until the first is proven dropped", retryable: false, fallback: "none" },
+      nonce_conflict: { message: "the relay nonce is already used or pending", hint: "a used nonce does not prove that THIS call executed (another call of the same key on this channel uses it too): find the transaction that used it before anything else; never re-submit or re-sign elsewhere until this call is proven not executed", retryable: false, fallback: "none" },
       not_yet_valid: { message: "the relay call is not valid yet (validity window starts in the future)", hint: "re-sign with a window that starts now", retryable: true, fallback: "resign" },
       expired: { message: "the relay call validity window has expired", hint: "re-sign with a fresh validity window", retryable: true, fallback: "resign" },
-      chain_submission_failed: { message: "the relayer reports a failed or uncertain submission to the chain", hint: "do not resend; check `up nonce` (has the nonce been used?) or wait until the validity window ends", retryable: false, fallback: "none" }
+      chain_submission_failed: { message: "the relayer reports a failed or uncertain submission to the chain", hint: "do not resend; check whether this call executed (find its transaction; a used nonce alone does not prove it) or wait until the validity window ends", retryable: false, fallback: "none" }
     };
-    AMBIGUOUS_HINT = "do not resend; check `up nonce` (has the nonce been used?) or wait until the validity window ends";
+    AMBIGUOUS_HINT = "do not resend; check whether this call executed (find its transaction; a used nonce alone does not prove it) or wait until the validity window ends";
     STATUS_DEFAULT_CODE = { 400: "bad_request", 401: "auth_required", 402: "quota_exhausted", 403: "profile_not_authorised", 409: "nonce_conflict", 410: "expired", 425: "not_yet_valid", 502: "chain_submission_failed" };
     LUKSO_LIVE_ERRORS = {
       401: { message: "LUKSO relayer: the controller lacks permission on the profile", hint: "check EXECUTE_RELAY_CALL and the payload permissions: up permissions show" },
@@ -7829,9 +7935,9 @@ __export(lsp23_exports, {
   verifyManifest: () => verifyManifest,
   writeProfileRecord: () => writeProfileRecord
 });
-import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData12, encodePacked as encodePacked3, formatEther as formatEther5, getAddress as getAddress23, getContractAddress, keccak256 as keccak25613 } from "./vendor-viem.mjs";
+import { concat as concat3, encodeAbiParameters as encodeAbiParameters2, encodeFunctionData as encodeFunctionData12, encodePacked as encodePacked3, formatEther as formatEther5, getAddress as getAddress24, getContractAddress, keccak256 as keccak25613 } from "./vendor-viem.mjs";
 function erc1167InitCode(implementation) {
-  return concat3(["0x3d602d80600a3d3981f3363d3d373d3d3d363d73", getAddress23(implementation), "0x5af43d82803e903d91602b57fd5bf3"]);
+  return concat3(["0x3d602d80600a3d3981f3363d3d373d3d3d363d73", getAddress24(implementation), "0x5af43d82803e903d91602b57fd5bf3"]);
 }
 function resolveImplementations(inputs) {
   const v = inputs.implementationVersion ?? DEFAULT_IMPL_VERSION;
@@ -7841,19 +7947,19 @@ function resolveImplementations(inputs) {
   if (!upInit || !kmInit || !urd) throw new UpError("BAD_ARGS", `no canonical UP/KM/URD implementation for version ${v}`, { hint: `known versions: ${Object.keys(LSP.UP_INIT).join(", ")}` });
   return {
     version: v,
-    factory: getAddress23(inputs.factory ?? LSP.LSP23_FACTORY),
-    postDeploymentModule: getAddress23(inputs.postDeploymentModule ?? LSP.UP_INIT_POST_DEPLOYMENT_MODULE),
-    upInit: getAddress23(upInit),
-    kmInit: getAddress23(kmInit),
-    urd: getAddress23(urd)
+    factory: getAddress24(inputs.factory ?? LSP.LSP23_FACTORY),
+    postDeploymentModule: getAddress24(inputs.postDeploymentModule ?? LSP.UP_INIT_POST_DEPLOYMENT_MODULE),
+    upInit: getAddress24(upInit),
+    kmInit: getAddress24(kmInit),
+    urd: getAddress24(urd)
   };
 }
 function buildInitialData(controller, permissions, urd, opts = {}) {
-  const controllers = [{ address: getAddress23(controller), permissions }, ...(opts.extraControllers ?? []).map((c) => ({ address: getAddress23(c.address), permissions: c.permissions }))];
+  const controllers = [{ address: getAddress24(controller), permissions }, ...(opts.extraControllers ?? []).map((c) => ({ address: getAddress24(c.address), permissions: c.permissions }))];
   const seen = /* @__PURE__ */ new Set();
   for (const c of controllers) {
     if (seen.has(c.address)) throw new UpError("BAD_ARGS", `controller ${c.address} listed twice`);
-    if (c.address === getAddress23(urd)) throw new UpError("BAD_ARGS", "a controller cannot be the Universal Receiver Delegate");
+    if (c.address === getAddress24(urd)) throw new UpError("BAD_ARGS", "a controller cannot be the Universal Receiver Delegate");
     if (!/^0x[0-9a-fA-F]{64}$/.test(c.permissions) || BigInt(c.permissions) === 0n) throw new UpError("BAD_ARGS", `controller ${c.address} needs a non-zero bytes32 permission value`);
     seen.add(c.address);
   }
@@ -7864,12 +7970,12 @@ function buildInitialData(controller, permissions, urd, opts = {}) {
     dataValues.push(opts.lsp3);
   }
   dataKeys.push(DATA_KEYS.LSP1UniversalReceiverDelegate, permissionsKey(urd));
-  dataValues.push(getAddress23(urd).toLowerCase(), toBytes32(URD_PERMISSIONS));
+  dataValues.push(getAddress24(urd).toLowerCase(), toBytes32(URD_PERMISSIONS));
   for (const c of controllers) {
     dataKeys.push(permissionsKey(c.address));
     dataValues.push(c.permissions.toLowerCase());
   }
-  const listed = [...controllers.map((c) => c.address), getAddress23(urd)];
+  const listed = [...controllers.map((c) => c.address), getAddress24(urd)];
   dataKeys.push(DATA_KEYS["AddressPermissions[]"]);
   dataValues.push(uint128Hex(listed.length));
   listed.forEach((a, i) => {
@@ -7937,7 +8043,7 @@ async function computeOnChain(ctx, chainId, plan) {
   const p = { ...plan.primaryContractDeploymentInit, fundingAmount: 0n };
   const s = { ...plan.secondaryContractDeploymentInit, fundingAmount: 0n };
   const [profile, keyManager] = await read2(ctx, chainId, plan.factory, LSP23_ABI, "computeERC1167Addresses", [p, s, plan.postDeploymentModule, plan.postDeploymentModuleCalldata]);
-  return { profile: getAddress23(profile), keyManager: getAddress23(keyManager) };
+  return { profile: getAddress24(profile), keyManager: getAddress24(keyManager) };
 }
 function manifestFromPlan(inputs, plan, extra = {}) {
   const { deployCalldata, ...rest } = plan;
@@ -7946,7 +8052,7 @@ function manifestFromPlan(inputs, plan, extra = {}) {
     kind: "lsp23-erc1167-up",
     profile: plan.profile,
     keyManager: plan.keyManager,
-    controller: getAddress23(inputs.controller),
+    controller: getAddress24(inputs.controller),
     preset: inputs.preset,
     permissions: inputs.permissions,
     permissionNames: decodePermissions(inputs.permissions).names,
@@ -7982,7 +8088,7 @@ function verifyManifest(m) {
     functionName: "deployERC1167Proxies",
     args: [{ ...p.primaryContractDeploymentInit, fundingAmount: 0n }, { ...p.secondaryContractDeploymentInit, fundingAmount: 0n }, p.postDeploymentModule, p.postDeploymentModuleCalldata]
   });
-  const ok = c.profile === getAddress23(m.profile) && c.keyManager === getAddress23(m.keyManager) && deploy.toLowerCase() === m.deployCalldata.toLowerCase();
+  const ok = c.profile === getAddress24(m.profile) && c.keyManager === getAddress24(m.keyManager) && deploy.toLowerCase() === m.deployCalldata.toLowerCase();
   return { ok, profile: c.profile, keyManager: c.keyManager };
 }
 async function checkPrerequisites(ctx, chainId, plan) {
@@ -8004,8 +8110,8 @@ async function verifyDeployment(ctx, chainId, m) {
   return {
     profileHasCode: await hasCode(ctx, chainId, m.profile),
     keyManagerHasCode: await hasCode(ctx, chainId, m.keyManager),
-    ownerIsKeyManager: km.owner === getAddress23(m.keyManager),
-    keyManagerTargetIsProfile: km.keyManager === getAddress23(m.keyManager),
+    ownerIsKeyManager: km.owner === getAddress24(m.keyManager),
+    keyManagerTargetIsProfile: km.keyManager === getAddress24(m.keyManager),
     supportsLSP0: await supportsInterface(ctx, chainId, m.profile, INTERFACE_IDS2.LSP0ERC725Account),
     keyManagerSupportsLSP6: await supportsInterface(ctx, chainId, m.keyManager, INTERFACE_IDS2.LSP6KeyManager),
     controllerPermissionsMatch: ctl.permissions.hex.toLowerCase() === m.permissions.toLowerCase(),
@@ -8024,7 +8130,7 @@ async function deployFromManifest(ctx, signer, m, chainId, verb = "account deplo
     });
   }
   const onchain = await computeOnChain(ctx, chainId, m.plan);
-  const onChainCompute = { ...onchain, matches: onchain.profile === getAddress23(m.profile) && onchain.keyManager === getAddress23(m.keyManager) };
+  const onChainCompute = { ...onchain, matches: onchain.profile === getAddress24(m.profile) && onchain.keyManager === getAddress24(m.keyManager) };
   if (!onChainCompute.matches) {
     throw new UpError("INTERNAL", `factory on chain ${chainId} computes ${onchain.profile}/${onchain.keyManager}, manifest says ${m.profile}/${m.keyManager}`, { hint: "the factory at the canonical address behaves differently on this chain; do not deploy", details: onChainCompute });
   }
@@ -8415,7 +8521,7 @@ __export(media_exports, {
   writeMedia: () => writeMedia,
   writeMediaFile: () => writeMediaFile
 });
-import { randomBytes as randomBytes7 } from "node:crypto";
+import { randomBytes as randomBytes8 } from "node:crypto";
 import { join as join11 } from "node:path";
 function slug(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "image";
@@ -8427,7 +8533,7 @@ async function writeMediaFile(home, nameHint, bytes, ext, mimeType, description)
   const dir = paths.media(home);
   await ensureDir(dir, 448);
   const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[-:]/g, "").replace(/\..*$/, "");
-  const file2 = join11(dir, `${slug(nameHint)}-${stamp}-${randomBytes7(4).toString("hex")}.${ext.replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin"}`);
+  const file2 = join11(dir, `${slug(nameHint)}-${stamp}-${randomBytes8(4).toString("hex")}.${ext.replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin"}`);
   await writeFileAtomic(file2, bytes, 384);
   return { path: file2, mimeType, description };
 }
@@ -8477,7 +8583,7 @@ var init_safe_text = __esm({
 });
 
 // src/backup/lsp30-crypto.ts
-import { getAddress as getAddress47 } from "./vendor-viem.mjs";
+import { getAddress as getAddress48 } from "./vendor-viem.mjs";
 var MAX_ITERATIONS, ITERATIONS_RULE;
 var init_lsp30_crypto = __esm({
   "src/backup/lsp30-crypto.ts"() {
@@ -8491,7 +8597,7 @@ var init_lsp30_crypto = __esm({
 });
 
 // src/backup/lsp30-format.ts
-import { getAddress as getAddress48 } from "./vendor-viem.mjs";
+import { getAddress as getAddress49 } from "./vendor-viem.mjs";
 function backupDate(now = /* @__PURE__ */ new Date()) {
   return now.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
@@ -8516,12 +8622,12 @@ var init_lsp30_format = __esm({
 });
 
 // src/backup/lsp23-decode.ts
-import { decodeAbiParameters as decodeAbiParameters2, decodeFunctionData as decodeFunctionData5, getAddress as getAddress49, isAddress as isAddress19 } from "./vendor-viem.mjs";
+import { decodeAbiParameters as decodeAbiParameters2, decodeFunctionData as decodeFunctionData6, getAddress as getAddress50, isAddress as isAddress19 } from "./vendor-viem.mjs";
 function hasDefinedPermission(value) {
   return (value & DEFINED_PERMISSION_BITS) !== 0n;
 }
 function addressFromKey(key, prefix) {
-  return key.toLowerCase().startsWith(prefix.toLowerCase()) && key.length === 66 ? getAddress49(`0x${key.slice(26)}`) : void 0;
+  return key.toLowerCase().startsWith(prefix.toLowerCase()) && key.length === 66 ? getAddress50(`0x${key.slice(26)}`) : void 0;
 }
 function decodeDeployment(item) {
   const selector = item.deploymentCalldata.slice(0, 10).toLowerCase();
@@ -8529,7 +8635,7 @@ function decodeDeployment(item) {
   if (selector !== DEPLOY_ERC1167_PROXIES) return unsupported2("the calldata is not a deployERC1167Proxies call");
   let primary, secondary, module, moduleData;
   try {
-    const d = decodeFunctionData5({ abi: LSP23_ABI, data: item.deploymentCalldata });
+    const d = decodeFunctionData6({ abi: LSP23_ABI, data: item.deploymentCalldata });
     if (d.functionName !== "deployERC1167Proxies") return unsupported2("the calldata is not a deployERC1167Proxies call");
     [primary, secondary, module, moduleData] = d.args;
   } catch {
@@ -8558,25 +8664,25 @@ function decodeDeployment(item) {
       perms.set(p, { address: p, permissions: permissionsValid ? value.toLowerCase() : ZERO_PERMISSIONS, permissionsValid, hasPermissions: permissionsValid && hasDefinedPermission(BigInt(value)), allowedCalls: "0x", allowedERC725YDataKeys: "0x", isUrd: false });
     } else if (c) calls.set(c, value);
     else if (k) dataKeys.set(k, value);
-    else if (key.toLowerCase() === DATA_KEYS.LSP1UniversalReceiverDelegate.toLowerCase() && value.length === 42 && isAddress19(value, { strict: false })) urd = getAddress49(value);
+    else if (key.toLowerCase() === DATA_KEYS.LSP1UniversalReceiverDelegate.toLowerCase() && value.length === 42 && isAddress19(value, { strict: false })) urd = getAddress50(value);
     else if (key.toLowerCase() === DATA_KEYS.LSP3Profile.toLowerCase()) lsp3 = value;
   });
   const initialControllers = [...perms.values()].map((c) => ({ ...c, allowedCalls: calls.get(c.address) ?? "0x", allowedERC725YDataKeys: dataKeys.get(c.address) ?? "0x", isUrd: urd !== void 0 && sameAddress2(c.address, urd) }));
   const versionOf = (table, a) => Object.entries(table).find(([, x]) => sameAddress2(x, a))?.[0] ?? "imported";
   const plan = urd ? {
-    factory: getAddress49(item.factoryAddress),
-    postDeploymentModule: getAddress49(module),
+    factory: getAddress50(item.factoryAddress),
+    postDeploymentModule: getAddress50(module),
     implementations: {
-      universalProfileInit: { version: versionOf(LSP.UP_INIT, primary.implementationContract), address: getAddress49(primary.implementationContract) },
-      keyManagerInit: { version: versionOf(LSP.KM_INIT, secondary.implementationContract), address: getAddress49(secondary.implementationContract) },
+      universalProfileInit: { version: versionOf(LSP.UP_INIT, primary.implementationContract), address: getAddress50(primary.implementationContract) },
+      keyManagerInit: { version: versionOf(LSP.KM_INIT, secondary.implementationContract), address: getAddress50(secondary.implementationContract) },
       universalReceiverDelegate: { version: versionOf(LSP.URD, urd), address: urd }
     },
     dataKeys: dataKeyList,
     dataValues: dataValueList,
-    primaryContractDeploymentInit: { salt: primary.salt.toLowerCase(), fundingAmount: primary.fundingAmount.toString(), implementationContract: getAddress49(primary.implementationContract), initializationCalldata: primary.initializationCalldata },
+    primaryContractDeploymentInit: { salt: primary.salt.toLowerCase(), fundingAmount: primary.fundingAmount.toString(), implementationContract: getAddress50(primary.implementationContract), initializationCalldata: primary.initializationCalldata },
     secondaryContractDeploymentInit: {
       fundingAmount: secondary.fundingAmount.toString(),
-      implementationContract: getAddress49(secondary.implementationContract),
+      implementationContract: getAddress50(secondary.implementationContract),
       initializationCalldata: secondary.initializationCalldata,
       addPrimaryContractAddress: secondary.addPrimaryContractAddress,
       extraInitializationParams: secondary.extraInitializationParams
@@ -8695,8 +8801,8 @@ __export(build_exports, {
   collectState: () => collectState,
   fingerprints: () => fingerprints
 });
-import { readdir } from "node:fs/promises";
-import { getAddress as getAddress50, isAddress as isAddress20 } from "./vendor-viem.mjs";
+import { readdir as readdir2 } from "node:fs/promises";
+import { getAddress as getAddress51, isAddress as isAddress20 } from "./vendor-viem.mjs";
 function withTimeout(p, ms) {
   return new Promise((resolve7, reject) => {
     const t = setTimeout(() => reject(new Error("timed out")), ms);
@@ -8706,7 +8812,7 @@ function withTimeout(p, ms) {
 async function collectHeldKeys(ctx, cfg, warnings) {
   const listed = [];
   const add2 = (address, backend, kind) => {
-    if (isAddress20(address, { strict: false }) && !listed.some((k) => sameAddress3(k.address, address))) listed.push({ address: getAddress50(address), backend, kind });
+    if (isAddress20(address, { strict: false }) && !listed.some((k) => sameAddress3(k.address, address))) listed.push({ address: getAddress51(address), backend, kind });
   };
   if (cfg.controller) add2(cfg.controller.address, cfg.controller.backend, "default");
   for (const k of chainControllerList(cfg)) add2(k.address, k.backend, "chain");
@@ -8735,12 +8841,12 @@ function deployedChains(m, record) {
 function importedChainsOf(record) {
   const raw = record.imported?.chains;
   if (!Array.isArray(raw)) return [];
-  return raw.flatMap((c) => Number.isInteger(c?.chainId) && c.chainId > 0 ? [{ chainId: c.chainId, verified: c.provenance === "verified", controllers: (Array.isArray(c.controllers) ? c.controllers : []).filter((a) => typeof a === "string" && isAddress20(a, { strict: false })).map((a) => getAddress50(a)) }] : []);
+  return raw.flatMap((c) => Number.isInteger(c?.chainId) && c.chainId > 0 ? [{ chainId: c.chainId, verified: c.provenance === "verified", controllers: (Array.isArray(c.controllers) ? c.controllers : []).filter((a) => typeof a === "string" && isAddress20(a, { strict: false })).map((a) => getAddress51(a)) }] : []);
 }
 function establishedFor(chainId, manifest, dec, record, onChain3) {
   const out = [];
   const add2 = (address, source) => {
-    if (typeof address === "string" && isAddress20(address, { strict: false }) && !out.some((x) => sameAddress3(x.address, address))) out.push({ address: getAddress50(address), source });
+    if (typeof address === "string" && isAddress20(address, { strict: false }) && !out.some((x) => sameAddress3(x.address, address))) out.push({ address: getAddress51(address), source });
   };
   if (manifest && (manifest.chains?.includes(chainId) || manifest.deployments?.[String(chainId)])) {
     if (dec?.supported) for (const c of dec.initialControllers) !c.isUrd && add2(c.address, "deployment");
@@ -8756,10 +8862,10 @@ function establishedFor(chainId, manifest, dec, record, onChain3) {
 }
 async function collectProfiles(ctx, cfg, warnings, opts = {}) {
   const dir = paths.profiles(ctx.home);
-  const names = (await readdir(dir).catch(() => [])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
+  const names = (await readdir2(dir).catch(() => [])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
   const identities = /* @__PURE__ */ new Map();
-  for (const n of names) identities.set(n.slice(0, 42).toLowerCase(), getAddress50(n.slice(0, 42)));
-  if (cfg.defaultProfile) identities.set(cfg.defaultProfile.toLowerCase(), getAddress50(cfg.defaultProfile));
+  for (const n of names) identities.set(n.slice(0, 42).toLowerCase(), getAddress51(n.slice(0, 42)));
+  if (cfg.defaultProfile) identities.set(cfg.defaultProfile.toLowerCase(), getAddress51(cfg.defaultProfile));
   if (opts.only) {
     for (const o of opts.only) if (!identities.has(o.toLowerCase())) throw new UpError("BAD_ARGS", `no profile ${o} is known on this machine`, { hint: "the profiles known here are listed by: up profile status" });
   }
@@ -8927,7 +9033,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "d16fcd25dbea" : "source";
+var SOURCE = true ? "6b0148a81890" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -9487,7 +9593,7 @@ defineVerb({
 });
 
 // src/exec/verbs.ts
-import { decodeFunctionResult as decodeFunctionResult4, encodeFunctionData as encodeFunctionData11, getAddress as getAddress22, isAddress as isAddress14 } from "./vendor-viem.mjs";
+import { decodeFunctionResult as decodeFunctionResult4, encodeFunctionData as encodeFunctionData11, getAddress as getAddress23, isAddress as isAddress14 } from "./vendor-viem.mjs";
 
 // src/exec/index.ts
 init_transport();
@@ -9956,7 +10062,7 @@ init_abis();
 init_profile();
 init_permissions();
 init_read2();
-import { getAddress as getAddress20, keccak256 as keccak25611, toBytes as toBytes3, zeroAddress as zeroAddress3 } from "./vendor-viem.mjs";
+import { decodeFunctionData as decodeFunctionData3, getAddress as getAddress21, keccak256 as keccak25611, toBytes as toBytes3, zeroAddress as zeroAddress3 } from "./vendor-viem.mjs";
 import { encodeFunctionData as encodeFunctionData9 } from "./vendor-viem.mjs";
 
 // src/lsp/lsp25.ts
@@ -10015,11 +10121,117 @@ function encodeExecuteRelayCall(signature, nonce, validityTimestamps, payload) {
   return encodeFunctionData8({ abi: KM_ABI, functionName: "executeRelayCall", args: [signature, nonce, validityTimestamps, payload] });
 }
 
+// src/lsp/relay-channel.ts
+init_errors();
+init_home();
+init_lock();
+init_profile_record();
+import { randomBytes as randomBytes7 } from "node:crypto";
+import { readdir, readFile as readFile7 } from "node:fs/promises";
+import { existsSync as existsSync15 } from "node:fs";
+import { getAddress as getAddress20 } from "./vendor-viem.mjs";
+var U1282 = (1n << 128n) - 1n;
+var MIN_SAVED_CHANNEL = 4n;
+var entropy = (n) => randomBytes7(n);
+function randomChannel() {
+  for (let i = 0; i < 8; i++) {
+    const b = entropy(16);
+    if (b.length !== 16) break;
+    const c = BigInt("0x" + Buffer.from(b).toString("hex"));
+    if (c >= MIN_SAVED_CHANNEL) return c;
+  }
+  throw new UpError("INTERNAL", "the random number generator gave no usable relay channel; nothing was saved", { hint: "run up doctor" });
+}
+var damaged = (file2) => new UpError("INTERNAL", `the saved relay channel in ${file2} is damaged; nothing was signed and no new channel was made`, {
+  hint: "restore the earlier relayChannel value in that file (it is public: earlier `up nonce` or `up nonce channel` output shows it); never delete it to get a new channel while calls signed on it may still be pending"
+});
+function savedChannelOf(record, file2) {
+  if (!("relayChannel" in record)) return void 0;
+  const r = record.relayChannel;
+  if (!isJsonObject(r) || typeof r.channel !== "string" || !/^[1-9][0-9]{0,38}$/.test(r.channel)) throw damaged(file2);
+  const channel = BigInt(r.channel);
+  if (channel < MIN_SAVED_CHANNEL || channel > U1282) throw damaged(file2);
+  return { channel, createdAt: typeof r.createdAt === "string" ? r.createdAt : void 0, source: typeof r.source === "string" ? r.source : void 0 };
+}
+async function recordStrict(home, identity) {
+  const file2 = paths.profile(home, identity);
+  let text;
+  try {
+    text = await readFile7(file2, "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT") return void 0;
+    throw new UpError("INTERNAL", `cannot read ${file2} (${e.code ?? "error"}); nothing was signed`, { hint: "fix its permissions" });
+  }
+  let v;
+  try {
+    v = JSON.parse(text);
+  } catch {
+  }
+  if (!isJsonObject(v)) {
+    throw new UpError("INTERNAL", `${file2} is not a valid profile record; nothing was signed and no relay channel was made`, { hint: "repair the file (it holds this profile's saved public state, including its relay channel); never delete it to get a new channel" });
+  }
+  return v;
+}
+async function relayChannelState(home, identity) {
+  const id = getAddress20(identity);
+  const record = await recordStrict(home, id);
+  if (!record) return { restored: false };
+  return { saved: savedChannelOf(record, paths.profile(home, id)), restored: record.imported !== void 0 };
+}
+function restoredWithoutChannel(identity) {
+  return new UpError("NOT_SUPPORTED", `the profile ${identity} was restored from a backup into this state folder, and its relay channel is not known here (a key backup does not carry it); nothing was signed`, {
+    hint: "a relayed action from before the restore may still be pending on the earlier channel: check it first (up exec receipt <hash>), or wait until its validity window has passed (10 minutes by default). Then create this profile's channel: up nonce channel --create (new random channel), or up nonce channel --create --channel <earlier channel> to continue the one used before. Never repeat an earlier action before you know it did not execute",
+    details: { code: "relay_channel_not_created", profile: identity, restored: true }
+  });
+}
+async function ensureRelayChannel(home, identity, opts = {}) {
+  const id = getAddress20(identity);
+  const file2 = paths.profile(home, id);
+  const keep = (have) => {
+    if (opts.adopt !== void 0 && opts.adopt !== have.channel) {
+      throw new UpError("BAD_ARGS", `this profile already has the relay channel ${have.channel} in this state folder; a saved channel is never replaced`, { hint: "for one call on another channel pass --channel to that call (advanced; never to get around a pending call)" });
+    }
+    return { ...have, created: false };
+  };
+  if (opts.adopt !== void 0 && (opts.adopt < MIN_SAVED_CHANNEL || opts.adopt > U1282)) throw new UpError("BAD_ARGS", "a saved relay channel must be between 4 and 2^128 - 1 (0..3 are shared, hand-picked values)");
+  const seen = await relayChannelState(home, id);
+  if (seen.saved) return keep(seen.saved);
+  return withLock(home, `profile-${id.toLowerCase()}`, async () => {
+    const latest = await recordStrict(home, id) ?? {};
+    const have = savedChannelOf(latest, file2);
+    if (have) return keep(have);
+    if (latest.imported !== void 0 && !opts.explicit) throw restoredWithoutChannel(id);
+    const channel = opts.adopt ?? randomChannel();
+    const relayChannel = { channel: channel.toString(), createdAt: (/* @__PURE__ */ new Date()).toISOString(), source: opts.adopt !== void 0 ? "adopted" : "random" };
+    await writeJson(file2, { ...latest, address: id, relayChannel });
+    return { channel, createdAt: relayChannel.createdAt, source: relayChannel.source, created: true };
+  });
+}
+async function profileIdentityFor(ctx, chainId, profile) {
+  const p = getAddress20(profile);
+  try {
+    const id = getAddress20(await ctx.identity());
+    if (id !== p && getAddress20(await profileAddressOn(ctx.home, id, chainId)) === p) return id;
+  } catch {
+  }
+  if (existsSync15(paths.profile(ctx.home, p))) return p;
+  const names = (await readdir(paths.profiles(ctx.home)).catch(() => [])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
+  const linking = [];
+  for (const n of names) {
+    const id = getAddress20(n.slice(0, 42));
+    if (chainAddressesOf(await readProfileRecord(ctx.home, id))[String(chainId)] === p) linking.push(id);
+  }
+  if (linking.length > 1) throw new UpError("BAD_ARGS", `${p} is linked on chain ${chainId} by several profiles (${linking.join(", ")})`, { hint: "pass --profile <profile address> to say which profile acts" });
+  return linking[0] ?? p;
+}
+
 // src/exec/relay.ts
 init_registry2();
 init_client();
 var POLL_MS = () => Number(process.env.UP_POLL_MS ?? 2e3);
 var TIMEOUT_MS3 = () => Number(process.env.UP_RECEIPT_TIMEOUT_MS ?? 18e4);
+var MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+var LIVE_NONCE_NOTE = "LUKSO's live relayer documents the nonce as a JSON number; this relay nonce has more than 53 bits (channel × 2^128 + counter), so it is sent as an exact decimal string, and that this relayer accepts it is not verified. If it refuses, it did not execute the call";
 async function waitForTask(client, taskId) {
   const deadline = Date.now() + TIMEOUT_MS3();
   let last = "";
@@ -10066,13 +10278,36 @@ var relayTransport = {
       throw new UpError("NOT_AUTHORISED", `controller ${signer.address} lacks EXECUTE_RELAY_CALL on chain ${chainId}`, { hint: "ask the human to add EXECUTE_RELAY_CALL (up controller edit <controller> --add EXECUTE_RELAY_CALL) or use --via km" });
     }
     await simulate(ctx, { chainId, from: signer.address, to: keyManager, data: encodeFunctionData9({ abi: KM_ABI, functionName: "execute", args: [payload] }) });
-    const channel = opts.channel ?? (relayer.profile === "lukso-live" ? 0n : defaultChannel(relayer.name, chainId));
-    const nonce = await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
-    const now = (await latestBlock(ctx, chainId)).timestamp || BigInt(Math.floor(Date.now() / 1e3));
+    const identity = await profileIdentityFor(ctx, chainId, req.profile);
+    let channel = opts.channel;
+    let channelSource;
+    if (opts.channel !== void 0) {
+      const saved = (await relayChannelState(ctx.home, identity).catch(() => void 0))?.saved;
+      channelSource = `--channel for this call only; the saved channel (${saved ? saved.channel : "none yet"}) is unchanged`;
+      warnings.push(`--channel ${opts.channel} is used for this call only, instead of ${saved ? `the saved relay channel ${saved.channel}` : "the profile's relay channel"} (advanced): calls on different channels are not ordered with each other`);
+    } else if (ctx.flags.dryRun) {
+      const st = await relayChannelState(ctx.home, identity);
+      if (!st.saved && st.restored) throw restoredWithoutChannel(identity);
+      channel = st.saved?.channel;
+      channelSource = st.saved ? "saved" : "none yet: the first relayed send creates one random channel for this profile and saves it (a dry run saves nothing)";
+    } else {
+      const c = await ensureRelayChannel(ctx.home, identity);
+      channel = c.channel;
+      channelSource = c.created ? "created now (random, saved)" : "saved";
+      if (c.created) {
+        const earlier = await earlierChannelsInUse(ctx, chainId, keyManager, signer.address);
+        if (earlier.length) warnings.push(`this profile's relay channel ${c.channel} was created now (random, saved in this state folder, used from now on on every chain and relayer). This key relayed before on ${earlier.map((e) => `channel ${e.channel} (sequence ${e.sequence})`).join(", ")}: those counters stay on chain (up nonce shows them); if a call signed there may still be pending, check it before repeating its action`);
+      }
+    }
+    const start = await latestBlock(ctx, chainId);
+    const nonce = channel === void 0 ? void 0 : await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
+    const now = start.timestamp || BigInt(Math.floor(Date.now() / 1e3));
     const validityTimestamps = opts.validFrom !== void 0 || opts.validUntil !== void 0 ? encodeValidityTimestamps(opts.validFrom ?? 0n, opts.validUntil ?? 0n) : validityWindow(now, opts.validitySeconds ?? 600);
     const vstate = checkValidity(validityTimestamps, now);
     if (vstate !== "ok") warnings.push(`validity window is ${vstate} at the current block time ${now}`);
     if (validityTimestamps === 0n) warnings.push("unlimited validity: the signed call stays executable until its nonce is used");
+    const stringNonce = relayer.profile === "lukso-live" && (nonce === void 0 || nonce > MAX_SAFE);
+    if (stringNonce) warnings.push(LIVE_NONCE_NOTE);
     const v = decodeValidityTimestamps(validityTimestamps);
     const confirmation = confirmationBlock(ctx, req, {
       path: "relay",
@@ -10084,13 +10319,14 @@ var relayTransport = {
       warnings,
       extra: {
         relayer: { name: relayer.name, baseUrl: relayer.baseUrl, profile: relayer.profile, legacy: caps.legacy, lsp15Version: caps.lsp15Version },
-        lsp25: { nonce: nonce.toString(), channel: channel.toString(), sequence: splitNonce(nonce).sequence.toString(), validityTimestamps: "0x" + validityTimestamps.toString(16), validFrom: v.start.toString(), validUntil: v.unlimited ? "unlimited" : v.end.toString(), signedValue: "0" },
+        lsp25: { nonce: nonce?.toString() ?? null, channel: channel?.toString() ?? null, channelSource, sequence: nonce !== void 0 ? splitNonce(nonce).sequence.toString() : "0", validityTimestamps: "0x" + validityTimestamps.toString(16), validFrom: v.start.toString(), validUntil: v.unlimited ? "unlimited" : v.end.toString(), signedValue: "0" },
         quota: ctx.flags.dryRun ? "not checked in dry-run (no signatures in dry-run)" : opts.skipQuota ? "skipped" : `checked AFTER approval and before the LSP25 signature, with the LSP15 /quota login message only: personal_sign(keccak256(abi.encodePacked(address, uint256 timestamp[, uint256 chainId]))) — authorises nothing`,
         relayEntry: "KeyManager.executeRelayCall(signature, nonce, validityTimestamps, payload) — the signature is created only after approval; the relayer receives {address, chainId, transaction:{abi: payload, signature, nonce, validityTimestamps}}"
       }
     });
     await consentForRequest(ctx, req, confirmation);
     if (ctx.flags.dryRun) return { path: "relay", chainId, profile: req.profile, keyManager, gasPayer: `relayer ${relayer.name}`, status: "dry-run", confirmation, warnings };
+    if (nonce === void 0 || channel === void 0) throw new UpError("INTERNAL", "relay nonce missing outside a dry run");
     if (!opts.skipQuota) {
       const quota = await client.quota(signer, { chainId, profile: req.profile, caps });
       if (quota.available && !quotaPositive(quota)) {
@@ -10103,20 +10339,20 @@ var relayTransport = {
     const msg = { keyManager, chainId, nonce, validityTimestamps, value: 0n, payload };
     const signature = await signLsp25(signer, msg);
     const recovered = await recoverLsp25Signer(msg, signature);
-    if (getAddress20(recovered) !== getAddress20(signer.address)) throw new UpError("INTERNAL", "LSP25 signature does not recover to the controller", { hint: "signer backend problem; run up doctor" });
+    if (getAddress21(recovered) !== getAddress21(signer.address)) throw new UpError("INTERNAL", "LSP25 signature does not recover to the controller", { hint: "signer backend problem; run up doctor" });
     const entryCalldata = encodeExecuteRelayCall(signature, nonce, validityTimestamps, payload);
     await simulate(ctx, { chainId, from: zeroAddress3, to: keyManager, data: entryCalldata });
     const kmNow = await requireKeyManager(ctx, chainId, req.profile);
-    if (getAddress20(kmNow) !== getAddress20(keyManager) || msg.chainId !== req.chainId) {
+    if (getAddress21(kmNow) !== getAddress21(keyManager) || msg.chainId !== req.chainId) {
       throw new UpError("RELAYER_ERROR", "chain binding check failed: the signed chainId/Key Manager no longer match the selected chain", { details: { signedKeyManager: keyManager, currentKeyManager: kmNow, signedChainId: msg.chainId } });
     }
-    const pending = { ctx, chainId, keyManager, signer: signer.address, nonce, channel, validityTimestamps, relayer: relayer.name, fromBlock: (await latestBlock(ctx, chainId)).number };
+    const pending = { ctx, chainId, keyManager, signer: signer.address, nonce, channel, validityTimestamps, payload, relayer: relayer.name, fromBlock: start.number > 5n ? start.number - 5n : 0n };
     const base = { path: "relay", chainId, profile: req.profile, keyManager, gasPayer: `relayer ${relayer.name}`, entryCalldata, warnings };
     let res;
     try {
       res = await client.execute({ address: req.profile, chainId, transaction: { abi: payload, signature, nonce, validityTimestamps } });
     } catch (e) {
-      if (!isAmbiguousSubmitError(e)) throw e;
+      if (!isAmbiguousSubmitError(e)) throw stringNonce ? liveRefusal(e, validityTimestamps) : e;
       return settleAmbiguous(pending, base, confirmation, `relayer ${relayer.name} answered /execute ambiguously (${e.message})`, e);
     }
     let hash;
@@ -10133,11 +10369,11 @@ var relayTransport = {
       return settleAmbiguous(pending, base, confirmation, `relayer ${relayer.name} returned transaction ${hash}, but no receipt appeared on chain ${chainId}`, e, res.taskId);
     }
     const events = decodeReceiptEvents(receipt);
-    const ours = events.some((e) => e.event === "PermissionsVerified" && getAddress20(e.address) === getAddress20(keyManager) && String(e.args.signer).toLowerCase() === signer.address.toLowerCase());
-    const nonceAfter = await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
-    if (receipt.status !== "success" || !ours || nonceAfter <= nonce) {
-      const why = receipt.status !== "success" ? `relayed transaction ${hash} reverted on chain ${chainId}` : `relayer ${relayer.name} returned transaction ${hash}, but it did not execute this signed call (no PermissionsVerified for the controller from the Key Manager or nonce not consumed)`;
-      return settleAmbiguous(pending, base, confirmation, why, void 0, res.taskId);
+    const match = await matchRelayCall(await ctx.rpc.request(chainId, "eth_getTransactionByHash", [hash]).catch(() => null), pending);
+    const verified = events.some((e) => e.event === "PermissionsVerified" && getAddress21(e.address) === getAddress21(keyManager) && String(e.args.signer).toLowerCase() === signer.address.toLowerCase());
+    if (receipt.status !== "success" || match.kind !== "ours" || !verified || await getRelayNonce(ctx, chainId, keyManager, signer.address, channel) <= nonce) {
+      const why = receipt.status !== "success" ? `relayed transaction ${hash} reverted on chain ${chainId}` : `relayer ${relayer.name} returned transaction ${hash}, but it did not execute this signed call (${match.kind === "undecodable" ? match.reason : match.kind === "other" ? `it carries another call with this nonce (${match.entry})` : match.kind === "unrelated" ? "it does not carry this call" : "no PermissionsVerified for the controller or nonce not used"})`;
+      return settleAmbiguous(pending, base, confirmation, why, void 0, res.taskId, hash);
     }
     return {
       ...base,
@@ -10147,10 +10383,48 @@ var relayTransport = {
       blockNumber: receipt.blockNumber.toString(),
       gasUsed: receipt.gasUsed.toString(),
       explorerUrl: explorerTxUrl(ctx, chainId, hash),
-      confirmation: { ...confirmation, events }
+      confirmation: { ...confirmation, events, attribution: { transaction: hash, entry: match.entry } }
     };
   }
 };
+async function earlierChannelsInUse(ctx, chainId, keyManager, signer) {
+  const channels = [0n];
+  for (const r of await listRelayers(ctx, chainId)) {
+    const c = r.profile === "lukso-live" ? 0n : defaultChannel(r.name, chainId);
+    if (!channels.includes(c)) channels.push(c);
+  }
+  const out = [];
+  for (const channel of channels) {
+    const sequence = splitNonce(await getRelayNonce(ctx, chainId, keyManager, signer, channel)).sequence;
+    if (sequence > 0n) out.push({ channel, sequence });
+  }
+  return out;
+}
+async function matchRelayCall(tx, c) {
+  if (!tx || typeof tx.input !== "string") return { kind: "undecodable", reason: "the transaction could not be read" };
+  if (typeof tx.to !== "string" || tx.to.toLowerCase() !== c.keyManager.toLowerCase()) return { kind: "undecodable", reason: `it calls ${tx.to ?? "no contract"}, not the Key Manager directly` };
+  let d;
+  try {
+    d = decodeFunctionData3({ abi: KM_ABI, data: tx.input });
+  } catch {
+    return { kind: "undecodable", reason: "its calldata is not a Key Manager call" };
+  }
+  const a = d.args;
+  const items = d.functionName === "executeRelayCall" ? [{ entry: "executeRelayCall", signature: a[0], nonce: a[1], validityTimestamps: a[2], value: BigInt(tx.value ?? 0), payload: a[3] }] : d.functionName === "executeRelayCallBatch" ? a[0].map((signature, i) => ({ entry: `executeRelayCallBatch[${i}]`, signature, nonce: a[1][i], validityTimestamps: a[2][i], value: a[3][i], payload: a[4][i] })) : [];
+  for (const it of items) {
+    if (it.nonce !== c.nonce || typeof it.payload !== "string") continue;
+    let who;
+    try {
+      who = await recoverLsp25Signer({ keyManager: c.keyManager, chainId: c.chainId, nonce: it.nonce, validityTimestamps: it.validityTimestamps, value: it.value, payload: it.payload }, it.signature);
+    } catch {
+      continue;
+    }
+    if (getAddress21(who) !== getAddress21(c.signer)) continue;
+    const same2 = it.validityTimestamps === c.validityTimestamps && it.value === 0n && it.payload.toLowerCase() === c.payload.toLowerCase();
+    return { kind: same2 ? "ours" : "other", entry: it.entry };
+  }
+  return { kind: "unrelated" };
+}
 function isAmbiguousSubmitError(e) {
   if (!(e instanceof UpError)) return true;
   if (e.code === "NETWORK_ERROR") return true;
@@ -10159,13 +10433,41 @@ function isAmbiguousSubmitError(e) {
   if (d.status === void 0) return true;
   return d.status >= 500 || d.status === 409 || d.code === "nonce_conflict" || d.code === "chain_submission_failed";
 }
-function ambiguousRelayHint(validityTimestamps) {
+var untilText = (validityTimestamps) => {
   const v = decodeValidityTimestamps(validityTimestamps);
-  return `do not resend; check \`up nonce\` (has the nonce been used?) or wait until the validity window ends${v.unlimited || v.end === 0n ? " — this call has NO expiry, so it stays executable until its nonce is used" : ` (unix ${v.end})`}`;
+  return v.unlimited || v.end === 0n ? "has NO expiry, so it stays executable until its nonce is used" : `stays executable until unix ${v.end}`;
+};
+function ambiguousRelayHint(validityTimestamps) {
+  return `do not resend and do not re-sign: this signed call ${untilText(validityTimestamps)}. A used nonce (up nonce) alone does not show that it was this call: find the transaction that used it (up exec receipt <hash>) or wait until the window ends before repeating the action`;
 }
-async function settleAmbiguous(p, base, confirmation, why, cause, taskId) {
-  const waitMs = Number(process.env.UP_RELAY_AMBIGUOUS_WAIT_MS ?? 6e4);
-  const deadline = Date.now() + waitMs;
+function liveRefusal(e, validityTimestamps) {
+  if (!(e instanceof UpError)) return e;
+  return new UpError(e.code, e.message, {
+    hint: `LUKSO's live relayer may not accept a nonce sent as an exact decimal string (it has more than 53 bits; its docs show a JSON number) and refused this call, so it did not execute it. Retrying on the same channel is safe (it reuses this nonce). Do not switch to another channel, relayer or path while this signed call ${untilText(validityTimestamps)}, or both could execute${e.hint ? `. ${e.hint}` : ""}`,
+    details: { ...e.details ?? {}, nonceFormat: "exact decimal string", fallback: "none" },
+    cause: e
+  });
+}
+var MAX_CANDIDATES = 25;
+async function findNonceUse(p, knownHash) {
+  const topic = keccak25611(toBytes3("PermissionsVerified(address,uint256,bytes4)"));
+  const signerTopic = "0x" + p.signer.slice(2).toLowerCase().padStart(64, "0");
+  const logs = await p.ctx.rpc.request(p.chainId, "eth_getLogs", [{ address: p.keyManager, fromBlock: "0x" + p.fromBlock.toString(16), toBlock: "latest", topics: [topic, signerTopic] }]).catch(() => void 0);
+  const hashes = [.../* @__PURE__ */ new Set([...knownHash ? [knownHash.toLowerCase()] : [], ...[...logs ?? []].reverse().map((l) => String(l.transactionHash).toLowerCase())])];
+  const undecodable = [];
+  for (const hash of hashes.slice(0, MAX_CANDIDATES)) {
+    const receipt = await p.ctx.rpc.request(p.chainId, "eth_getTransactionReceipt", [hash]).catch(() => null);
+    if (!receipt || receipt.status !== "0x1") continue;
+    const m = await matchRelayCall(await p.ctx.rpc.request(p.chainId, "eth_getTransactionByHash", [hash]).catch(() => null), p);
+    if (m.kind === "ours" || m.kind === "other") return { kind: m.kind, hash, entry: m.entry, receipt };
+    if (m.kind === "undecodable") undecodable.push(hash);
+  }
+  if (undecodable.length) return { kind: "unresolved", reason: `the Key Manager was reached through another contract or unreadable calldata in ${undecodable.join(", ")}, which the skill cannot decode`, hashes: undecodable };
+  return { kind: "unresolved", reason: logs ? "no transaction that used it was found" : "the Key Manager's logs could not be read", hashes: [] };
+}
+async function settleAmbiguous(p, base, confirmation, why, cause, taskId, knownHash) {
+  const waitMs2 = Number(process.env.UP_RELAY_AMBIGUOUS_WAIT_MS ?? 6e4);
+  const deadline = Date.now() + waitMs2;
   let current = await getRelayNonce(p.ctx, p.chainId, p.keyManager, p.signer, p.channel);
   while (current <= p.nonce && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_MS()));
@@ -10185,31 +10487,38 @@ async function settleAmbiguous(p, base, confirmation, why, cause, taskId) {
     relayTaskId: taskId,
     reason: why
   };
-  if (current > p.nonce) {
-    const topic = keccak25611(toBytes3("PermissionsVerified(address,uint256,bytes4)"));
-    const signerTopic = "0x" + p.signer.slice(2).toLowerCase().padStart(64, "0");
-    const logs = await p.ctx.rpc.request(p.chainId, "eth_getLogs", [{ address: p.keyManager, fromBlock: "0x" + p.fromBlock.toString(16), toBlock: "latest", topics: [topic, signerTopic] }]).catch(() => []);
-    const hash = logs.length ? logs[logs.length - 1].transactionHash : void 0;
-    const warning = `${why}; the chain shows the nonce was consumed, so the signed call WAS executed${hash ? ` in ${hash}` : " (transaction not identified)"}`;
-    if (!hash) return { ...base, status: "submitted", relayTaskId: taskId, confirmation: { ...confirmation, relayResolution: pendingDetails }, warnings: [...base.warnings ?? [], warning] };
-    const receipt = await waitForReceipt(p.ctx, p.chainId, hash);
-    return {
-      ...base,
-      status: receipt.status === "success" ? "success" : "reverted",
-      txHash: hash,
-      relayTaskId: taskId,
-      blockNumber: receipt.blockNumber.toString(),
-      gasUsed: receipt.gasUsed.toString(),
-      explorerUrl: explorerTxUrl(p.ctx, p.chainId, hash),
-      confirmation: { ...confirmation, events: decodeReceiptEvents(receipt), relayResolution: pendingDetails },
-      warnings: [...base.warnings ?? [], warning]
-    };
+  if (current <= p.nonce) {
+    throw new UpError("RELAYER_ERROR", `${why}; the nonce was NOT used after ${waitMs2} ms — the signed call is still valid and may still land`, {
+      hint: ambiguousRelayHint(p.validityTimestamps),
+      details: { ...pendingDetails, code: "relay_outcome_unknown", fallback: "none", cause: cause instanceof Error ? cause.message : void 0 },
+      cause
+    });
   }
-  throw new UpError("RELAYER_ERROR", `${why}; the nonce was NOT consumed after ${waitMs} ms — the signed call is still valid and may still land`, {
-    hint: ambiguousRelayHint(p.validityTimestamps),
-    details: { ...pendingDetails, code: "relay_outcome_unknown", fallback: "none", cause: cause instanceof Error ? cause.message : void 0 },
-    cause
-  });
+  const use = await findNonceUse(p, knownHash);
+  if (use.kind === "unresolved") {
+    throw new UpError("RELAYER_ERROR", `${why}; the nonce of this call was used on chain, but ${use.reason}, so whether THIS call executed is not proven`, {
+      hint: "do not resend and do not re-sign: look at the transaction(s) in details.transactions (up exec receipt <hash> decodes their events) and repeat the action only once it is proven that it did not execute, with the human's consent",
+      details: { ...pendingDetails, code: "relay_outcome_unresolved", fallback: "none", transactions: use.hashes },
+      cause
+    });
+  }
+  if (use.kind === "other") {
+    throw new UpError("RELAYER_ERROR", `${why}; this signed call did NOT execute and can no longer execute: its nonce ${p.nonce} (channel ${p.channel}) was used by another call signed with the same key, in ${use.hash}`, {
+      hint: "the same key signed a different call on this channel (another copy of this state folder, another agent or a script using this key and channel): find out what that call did before anything else, and repeat this action only if it is still wanted, with the human's consent. Never re-sign it automatically and never switch channel or path to get around it",
+      details: { ...pendingDetails, code: "nonce_used_by_other_call", fallback: "none", otherTransaction: use.hash, otherEntry: use.entry }
+    });
+  }
+  return {
+    ...base,
+    status: "success",
+    txHash: use.hash,
+    relayTaskId: taskId,
+    blockNumber: BigInt(use.receipt.blockNumber).toString(),
+    gasUsed: BigInt(use.receipt.gasUsed).toString(),
+    explorerUrl: explorerTxUrl(p.ctx, p.chainId, use.hash),
+    confirmation: { ...confirmation, events: decodeReceiptEvents({ logs: use.receipt.logs ?? [] }), attribution: { transaction: use.hash, entry: use.entry }, relayResolution: pendingDetails },
+    warnings: [...base.warnings ?? [], `${why}; the chain shows that this exact signed call executed in ${use.hash} (${use.entry}, decoded from that transaction)`]
+  };
 }
 
 // src/exec/index.ts
@@ -10234,9 +10543,9 @@ init_errors();
 init_assets();
 init_transport();
 init_secret_guard();
-import { readFileSync as readFileSync9, existsSync as existsSync15 } from "node:fs";
+import { readFileSync as readFileSync9, existsSync as existsSync16 } from "node:fs";
 import { join as join10 } from "node:path";
-import { encodeFunctionData as encodeFunctionData10, formatEther as formatEther3, getAddress as getAddress21, isAddress as isAddress13, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData10, formatEther as formatEther3, getAddress as getAddress22, isAddress as isAddress13, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
 function parseValue(v) {
   if (v === void 0 || v === null || v === "") return 0n;
   if (typeof v === "bigint") return v;
@@ -10274,7 +10583,7 @@ function loadAbi(spec) {
     const j = JSON.parse(s);
     return { abi: Array.isArray(j) ? j : j.abi, source: "inline" };
   }
-  if (existsSync15(s)) {
+  if (existsSync16(s)) {
     assertNotKeyMaterialPath(s, "an ABI");
     let j;
     try {
@@ -10287,7 +10596,7 @@ function loadAbi(spec) {
   const base = s.replace(/\.json$/i, "");
   for (const dir of ["lsp", "reference", "deployed"]) {
     const f = join10(assetsDir(), "abis", dir, `${base}.json`);
-    if (existsSync15(f)) {
+    if (existsSync16(f)) {
       const j = JSON.parse(readFileSync9(f, "utf8"));
       return { abi: Array.isArray(j) ? j : j.abi, source: `bundled:${dir}/${base}` };
     }
@@ -10334,7 +10643,7 @@ function coerceArg(param, v) {
   if (t === "bool") return v === true || v === "true" || v === 1 || v === "1";
   if (t === "address") {
     if (typeof v !== "string" || !isAddress13(v, { strict: false })) throw new UpError("BAD_ARGS", `argument ${param.name ?? ""} must be an address, got ${JSON.stringify(v)}`);
-    return getAddress21(v);
+    return getAddress22(v);
   }
   return v;
 }
@@ -10350,7 +10659,7 @@ function buildCall(input) {
   if (isCreate) to = zeroAddress4;
   else {
     if (!input.to || !isAddress13(input.to, { strict: false })) throw new UpError("BAD_ARGS", "--to must be an address");
-    to = getAddress21(input.to);
+    to = getAddress22(input.to);
   }
   const value = parseValue(input.value);
   let data = "0x";
@@ -10394,7 +10703,7 @@ var CALL_PARAMS = [
 var PATH_PARAMS = [
   { name: "via", type: "string", description: "Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only).", enum: ["auto", "km", "lsp0", "relay", "userop"], default: "auto" },
   { name: "relayer", type: "string", description: "Relayer name or base URL (relay path). Default: first relayer configured for the chain." },
-  { name: "channel", type: "string", description: "LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered." },
+  { name: "channel", type: "string", description: "Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change." },
   { name: "validity", type: "integer", description: "Relay validity window in seconds from now (default 600; 0 = unlimited)." },
   { name: "valid-from", type: "integer", description: "Relay validity start (unix seconds); overrides --validity." },
   { name: "valid-until", type: "integer", description: "Relay validity end (unix seconds, 0 = no expiry); overrides --validity." },
@@ -10405,15 +10714,15 @@ async function chainAndProfile(ctx, a) {
   const chainId = ctx.chainId(a.chain);
   return { chainId, profile: await ctx.profile(a.profile, chainId) };
 }
-function parseU(v, name) {
+var U1283 = (1n << 128n) - 1n;
+function parseU(v, name, max = U1283) {
   if (v === void 0 || v === null || v === "") return void 0;
   let b;
-  try {
-    b = BigInt(v);
-  } catch {
-    throw new UpError("BAD_ARGS", `--${name} must be a non-negative integer`);
-  }
-  if (b < 0n) throw new UpError("BAD_ARGS", `--${name} must be a non-negative integer`);
+  if (typeof v === "number") b = Number.isSafeInteger(v) ? BigInt(v) : void 0;
+  else if (typeof v === "bigint") b = v;
+  else if (typeof v === "string" && /^(0[xX][0-9a-fA-F]+|[0-9]+)$/.test(v)) b = BigInt(v);
+  if (b === void 0 || b < 0n) throw new UpError("BAD_ARGS", `--${name} must be a non-negative integer, given as a decimal or 0x string`);
+  if (b > max) throw new UpError("BAD_ARGS", `--${name} is out of range (at most ${max === U1283 ? "2^128 - 1" : max})`);
   return b;
 }
 function execOptions(a, via) {
@@ -10572,8 +10881,8 @@ defineVerb({
       chainId,
       hash: a.hash,
       status,
-      from: tx?.from ? getAddress22(tx.from) : void 0,
-      to: r.to ? getAddress22(r.to) : void 0,
+      from: tx?.from ? getAddress23(tx.from) : void 0,
+      to: r.to ? getAddress23(r.to) : void 0,
       blockNumber: blockNumber.toString(),
       confirmations: (latest - blockNumber + 1n).toString(),
       gasUsed: BigInt(r.gasUsed).toString(),
@@ -10601,30 +10910,37 @@ async function controllerAddress(ctx, chainId) {
 }
 async function defaultControllerAddress(ctx) {
   const cfg = await ctx.config();
-  if (cfg.controller?.address) return getAddress22(cfg.controller.address);
+  if (cfg.controller?.address) return getAddress23(cfg.controller.address);
   return (await ctx.signer()).address;
 }
+var NOT_CREATED = "not created yet: the first relayed send creates one random channel for this profile and saves it (or create it now: up nonce channel --create)";
+var channelView = (c) => ({ channel: c.channel.toString(), hex: "0x" + c.channel.toString(16), createdAt: c.createdAt, source: c.source });
 defineVerb({
   name: "nonce",
   group: "execute",
-  summary: "Show the LSP25 relay nonces of a controller (channel 0, default relayer channels, --channel) and its EOA transaction nonce.",
+  summary: "Show the live LSP25 relay nonces of a controller (the profile's saved relay channel, channel 0, earlier default channels, --channel) and its EOA transaction nonce. Read-only: never creates a channel.",
+  description: "Three separate counters: the relay (LSP25) nonce per chain, Key Manager, controller key and channel (value = channel × 2^128 + sequence, read live with getNonce), the key's own transaction nonce (pending count, direct paths only) and, only for --via userop, the EntryPoint nonce. The saved relay channel is one random channel per profile in this state folder; channel 0 and the earlier per-relayer default channels are listed so that calls signed on them before can be checked. A used nonce shows that some call with it executed, not which one.",
   risk: "read",
   params: [
-    { name: "controller", type: "string", description: "Controller address (default: this agent's controller)." },
-    { name: "channel", type: "string", description: "Extra nonce channel (uint128) to read." }
+    { name: "controller", type: "string", description: "Controller address (default: this agent's key for the chain)." },
+    { name: "channel", type: "string", description: "Extra nonce channel to read (uint128, as a decimal or 0x string)." }
   ],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
     if (a.controller && !isAddress14(a.controller, { strict: false })) throw new UpError("BAD_ARGS", "--controller must be an address");
-    const controller = a.controller ? getAddress22(a.controller) : await controllerAddress(ctx, chainId);
+    const extra = parseU(a.channel, "channel");
+    const controller = a.controller ? getAddress23(a.controller) : await controllerAddress(ctx, chainId);
     const km = await resolveKeyManager(ctx, chainId, profile);
     if (!km.keyManager) throw new UpError("NOT_SUPPORTED", `profile owner ${km.owner} is not a Key Manager`);
-    const channels = [{ channel: 0n, label: "channel 0 (ordered)" }];
+    const identity = await profileIdentityFor(ctx, chainId, profile);
+    const { saved } = await relayChannelState(ctx.home, identity);
+    const channels = [];
+    if (saved) channels.push({ channel: saved.channel, label: "saved relay channel of this profile (every relayed call uses it)" });
+    channels.push({ channel: 0n, label: "channel 0 (strictly ordered; shared with tools that pick it by hand)" });
     for (const r of await listRelayers(ctx, chainId)) {
       const c = r.profile === "lukso-live" ? 0n : defaultChannel(r.name, chainId);
-      if (!channels.some((x) => x.channel === c)) channels.push({ channel: c, label: `default channel of relayer ${r.name}` });
+      if (!channels.some((x) => x.channel === c)) channels.push({ channel: c, label: `earlier default channel of relayer ${r.name} (before saved channels)` });
     }
-    const extra = parseU(a.channel, "channel");
     if (extra !== void 0 && !channels.some((x) => x.channel === extra)) channels.push({ channel: extra, label: "requested channel" });
     const relay = [];
     for (const c of channels) {
@@ -10632,14 +10948,48 @@ defineVerb({
       relay.push({ label: c.label, channel: c.channel.toString(), nonce: n.toString(), sequence: splitNonce(n).sequence.toString() });
     }
     const eoaNonce = Number(BigInt(await ctx.rpc.request(chainId, "eth_getTransactionCount", [controller, "pending"])));
-    return { data: { chainId, profile, keyManager: km.keyManager, controller, eoaNonce, relay }, text: [`controller ${controller} on chain ${chainId}: EOA nonce ${eoaNonce}`, ...relay.map((r) => `  ${r.label}: nonce ${r.nonce} (sequence ${r.sequence})`)].join("\n") };
+    return {
+      data: { chainId, profile, identity, keyManager: km.keyManager, controller, eoaNonce, relayChannel: saved ? channelView(saved) : null, ...saved ? {} : { relayChannelNote: NOT_CREATED }, relay },
+      text: [`controller ${controller} on chain ${chainId}: EOA nonce ${eoaNonce}`, ...saved ? [] : [`  relay channel: ${NOT_CREATED}`], ...relay.map((r) => `  ${r.label}: nonce ${r.nonce} (sequence ${r.sequence})`)].join("\n")
+    };
+  }
+});
+defineVerb({
+  name: "nonce channel",
+  group: "execute",
+  summary: "Show this agent's saved LSP25 relay channel for the profile (one random uint128 per profile in this state folder, used by every relayed call on every chain and relayer); --create creates it now.",
+  description: "The channel is public (not a secret) and is never replaced: no new channel per chat, restart, upgrade, relayer or chain, and never one to get around a pending call. It is saved in this state folder's profile record, not in key backups. Without --create nothing is written. After a restore from a key backup it is not known here: first make sure no relayed action from before is still pending, then --create (new random channel) or --create --channel <earlier channel> to continue the one this agent used before. A missing channel is not a missing key: the key is never regenerated.",
+  risk: "local",
+  params: [
+    { name: "create", type: "boolean", description: "Create and save the channel now if this profile has none in this state folder (random, from the operating system's CSPRNG); an existing one is kept." },
+    { name: "channel", type: "string", description: "With --create, only when none is saved yet: save this earlier channel of the same agent and profile instead of a new random one (decimal or 0x string, 4 to 2^128 - 1)." }
+  ],
+  examples: ["up nonce channel", "up nonce channel --create"],
+  async run(ctx, a) {
+    await ctx.config();
+    const adopt = parseU(a.channel, "channel");
+    if (adopt !== void 0 && a.create !== true) throw new UpError("BAD_ARGS", "--channel needs --create: it only sets the channel of a profile that has none saved yet");
+    let identity = await ctx.identity(a.profile);
+    let chainId;
+    try {
+      chainId = ctx.chainId(a.chain);
+    } catch {
+    }
+    if (chainId !== void 0) identity = await profileIdentityFor(ctx, chainId, identity);
+    const r = a.create === true ? await ensureRelayChannel(ctx.home, identity, { explicit: true, adopt }) : (await relayChannelState(ctx.home, identity)).saved;
+    const created = !!(r && "created" in r && r.created);
+    const scope = "this state folder (this agent) and this profile, on every chain and relayer; the counter is on chain per chain, Key Manager, key and channel (read with: up nonce)";
+    return {
+      data: { profile: identity, relayChannel: r ? channelView(r) : null, created, scope, ...r ? {} : { note: NOT_CREATED } },
+      text: r ? `relay channel of ${identity}: ${r.channel}${created ? " (created now)" : ""}` : `relay channel of ${identity}: ${NOT_CREATED}`
+    };
   }
 });
 
 // src/lsp/verbs-account.ts
-import { randomBytes as randomBytes8 } from "node:crypto";
+import { randomBytes as randomBytes9 } from "node:crypto";
 import { isAbsolute as isAbsolute3, resolve as resolve6 } from "node:path";
-import { getAddress as getAddress26, isAddress as isAddress15 } from "./vendor-viem.mjs";
+import { getAddress as getAddress27, isAddress as isAddress15 } from "./vendor-viem.mjs";
 init_verbs();
 init_errors();
 init_home();
@@ -10659,9 +11009,9 @@ init_multichain();
 init_errors();
 init_json();
 init_safe_fetch();
-import { readFile as readFile7, stat as stat5 } from "node:fs/promises";
+import { readFile as readFile8, stat as stat5 } from "node:fs/promises";
 import { basename as basename2, isAbsolute as isAbsolute2, resolve as resolve5 } from "node:path";
-import { getAddress as getAddress25 } from "./vendor-viem.mjs";
+import { getAddress as getAddress26 } from "./vendor-viem.mjs";
 
 // src/display/image-info.ts
 var ImageFormatError = class extends Error {
@@ -11037,7 +11387,7 @@ init_read2();
 
 // src/lsp/profile-url.ts
 init_http();
-import { getAddress as getAddress24 } from "./vendor-viem.mjs";
+import { getAddress as getAddress25 } from "./vendor-viem.mjs";
 var LUKSO_MAINNET = 42;
 var LUKSO_TESTNET = 4201;
 function luksoNetwork(chainId, aliases = {}) {
@@ -11045,7 +11395,7 @@ function luksoNetwork(chainId, aliases = {}) {
   return chainId === LUKSO_MAINNET ? "mainnet" : chainId === LUKSO_TESTNET ? "testnet" : void 0;
 }
 function universalEverythingUrl(address, network = "mainnet") {
-  return `https://universaleverything.io/${getAddress24(address)}?network=${network}`;
+  return `https://universaleverything.io/${getAddress25(address)}?network=${network}`;
 }
 function profileLinkHost(network) {
   return network === "mainnet" ? "profile.link" : "t.profile.link";
@@ -11066,7 +11416,7 @@ function acceptProfileLink(link3, network) {
 function explorerAddressUrl(registry2, chainId, address) {
   try {
     const e = registry2?.chain(chainId).explorers[0];
-    return e ? `${e.url.replace(/\/+$/, "")}/address/${getAddress24(address)}` : void 0;
+    return e ? `${e.url.replace(/\/+$/, "")}/address/${getAddress25(address)}` : void 0;
   } catch {
     return void 0;
   }
@@ -11079,7 +11429,7 @@ function chainName2(registry2, chainId) {
   }
 }
 async function resolveProfileUrl(chainId, address, opts = {}) {
-  const checksummed2 = getAddress24(address);
+  const checksummed2 = getAddress25(address);
   const network = luksoNetwork(chainId, opts.luksoAliases);
   if (!network) {
     const explorer = explorerAddressUrl(opts.registry, chainId, checksummed2);
@@ -11189,7 +11539,7 @@ async function readSource(input, what, opts) {
   assertNotKeyMaterialPath(file2, "a picture");
   if (st.size > MAX_FILE_BYTES) throw tooBig(st.size);
   if (st.size === 0) throw new UpError("BAD_ARGS", `${s} is empty`);
-  return { bytes: new Uint8Array(await readFile7(file2)), source: "file", display: basename2(file2) };
+  return { bytes: new Uint8Array(await readFile8(file2)), source: "file", display: basename2(file2) };
 }
 async function loadFile(input, field, opts) {
   const r = await readSource(input, FIELD_LABEL[field], opts);
@@ -11243,7 +11593,7 @@ function lsp3PermissionError(ctx, chainId, profile, controller, check, currentKe
   });
 }
 async function readCurrentMetadata(ctx, chainId, profile, opts) {
-  const out = { chainId, profile: getAddress25(profile), deployed: false, raw: "0x", set: false };
+  const out = { chainId, profile: getAddress26(profile), deployed: false, raw: "0x", set: false };
   if (!await hasCode(ctx, chainId, profile)) return out;
   out.deployed = true;
   out.raw = await getData(ctx, chainId, profile, DATA_KEYS.LSP3Profile);
@@ -11296,7 +11646,7 @@ async function metadataPresence(ctx, identity) {
 init_select();
 function addressArg2(v, name) {
   if (typeof v !== "string" || !isAddress15(v, { strict: false })) throw new UpError("BAD_ARGS", `--${name} must be an address`);
-  return getAddress26(v);
+  return getAddress27(v);
 }
 function permissionValueFrom(a, required = true) {
   if (a.bits !== void 0) {
@@ -11355,7 +11705,7 @@ defineVerb({
   async run(ctx, a) {
     const cfg = await ctx.config();
     const controller = a.controller ? addressArg2(a.controller, "controller") : await defaultControllerAddress(ctx);
-    const seed = a.seed ?? "0x" + randomBytes8(32).toString("hex");
+    const seed = a.seed ?? "0x" + randomBytes9(32).toString("hex");
     const salts = a.salt ? [a.salt] : candidateSalts(seed, a.count);
     const candidates = salts.map((salt, index) => {
       const plan = planDeployment(lsp23InputsFrom(a, controller, salt));
@@ -11476,8 +11826,8 @@ defineVerb({
     const signer = await ctx.signer(chainId);
     const out = await deployFromManifest(ctx, signer, m, chainId);
     const warnings = [];
-    if (getAddress26(m.controller) !== signer.address && !(m.extraControllers ?? []).some((c) => getAddress26(c.address) === signer.address)) {
-      warnings.push(`on chain ${chainId} the agent signs with ${signer.address}, but the profile's initial controller there is ${getAddress26(m.controller)} (it is part of the address): the agent's key for this chain is not a controller until it is added (up controller add ${signer.address} --chain ${chainId}, signed by an admin controller), or switch this chain back to the initial key: up key activate ${getAddress26(m.controller)} --chain ${chainId}`);
+    if (getAddress27(m.controller) !== signer.address && !(m.extraControllers ?? []).some((c) => getAddress27(c.address) === signer.address)) {
+      warnings.push(`on chain ${chainId} the agent signs with ${signer.address}, but the profile's initial controller there is ${getAddress27(m.controller)} (it is part of the address): the agent's key for this chain is not a controller until it is added (up controller add ${signer.address} --chain ${chainId}, signed by an admin controller), or switch this chain back to the initial key: up key activate ${getAddress27(m.controller)} --chain ${chainId}`);
     }
     if (out.status !== "dry-run") {
       const cfg = { ...await ctx.config() };
@@ -11485,7 +11835,7 @@ defineVerb({
         cfg.defaultProfile = m.profile;
         await ctx.saveConfig(cfg);
       }
-      if (getAddress26(m.controller) === signer.address && !(m.extraControllers ?? []).length) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
+      if (getAddress27(m.controller) === signer.address && !(m.extraControllers ?? []).length) warnings.push("the agent's key is the only admin controller: if it is lost, control is lost. Recommended now: up controller add <human address> --preset human-admin (shares no key, the address stays the same)");
     }
     const metadataNext = out.status === "deployed" && chainId === metadataHooks().defaultChainId && !m.lsp3 ? ["ask the human whether they want a profile name, description, profile picture and background image (all optional, can be done later): up profile metadata set --dry-run, then with their approval"] : [];
     const chainName7 = (() => {
@@ -11739,7 +12089,7 @@ defineVerb({
       }
     }
     const old = await getData(ctx, chainId, profile, DATA_KEYS.LSP1UniversalReceiverDelegate);
-    if (old && old.length === 42 && getAddress26(old) !== urd) warnings.push(`the previous URD ${getAddress26(old)} keeps its controller permissions; remove them with: up controller remove ${getAddress26(old)}`);
+    if (old && old.length === 42 && getAddress27(old) !== urd) warnings.push(`the previous URD ${getAddress27(old)} keeps its controller permissions; remove them with: up controller remove ${getAddress27(old)}`);
     const r = await sendPayload(ctx, a, "account urd set", keys, values, { universalReceiverDelegate: urd, grantedPermissions: a.grant ? "SUPER_SETDATA, REENTRANCY" : "none" });
     return { ...r, warnings: [...r.warnings ?? [], ...warnings] };
   }
@@ -11854,7 +12204,7 @@ defineVerb({
     const rec = recommend(me, profile, recommendationOptions(a));
     const cfg = await ctx.config();
     const others = a.controller ? [] : chainControllerList(cfg).filter((k) => k.address !== me).map((k) => `on ${onChain(chainLabel(ctx, k.chainId))} it uses ${k.address}`);
-    if (!a.controller && cfg.controller?.address && getAddress26(cfg.controller.address) !== me) others.push(`on chains without their own key it uses its default key ${getAddress26(cfg.controller.address)}`);
+    if (!a.controller && cfg.controller?.address && getAddress27(cfg.controller.address) !== me) others.push(`on chains without their own key it uses its default key ${getAddress27(cfg.controller.address)}`);
     const warnings = others.length ? [`this recommendation is for the agent's key ${me}; ${others.join("; ")} — run up permissions recommend --chain <id> for those chains`] : void 0;
     return { data: rec, text: rec.text, warnings };
   }
@@ -11870,7 +12220,7 @@ init_lsp23();
 init_multichain();
 init_profile();
 init_read2();
-import { getAddress as getAddress27 } from "./vendor-viem.mjs";
+import { getAddress as getAddress28 } from "./vendor-viem.mjs";
 async function chainsToCheck(ctx, a, identity) {
   if (a.chains?.length) return [...new Set(a.chains.map((c) => ctx.registry.chain(c).chainId))];
   if (a.chain !== void 0 && a.chain !== "") return [ctx.chainId(a.chain)];
@@ -11960,7 +12310,7 @@ defineVerb({
     }
     if (a.address === void 0) throw new UpError("BAD_ARGS", "pass the profile's address on that chain (or --unlink)");
     const address = addressArg2(a.address, "address");
-    if (address === getAddress27(identity)) throw new UpError("BAD_ARGS", `${address} is the profile's usual address; nothing to link`, { hint: previous ? `to use it on ${where} again: up profile link --unlink --chain ${l.arg}` : "a profile with the same address on every chain needs no link" });
+    if (address === getAddress28(identity)) throw new UpError("BAD_ARGS", `${address} is the profile's usual address; nothing to link`, { hint: previous ? `to use it on ${where} again: up profile link --unlink --chain ${l.arg}` : "a profile with the same address on every chain needs no link" });
     if (previous === address) return { data: { profile: identity, chainId, linked: address, changed: false }, text: `On ${where} your profile is already linked to ${address}.` };
     if (!await hasCode(ctx, chainId, address)) throw new UpError("NOT_DEPLOYED", `${address} has no code on ${where}`, { hint: `check the address and the chain; nothing was linked` });
     if (!await supportsInterface(ctx, chainId, address, INTERFACE_IDS2.LSP0ERC725Account)) throw new UpError("BAD_ARGS", `${address} on ${where} is not a Universal Profile (no LSP0 interface)`, { hint: "nothing was linked" });
@@ -12008,7 +12358,7 @@ init_auto();
 init_registry2();
 init_client();
 init_transport();
-import { getAddress as getAddress28 } from "./vendor-viem.mjs";
+import { getAddress as getAddress29 } from "./vendor-viem.mjs";
 init_gateway();
 init_providers();
 init_constants();
@@ -12449,7 +12799,7 @@ defineVerb({
     return {
       data: { ...out, pathPlan: plan, changed: final.changed, metadataUrl: jsonUrl, metadataHash: ser.hash, value, uploaded, stored, metadata: plainJson(final.json), profileUrl },
       text: [
-        `${done ? "Profile metadata updated" : `Profile metadata write ${out.status}`} on ${where} for your profile ${getAddress28(profile)}:`,
+        `${done ? "Profile metadata updated" : `Profile metadata write ${out.status}`} on ${where} for your profile ${getAddress29(profile)}:`,
         ...changeLines(changes),
         `metadata JSON: ${jsonUrl} (keccak256 ${ser.hash}, verified via the gateway)`,
         out.txHash ? `tx ${out.txHash}${out.explorerUrl ? ` (${out.explorerUrl})` : ""}` : out.relayTaskId ? `relay task ${out.relayTaskId}` : "",
@@ -12462,7 +12812,7 @@ defineVerb({
 });
 
 // src/lsp/verbs-permissions.ts
-import { encodeFunctionData as encodeFunctionData13, getAddress as getAddress29, keccak256 as keccak25615, toBytes as toBytes5, zeroAddress as zeroAddress5 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData13, getAddress as getAddress30, keccak256 as keccak25615, toBytes as toBytes5, zeroAddress as zeroAddress5 } from "./vendor-viem.mjs";
 init_verbs();
 init_errors();
 init_tx();
@@ -12759,7 +13109,7 @@ defineVerb({
     let kind = "eoa";
     if (await hasCode(ctx, chainId, newOwner)) {
       const t = await tryRead2(ctx, chainId, newOwner, KM_ABI, "target");
-      if (t && getAddress29(t) === profile) kind = "key-manager";
+      if (t && getAddress30(t) === profile) kind = "key-manager";
       else {
         kind = "contract";
         warnings.push(`${newOwner} is a contract but not a Key Manager linked to this profile (target() ${t ?? "missing"}): after acceptance the controllers' permissions would no longer apply`);
@@ -12778,7 +13128,7 @@ defineVerb({
   params: [],
   async run(ctx, a) {
     const { chainId, profile } = await chainAndProfile(ctx, a);
-    const pending = getAddress29(await tryRead2(ctx, chainId, profile, UP_ABI, "pendingOwner") ?? zeroAddress5);
+    const pending = getAddress30(await tryRead2(ctx, chainId, profile, UP_ABI, "pendingOwner") ?? zeroAddress5);
     if (pending === zeroAddress5) throw new UpError("BAD_ARGS", `no pending ownership transfer on ${profile} (chain ${chainId})`);
     const signer = await ctx.signer(chainId);
     const accept = encodeFunctionData13({ abi: UP_ABI, functionName: "acceptOwnership" });
@@ -12791,7 +13141,7 @@ defineVerb({
       route = "controller EOA is the pending owner → UP.acceptOwnership()";
     } else {
       const t = await hasCode(ctx, chainId, pending) ? await tryRead2(ctx, chainId, pending, KM_ABI, "target") : void 0;
-      if (!t || getAddress29(t) !== profile) throw new UpError("NOT_SUPPORTED", `the pending owner ${pending} must accept itself (it is neither this agent's controller nor a Key Manager of this profile)`);
+      if (!t || getAddress30(t) !== profile) throw new UpError("NOT_SUPPORTED", `the pending owner ${pending} must accept itself (it is neither this agent's controller nor a Key Manager of this profile)`);
       to = pending;
       data = encodeFunctionData13({ abi: KM_ABI, functionName: "execute", args: [accept] });
       route = `new Key Manager ${pending}.execute(acceptOwnership()) — needs CHANGEOWNER for ${signer.address}`;
@@ -12800,7 +13150,7 @@ defineVerb({
     await simulate(ctx, { chainId, from: signer.address, to, data });
     await ctx.consent({ verb: "ownership accept", risk: "admin", chainId, summary: confirmation, value: 0n, target: to, selector: data.slice(0, 10) });
     const tx = await sendTx(ctx, signer, { chainId, to, data });
-    const owner = tx.status === "success" ? getAddress29(await tryRead2(ctx, chainId, profile, UP_ABI, "owner") ?? zeroAddress5) : void 0;
+    const owner = tx.status === "success" ? getAddress30(await tryRead2(ctx, chainId, profile, UP_ABI, "owner") ?? zeroAddress5) : void 0;
     return { data: { status: tx.status, txHash: tx.hash, chainId, profile, newOwner: owner, confirmation }, text: tx.status === "dry-run" ? `DRY RUN: ${route}` : `ownership accepted: owner is now ${owner} (tx ${tx.hash})` };
   }
 });
@@ -12850,7 +13200,7 @@ init_permissions();
 init_profile();
 init_multichain();
 init_read2();
-import { getAddress as getAddress30, hashMessage, hashTypedData, isHex as isHex4 } from "./vendor-viem.mjs";
+import { getAddress as getAddress31, hashMessage, hashTypedData, isHex as isHex4 } from "./vendor-viem.mjs";
 async function isValidSignature1271(ctx, chainId, address, hash, signature) {
   try {
     const r = await read2(ctx, chainId, address, ERC1271_ABI, "isValidSignature", [hash, signature]);
@@ -12967,7 +13317,7 @@ async function signFlow(ctx, a, kind) {
     validation: as === "profile" ? `verifiers call isValidSignature(${hash}, signature) on ${profile} → Key Manager → controller needs SIGN` : "plain EOA signature of the controller key",
     warnings: warnings.length ? warnings : void 0
   };
-  const verifyingContract = td && td.domain?.verifyingContract ? getAddress30(td.domain.verifyingContract) : void 0;
+  const verifyingContract = td && td.domain?.verifyingContract ? getAddress31(td.domain.verifyingContract) : void 0;
   await ctx.consent({ verb: `sign ${kind}`, risk: blind || valueMoving ? "admin" : "write", chainId, summary: { ...summary, blindHash: blind || void 0, valueMoving: valueMoving || void 0 }, value: 0n, target: verifyingContract ?? profile ?? signer.address });
   if (ctx.flags.dryRun) return { data: { ...summary, dryRun: true }, text: `DRY RUN: would sign ${hash} as ${as}`, warnings };
   const signature = kind === "message" ? await signer.signMessage(message) : await signer.signTypedData(td);
@@ -13035,7 +13385,7 @@ defineVerb({
 });
 
 // src/relayer/verbs.ts
-import { getAddress as getAddress31 } from "./vendor-viem.mjs";
+import { getAddress as getAddress32 } from "./vendor-viem.mjs";
 init_verbs();
 init_errors();
 init_transport();
@@ -13158,7 +13508,7 @@ defineVerb({
     let req;
     if (a.payload) {
       if (a.to || a.data || a.fn) throw new UpError("BAD_ARGS", "pass either --payload or --to/--data/--fn");
-      req = { chainId, profile: getAddress31(profile), payload: a.payload, verb: "relayer execute" };
+      req = { chainId, profile: getAddress32(profile), payload: a.payload, verb: "relayer execute" };
     } else {
       const b = buildCall({ to: a.to, value: a.value, data: a.data, fn: a.fn, args: a.args, abi: a.abi, operation: a.operation });
       req = { chainId, profile, calls: [b.call], abi: b.abi, verb: "relayer execute" };
@@ -13172,7 +13522,7 @@ defineVerb({
 init_verbs();
 init_errors();
 init_transport();
-import { encodeFunctionData as encodeFunctionData19, getAddress as getAddress38, isAddress as isAddress17, isHex as isHex6, parseAbiItem as parseAbiItem3, parseUnits as parseUnits2 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData19, getAddress as getAddress39, isAddress as isAddress17, isHex as isHex6, parseAbiItem as parseAbiItem3, parseUnits as parseUnits2 } from "./vendor-viem.mjs";
 
 // src/erc4337/constants.ts
 init_assets();
@@ -13247,13 +13597,13 @@ var CALL_TYPES = { VALUE: 1, CALL: 2, STATICCALL: 4, DELEGATECALL: 8 };
 // src/erc4337/entrypoint.ts
 init_errors();
 init_tx();
-import { concat as concat6, encodeFunctionData as encodeFunctionData15, getAddress as getAddress33, keccak256 as keccak25617, size, slice as slice2 } from "./vendor-viem.mjs";
+import { concat as concat6, encodeFunctionData as encodeFunctionData15, getAddress as getAddress34, keccak256 as keccak25617, size, slice as slice2 } from "./vendor-viem.mjs";
 
 // src/erc4337/bytecode.ts
 init_assets();
 init_errors();
 import { createHash } from "node:crypto";
-import { concat as concat5, encodeAbiParameters as encodeAbiParameters3, getAddress as getAddress32, getContractAddress as getContractAddress2, keccak256 as keccak25616 } from "./vendor-viem.mjs";
+import { concat as concat5, encodeAbiParameters as encodeAbiParameters3, getAddress as getAddress33, getContractAddress as getContractAddress2, keccak256 as keccak25616 } from "./vendor-viem.mjs";
 function sha256Hex(code) {
   return createHash("sha256").update(Buffer.from(code.slice(2), "hex")).digest("hex");
 }
@@ -13273,7 +13623,7 @@ function entryPointAsset() {
   const a = assetJson("bytecode", "EntryPointV06.json");
   integrity("EntryPoint v0.6", a.creationCode, a.creationCodeSha256, a.creationCodeKeccak256);
   const addr2 = create2Address(a.deployment.factory, a.deployment.salt, a.creationCode);
-  if (addr2 !== getAddress32(a.deployment.address)) throw new UpError("INTERNAL", `bundled EntryPoint v0.6 bytecode does not produce ${a.deployment.address} (got ${addr2})`);
+  if (addr2 !== getAddress33(a.deployment.address)) throw new UpError("INTERNAL", `bundled EntryPoint v0.6 bytecode does not produce ${a.deployment.address} (got ${addr2})`);
   return epCache = a;
 }
 var extCache;
@@ -13283,7 +13633,7 @@ function extensionAsset() {
   integrity("Extension4337", a.creationCode, a.creationCodeSha256, a.creationCodeKeccak256);
   const c = a.deployment.canonical;
   const addr2 = create2Address(a.deployment.factory, a.deployment.salt, extensionInitCode(c.entryPoint, a));
-  if (addr2 !== getAddress32(c.address)) throw new UpError("INTERNAL", `bundled Extension4337 bytecode does not produce ${c.address} (got ${addr2})`);
+  if (addr2 !== getAddress33(c.address)) throw new UpError("INTERNAL", `bundled Extension4337 bytecode does not produce ${c.address} (got ${addr2})`);
   return extCache = a;
 }
 function extensionInitCode(entryPoint, a = extensionAsset()) {
@@ -13356,7 +13706,7 @@ async function entryPointStatus(ctx, chainId, address = ENTRYPOINT_V06) {
   const code = await getCode3(ctx, chainId, address);
   const deployed = code !== "0x";
   const codeHash2 = deployed ? keccak25617(code) : void 0;
-  return { address: getAddress33(address), deployed, codeHash: codeHash2, expectedCodeHash: asset.runtimeCodeHash, canonical: deployed && codeHash2 === asset.runtimeCodeHash };
+  return { address: getAddress34(address), deployed, codeHash: codeHash2, expectedCodeHash: asset.runtimeCodeHash, canonical: deployed && codeHash2 === asset.runtimeCodeHash };
 }
 async function deployViaNick(ctx, signer, p) {
   const expected = create2Address(NICK_FACTORY, p.salt, p.initCode);
@@ -13379,7 +13729,7 @@ async function deployViaNick(ctx, signer, p) {
       details: sim.revert
     });
   }
-  if (size(sim.data) >= 20 && getAddress33(slice2(sim.data, size(sim.data) - 20)) !== expected) {
+  if (size(sim.data) >= 20 && getAddress34(slice2(sim.data, size(sim.data) - 20)) !== expected) {
     throw new UpError("INTERNAL", `${p.name}: factory simulation returned ${sim.data}, expected ${expected}`);
   }
   const tx = await sendTx(ctx, signer, { chainId: p.chainId, to: NICK_FACTORY, data });
@@ -13395,7 +13745,7 @@ async function deployViaNick(ctx, signer, p) {
 async function deployEntryPoint(ctx, signer, chainId) {
   const a = entryPointAsset();
   const r = await deployViaNick(ctx, signer, { chainId, name: "EntryPoint v0.6", salt: a.deployment.salt, initCode: a.creationCode, expectedRuntimeHash: a.runtimeCodeHash });
-  if (r.address !== getAddress33(a.deployment.address)) throw new UpError("INTERNAL", `EntryPoint deployed at ${r.address}, expected ${a.deployment.address}`);
+  if (r.address !== getAddress34(a.deployment.address)) throw new UpError("INTERNAL", `EntryPoint deployed at ${r.address}, expected ${a.deployment.address}`);
   return r;
 }
 var depositToCalldata = (account) => encodeFunctionData15({ abi: entryPoint06Abi, functionName: "depositTo", args: [account] });
@@ -13415,11 +13765,11 @@ init_errors();
 init_policy();
 init_transport();
 init_tx();
-import { encodeFunctionData as encodeFunctionData17, getAddress as getAddress36, keccak256 as keccak25619, size as size3 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData17, getAddress as getAddress37, keccak256 as keccak25619, size as size3 } from "./vendor-viem.mjs";
 
 // src/erc4337/lsp6.ts
 init_errors();
-import { concat as concat7, getAddress as getAddress34, isAddress as isAddress16, isHex as isHex5, pad as pad3, size as size2, slice as slice3, toHex as toHex3 } from "./vendor-viem.mjs";
+import { concat as concat7, getAddress as getAddress35, isAddress as isAddress16, isHex as isHex5, pad as pad3, size as size2, slice as slice3, toHex as toHex3 } from "./vendor-viem.mjs";
 var permissionsKey2 = (a) => concat7([KEY_PREFIX_PERMISSIONS, a.toLowerCase()]);
 var allowedCallsKey2 = (a) => concat7([KEY_PREFIX_ALLOWED_CALLS, a.toLowerCase()]);
 var allowedDataKeysKey2 = (a) => concat7([KEY_PREFIX_ALLOWED_DATA_KEYS, a.toLowerCase()]);
@@ -13516,7 +13866,7 @@ function decodeAllowedCalls2(v) {
     return {
       callTypes: ct,
       callTypeNames: Object.entries(CALL_TYPES).filter(([, b]) => bits & b).map(([n]) => n),
-      address: addr2 === WILD20 ? "*" : getAddress34(addr2),
+      address: addr2 === WILD20 ? "*" : getAddress35(addr2),
       standard: std === WILD4 ? "*" : std,
       function: fn === WILD4 ? "*" : fn
     };
@@ -13541,7 +13891,7 @@ async function getDataBatch2(ctx, chainId, up, keys) {
 }
 async function readController(ctx, chainId, up, a) {
   const [p, c, k] = await getDataBatch2(ctx, chainId, up, [permissionsKey2(a), allowedCallsKey2(a), allowedDataKeysKey2(a)]);
-  return { address: getAddress34(a), permissions: decodePermissions2(p), allowedCalls: c ?? "0x", allowedDataKeys: k ?? "0x" };
+  return { address: getAddress35(a), permissions: decodePermissions2(p), allowedCalls: c ?? "0x", allowedDataKeys: k ?? "0x" };
 }
 async function readControllerArray(ctx, chainId, up) {
   const [lenRaw] = await getDataBatch2(ctx, chainId, up, [arrayLengthKey]);
@@ -13549,7 +13899,7 @@ async function readControllerArray(ctx, chainId, up) {
   if (length > 10000n) throw new UpError("INTERNAL", `AddressPermissions[] length ${length} is implausible; refusing to scan`);
   const keys = Array.from({ length: Number(length) }, (_, i) => arrayIndexKey(i));
   const vals = await getDataBatch2(ctx, chainId, up, keys);
-  return { length, entries: vals.map((v) => v && size2(v) === 20 ? getAddress34(v) : void 0) };
+  return { length, entries: vals.map((v) => v && size2(v) === 20 ? getAddress35(v) : void 0) };
 }
 function indexOfController(arr, a) {
   return arr.entries.findIndex((e) => e?.toLowerCase() === a.toLowerCase());
@@ -13563,7 +13913,7 @@ import {
   decodeEventLog as decodeEventLog3,
   encodeAbiParameters as encodeAbiParameters4,
   encodeFunctionData as encodeFunctionData16,
-  getAddress as getAddress35,
+  getAddress as getAddress36,
   hexToBytes as hexToBytes3,
   keccak256 as keccak25618
 } from "./vendor-viem.mjs";
@@ -13862,7 +14212,7 @@ async function estimateKeyManagerGas(ctx, chainId, p, warnings) {
   }
 }
 async function prepareUserOperation(ctx, p) {
-  const entryPoint = getAddress35(p.entryPoint ?? ENTRYPOINT_V06);
+  const entryPoint = getAddress36(p.entryPoint ?? ENTRYPOINT_V06);
   const warnings = [];
   const g = p.gas ?? {};
   const nonce = p.nonce ?? await getNonce(ctx, p.chainId, p.profile, p.nonceKey ?? nonceKeyFor(p.signer), entryPoint);
@@ -13874,7 +14224,7 @@ async function prepareUserOperation(ctx, p) {
   if (fees2.maxPriorityFeePerGas > fees2.maxFeePerGas) throw new UpError("BAD_ARGS", `maxPriorityFeePerGas (${fees2.maxPriorityFeePerGas}) exceeds maxFeePerGas (${fees2.maxFeePerGas})`);
   const gasSource = { call: "override", verification: "override", preVerification: "override", fees: g.maxFeePerGas !== void 0 ? "override" : "chain" };
   const op = {
-    sender: getAddress35(p.profile),
+    sender: getAddress36(p.profile),
     nonce,
     initCode: "0x",
     callData: p.callData,
@@ -13923,11 +14273,11 @@ async function prepareUserOperation(ctx, p) {
   if (op.paymasterAndData === "0x" && deposit < prefund) {
     warnings.push(`EntryPoint deposit of the profile (${deposit} wei) is below the required prefund (${prefund} wei); Extension4337 never pays prefund, so the op would fail with AA21 — top up with: up account 4337 deposit --chain ${p.chainId} --amount <wei>`);
   }
-  return { chainId: p.chainId, entryPoint, op, userOpHash: getUserOpHashV06(op, entryPoint, p.chainId), signer: getAddress35(p.signer), requiredPrefund: prefund, deposit, gasSource, validation, warnings, signed: false };
+  return { chainId: p.chainId, entryPoint, op, userOpHash: getUserOpHashV06(op, entryPoint, p.chainId), signer: getAddress36(p.signer), requiredPrefund: prefund, deposit, gasSource, validation, warnings, signed: false };
 }
 async function signPreparedUserOp(ctx, signer, prep) {
   if (ctx.flags.dryRun) throw new UpError("INTERNAL", "refusing to sign a UserOperation in --dry-run");
-  if (getAddress35(signer.address) !== prep.signer) throw new UpError("INTERNAL", `UserOperation was prepared for ${prep.signer}, not ${signer.address}`);
+  if (getAddress36(signer.address) !== prep.signer) throw new UpError("INTERNAL", `UserOperation was prepared for ${prep.signer}, not ${signer.address}`);
   const { op, userOpHash } = await signUserOp(signer, prep.op, prep.entryPoint, prep.chainId);
   if (userOpHash !== prep.userOpHash) throw new UpError("INTERNAL", "userOpHash changed between preparation and signing");
   return { ...prep, op, signed: true };
@@ -14073,17 +14423,17 @@ async function resolveProfile(ctx, chainId, profile) {
   if (code === "0x") throw new UpError("NOT_DEPLOYED", `no Universal Profile at ${profile} on chain ${chainId}`, { hint: "check --profile/--chain; deploy the profile on this chain first" });
   let owner;
   try {
-    owner = getAddress36(await read3(ctx, chainId, profile, UP_ABI2, "owner"));
+    owner = getAddress37(await read3(ctx, chainId, profile, UP_ABI2, "owner"));
   } catch (e) {
     throw new UpError("NOT_SUPPORTED", `${profile} on chain ${chainId} does not look like a Universal Profile (owner() failed)`, { cause: e });
   }
   const target = await tryCall(ctx, chainId, { to: owner, data: encodeFunctionData17({ abi: KM_ABI2, functionName: "target" }) });
-  if (!target.ok || size3(target.data) < 32 || getAddress36(`0x${target.data.slice(-40)}`) !== getAddress36(profile)) {
+  if (!target.ok || size3(target.data) < 32 || getAddress37(`0x${target.data.slice(-40)}`) !== getAddress37(profile)) {
     throw new UpError("NOT_SUPPORTED", `the owner of ${profile} (${owner}) is not an LSP6 Key Manager for this profile; Extension4337 validates through the owner's lsp20VerifyCall`, {
       hint: "ERC-4337 via Extension4337 needs a profile owned by its LSP6 Key Manager"
     });
   }
-  return { profile: getAddress36(profile), owner, keyManager: owner };
+  return { profile: getAddress37(profile), owner, keyManager: owner };
 }
 async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = ENTRYPOINT_V06) {
   const prof = await resolveProfile(ctx, chainId, profile);
@@ -14096,7 +14446,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
     readController(ctx, chainId, prof.profile, entryPoint),
     readControllerArray(ctx, chainId, prof.profile)
   ]);
-  const linked = linkedRaw && size3(linkedRaw) >= 20 ? getAddress36(linkedRaw.slice(0, 42)) : null;
+  const linked = linkedRaw && size3(linkedRaw) >= 20 ? getAddress37(linkedRaw.slice(0, 42)) : null;
   let linkedHasCode = false;
   let linkedEntryPoint = null;
   let linkedIsBundled = false;
@@ -14105,7 +14455,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
     linkedHasCode = code !== "0x";
     if (linkedHasCode) {
       const r = await tryCall(ctx, chainId, { to: linked, data: encodeFunctionData17({ abi: extension4337Abi(), functionName: "entryPoint" }) });
-      if (r.ok && size3(r.data) >= 32) linkedEntryPoint = getAddress36(`0x${r.data.slice(-40)}`);
+      if (r.ok && size3(r.data) >= 32) linkedEntryPoint = getAddress37(`0x${r.data.slice(-40)}`);
       const want = extensionRuntimeHashFor(entryPoint);
       linkedIsBundled = want !== void 0 && keccak25619(code) === want;
     }
@@ -14133,7 +14483,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
     nickFactory: nick,
     extension: { expected, deployed: expectedCode !== "0x", linked, linkedHasCode, linkedEntryPoint, linkedMatches, linkedIsBundled },
     entryPointController: {
-      address: getAddress36(entryPoint),
+      address: getAddress37(entryPoint),
       permissions: encodePermissions2(epData.permissions),
       permissionNames: epNames,
       isController: epData.permissions !== 0n,
@@ -14143,7 +14493,7 @@ async function status4337(ctx, chainId, profile, signerAddress2, entryPoint = EN
       allowedDataKeys: safe(() => decodeCompactBytesArray(epData.allowedDataKeys), []),
       forbidden
     },
-    signer: { address: getAddress36(signerAddress2), permissions: encodePermissions2(signerData.permissions), permissionNames: permissionNames(signerData.permissions), has4337 },
+    signer: { address: getAddress37(signerAddress2), permissions: encodePermissions2(signerData.permissions), permissionNames: permissionNames(signerData.permissions), has4337 },
     deposit,
     enabled,
     missing,
@@ -14624,7 +14974,7 @@ import { encodeFunctionData as encodeFunctionData18 } from "./vendor-viem.mjs";
 // src/erc4337/payload.ts
 init_errors();
 init_transport();
-import { decodeFunctionData as decodeFunctionData3, getAddress as getAddress37, slice as slice4 } from "./vendor-viem.mjs";
+import { decodeFunctionData as decodeFunctionData4, getAddress as getAddress38, slice as slice4 } from "./vendor-viem.mjs";
 var SELECTORS2 = {
   execute: "0x44c028fe",
   executeBatch: "0x31858452",
@@ -14647,16 +14997,16 @@ var innerSelector = (data) => data.length >= 10 ? data.slice(0, 10).toLowerCase(
 function toCall(op, to, value, data) {
   if (op === BigInt(OPERATION.DELEGATECALL)) throw new UpError("NOT_SUPPORTED", "DELEGATECALL is always rejected by the Key Manager (DelegateCallDisallowedViaKeyManager)");
   if (op > 3n) throw new UpError("BAD_ARGS", `unknown ERC725X operation ${op}`);
-  return { operation: Number(op), to: getAddress37(to), value, data };
+  return { operation: Number(op), to: getAddress38(to), value, data };
 }
 function decodeProfilePayload2(payload, profile) {
   if (!/^0x([0-9a-fA-F]{2}){4,}$/.test(payload)) throw new UpError("BAD_ARGS", "payload must be hex calldata of at least 4 bytes");
   const selector = slice4(payload, 0, 4).toLowerCase();
-  const self = getAddress37(profile);
+  const self = getAddress38(profile);
   const base = { selector, calls: [], totalValue: 0n, targets: [self], innerSelectors: [] };
   let decoded;
   try {
-    decoded = decodeFunctionData3({ abi: UP_ABI2, data: payload });
+    decoded = decodeFunctionData4({ abi: UP_ABI2, data: payload });
   } catch {
     decoded = void 0;
   }
@@ -14711,7 +15061,7 @@ function describeCalls(calls) {
     selector: calls.length === 1 ? SELECTORS2.execute : SELECTORS2.executeBatch,
     calls,
     totalValue: calls.reduce((s, c) => s + c.value, 0n),
-    targets: [...new Set(calls.map((c) => getAddress37(c.to)))],
+    targets: [...new Set(calls.map((c) => getAddress38(c.to)))],
     innerSelectors: calls.map((c) => innerSelector(c.data)),
     risk: "write",
     reasons: []
@@ -14858,7 +15208,7 @@ function optBig(v, what) {
 }
 function addr(v, what) {
   if (typeof v !== "string" || !isAddress17(v, { strict: false })) throw new UpError("BAD_ARGS", `${what} must be an address, got ${String(v)}`);
-  return getAddress38(v);
+  return getAddress39(v);
 }
 function hexArg(v, what) {
   if (v === void 0 || v === null || v === "") return "0x";
@@ -15215,7 +15565,7 @@ init_assets();
 init_home();
 init_bundled();
 init_read();
-import { getAddress as getAddress40 } from "./vendor-viem.mjs";
+import { getAddress as getAddress41 } from "./vendor-viem.mjs";
 
 // src/abi/codehashes.ts
 var KNOWN_RUNTIME_CODEHASHES = {
@@ -15243,7 +15593,7 @@ init_detect();
 // src/abi/proxy.ts
 init_read();
 init_detect();
-import { getAddress as getAddress39 } from "./vendor-viem.mjs";
+import { getAddress as getAddress40 } from "./vendor-viem.mjs";
 var EIP1967_SLOTS = {
   implementation: "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
   beacon: "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50",
@@ -15256,7 +15606,7 @@ function slotAddress(word) {
   if (h.length !== 64 || !/^0{24}/.test(h)) return void 0;
   const a = h.slice(24);
   if (/^0{40}$/.test(a)) return void 0;
-  return getAddress39(`0x${a}`);
+  return getAddress40(`0x${a}`);
 }
 var ERC1167_PREFIX = "363d3d373d3d3d363d";
 var ERC1167_SUFFIX = "5af43d82803e903d91";
@@ -15271,7 +15621,7 @@ function parseErc1167(code) {
   const rest = c.slice(20 + 2 * n);
   if (!rest.startsWith(ERC1167_SUFFIX)) return void 0;
   if (!/^60[0-9a-f]{2}/.test(rest.slice(ERC1167_SUFFIX.length)) || !rest.slice(ERC1167_SUFFIX.length + 4).startsWith(ERC1167_TAIL)) return void 0;
-  return getAddress39(`0x${addrHex.padStart(40, "0")}`);
+  return getAddress40(`0x${addrHex.padStart(40, "0")}`);
 }
 var BEACON_ABI = [{ type: "function", name: "implementation", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] }];
 async function resolveProxy(ctx, chainId, address, code) {
@@ -15302,7 +15652,7 @@ async function resolveProxy(ctx, chainId, address, code) {
     info.beacon = beaconAddr;
     info.evidence.push("EIP-1967 beacon slot is set");
     const r = await tryRead(ctx, chainId, { address: beaconAddr, abi: BEACON_ABI, functionName: "implementation" });
-    if (r.ok) info.implementation = getAddress39(r.value);
+    if (r.ok) info.implementation = getAddress40(r.value);
     else info.evidence.push(`beacon.implementation() failed: ${r.error}`);
   } else if (slotAddress(uups)) {
     info.isProxy = true;
@@ -15337,7 +15687,7 @@ async function lsp17Extensions(ctx, chainId, account, selectors) {
     if (v.length !== 40 && v.length !== 42) return;
     const addr2 = `0x${v.slice(0, 40)}`;
     if (/^0x0{40}$/.test(addr2)) return;
-    out.push({ selector, extension: getAddress39(addr2), forwardsValue: v.length === 42 && v.slice(40) === "01" });
+    out.push({ selector, extension: getAddress40(addr2), forwardsValue: v.length === 42 && v.slice(40) === "01" });
   });
   return out;
 }
@@ -15559,7 +15909,7 @@ function explorerPlan(chain, cfg, chainIdArg) {
 }
 function addrs(list, field) {
   if (!Array.isArray(list)) return [];
-  return list.map((x) => typeof x === "string" ? x : x?.[field]).filter((x) => typeof x === "string" && /^0x[0-9a-fA-F]{40}$/.test(x)).map((x) => getAddress40(x));
+  return list.map((x) => typeof x === "string" ? x : x?.[field]).filter((x) => typeof x === "string" && /^0x[0-9a-fA-F]{40}$/.test(x)).map((x) => getAddress41(x));
 }
 function parseAbiValue(v) {
   try {
@@ -15671,7 +16021,7 @@ function canonicalAbi(c) {
   return c.abiName ? bundledAbi(c.abiName) : void 0;
 }
 async function discoverAbi(ctx, chainId, address, opts = {}) {
-  return discover(ctx, chainId, getAddress40(address), opts, 0);
+  return discover(ctx, chainId, getAddress41(address), opts, 0);
 }
 async function discover(ctx, chainId, address, opts, depth) {
   const code = await getCode(ctx, chainId, address);
@@ -15924,7 +16274,7 @@ init_read();
 init_errors();
 init_transport();
 init_codec();
-import { decodeFunctionData as decodeFunctionData4 } from "./vendor-viem.mjs";
+import { decodeFunctionData as decodeFunctionData5 } from "./vendor-viem.mjs";
 init_read();
 init_signature();
 var VIA_VALUES = ["auto", "km", "lsp0", "relay", "userop"];
@@ -15972,7 +16322,7 @@ function valueMovingReason(fn, value, data) {
     if (!data) return `${fn.name}() keys could not be inspected`;
     let args;
     try {
-      args = decodeFunctionData4({ abi: [fn], data }).args ?? [];
+      args = decodeFunctionData5({ abi: [fn], data }).args ?? [];
     } catch {
       return `${fn.name}() calldata could not be inspected`;
     }
@@ -16082,13 +16432,13 @@ function enforceTrustPolicy(ctx, call3, value, raw) {
 init_assets();
 init_errors();
 init_read();
-import { getAddress as getAddress41 } from "./vendor-viem.mjs";
+import { getAddress as getAddress42 } from "./vendor-viem.mjs";
 function file() {
   return assetJson("registry", "protocols.json");
 }
 function collect(obj, path, addresses, urls) {
   if (typeof obj === "string") {
-    if (/^0x[0-9a-fA-F]{40}$/.test(obj)) addresses.push({ role: path, address: getAddress41(obj) });
+    if (/^0x[0-9a-fA-F]{40}$/.test(obj)) addresses.push({ role: path, address: getAddress42(obj) });
     else if (/^https:\/\//.test(obj)) urls[path] = obj;
     return;
   }
@@ -16710,7 +17060,7 @@ defineVerb({
 init_verbs();
 init_errors();
 init_context();
-import { getAddress as getAddress44 } from "./vendor-viem.mjs";
+import { getAddress as getAddress45 } from "./vendor-viem.mjs";
 init_read();
 init_codec();
 init_assets2();
@@ -16718,7 +17068,7 @@ init_assets2();
 // src/tokens/plan.ts
 init_errors();
 init_detect();
-import { encodeFunctionData as encodeFunctionData20, getAddress as getAddress42, maxUint256, zeroAddress as zeroAddress6 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData20, getAddress as getAddress43, maxUint256, zeroAddress as zeroAddress6 } from "./vendor-viem.mjs";
 init_read();
 init_codec();
 init_assets2();
@@ -16754,7 +17104,7 @@ async function hasExtension(ctx, chainId, account, selector) {
   }
 }
 async function planTransfer(ctx, chainId, profile, asset, o) {
-  const to = getAddress42(o.to);
+  const to = getAddress43(o.to);
   if (to.toLowerCase() === profile.toLowerCase()) throw new UpError("BAD_ARGS", "recipient is the profile itself");
   if (to === zeroAddress6) throw new UpError("BAD_ARGS", "refusing to transfer to the zero address (that is a burn)");
   const data = o.data ?? "0x";
@@ -16839,7 +17189,7 @@ async function planTransfer(ctx, chainId, profile, asset, o) {
   }
 }
 async function planNativeTransfer(ctx, chainId, profile, nativeSymbol3, o) {
-  const to = getAddress42(o.to);
+  const to = getAddress43(o.to);
   if (to.toLowerCase() === profile.toLowerCase()) throw new UpError("BAD_ARGS", "recipient is the profile itself");
   const value = parseAmount(o.amount, 18, o.raw);
   if (value === 0n) throw new UpError("BAD_ARGS", "--amount must be greater than zero");
@@ -16863,7 +17213,7 @@ function unsupported(asset, mode) {
   });
 }
 async function planApprove(ctx, chainId, profile, asset, o) {
-  const op = getAddress42(o.operator);
+  const op = getAddress43(o.operator);
   if (op === zeroAddress6) throw new UpError("BAD_ARGS", "operator must not be the zero address");
   if (op.toLowerCase() === profile.toLowerCase()) throw new UpError("BAD_ARGS", "the profile cannot be its own operator");
   const data = o.data ?? "0x";
@@ -16957,7 +17307,7 @@ init_read();
 init_detect();
 init_signature();
 init_assets2();
-import { getAddress as getAddress43, pad as pad4 } from "./vendor-viem.mjs";
+import { getAddress as getAddress44, pad as pad4 } from "./vendor-viem.mjs";
 import { encodeArrayKey as encodeArrayKey3 } from "./vendor-erc725.mjs";
 var LSP5_ARRAY_KEY = "0x6460ee3c0aac563ccbf76d6e1d07bada78e3a9514e6382b736ed3f478ab7b90b";
 var LSP5_MAP_PREFIX = "0x812c4334633eb816c80d0000";
@@ -16980,7 +17330,7 @@ async function readLsp5(ctx, chainId, holder, max = 200) {
     chainId,
     Array.from({ length: n }, (_, i) => ({ address: holder, abi: ERC725Y_GETDATA_ABI, functionName: "getData", args: [encodeArrayKey3(LSP5_ARRAY_KEY, i)] }))
   );
-  const assets = items.map((r) => r.ok && typeof r.value === "string" && /^0x[0-9a-fA-F]{40}$/.test(r.value) ? getAddress43(r.value) : void 0).filter((x) => !!x);
+  const assets = items.map((r) => r.ok && typeof r.value === "string" && /^0x[0-9a-fA-F]{40}$/.test(r.value) ? getAddress44(r.value) : void 0).filter((x) => !!x);
   const maps = await readMany(
     ctx,
     chainId,
@@ -17032,7 +17382,7 @@ async function envioHoldings(endpoint, holder, opts = {}) {
       if (!assetId || !/^0x[0-9a-fA-F]{40}$/.test(assetId)) continue;
       const meta = h.baseAsset ?? h.asset ?? {};
       const key = assetId.toLowerCase();
-      const e = byAsset.get(key) ?? { asset: getAddress43(assetId), standard: envioStandard(meta.standard), name: meta.lsp4TokenName ?? void 0, symbol: meta.lsp4TokenSymbol ?? void 0, decimals: typeof meta.decimals === "number" ? meta.decimals : void 0 };
+      const e = byAsset.get(key) ?? { asset: getAddress44(assetId), standard: envioStandard(meta.standard), name: meta.lsp4TokenName ?? void 0, symbol: meta.lsp4TokenSymbol ?? void 0, decimals: typeof meta.decimals === "number" ? meta.decimals : void 0 };
       const tokenId = typeof h.token_id === "string" && h.token_id.includes("-") ? h.token_id.split("-")[1] : void 0;
       if (tokenId) (e.tokenIds ??= []).push(tokenId);
       else e.balance = String(h.balance);
@@ -17074,7 +17424,7 @@ async function blockscoutHoldings(base, holder, opts = {}) {
       if (typeof addr2 !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(addr2)) continue;
       const key = addr2.toLowerCase();
       const dec = it.token.decimals !== null && it.token.decimals !== void 0 && /^\d+$/.test(String(it.token.decimals)) ? Number(it.token.decimals) : void 0;
-      const e = byAsset.get(key) ?? { asset: getAddress43(addr2), standard: blockscoutStandard(it.token.type), name: it.token.name ?? void 0, symbol: it.token.symbol ?? void 0, decimals: dec };
+      const e = byAsset.get(key) ?? { asset: getAddress44(addr2), standard: blockscoutStandard(it.token.type), name: it.token.name ?? void 0, symbol: it.token.symbol ?? void 0, decimals: dec };
       if (it.token_id !== null && it.token_id !== void 0) (e.tokenIds ??= []).push(String(it.token_id));
       else if (it.value !== void 0 && it.value !== null) e.balance = String(it.value);
       byAsset.set(key, e);
@@ -17132,7 +17482,7 @@ async function logScanHoldings(ctx, chainId, holder, blocks) {
         const match = evs.find((e) => e.topic0 === l.topics[0]?.toLowerCase() && e.toTopic === q3.toTopic && e.topicCount === l.topics.length);
         if (!match || !/^0x[0-9a-fA-F]{40}$/.test(l.address)) continue;
         const key = l.address.toLowerCase();
-        if (!byAsset.has(key)) byAsset.set(key, { asset: getAddress43(l.address), standard: match.std });
+        if (!byAsset.has(key)) byAsset.set(key, { asset: getAddress44(l.address), standard: match.std });
       }
     }
   }
@@ -17419,7 +17769,7 @@ defineVerb({
         const amounts = await readMany(ctx, chainId, ops.map((op) => ({ address: asset.address, abi: LSP7_ABI(), functionName: "authorizedAmountFor", args: [op, holder] })));
         const list = ops.map((op, i) => {
           const v = amounts[i].ok ? BigInt(amounts[i].value) : void 0;
-          return { operator: getAddress44(op), allowance: v?.toString(), allowanceFormatted: v === void 0 ? void 0 : v >= 2n ** 255n ? "UNLIMITED" : formatAmount(v, asset.decimals) };
+          return { operator: getAddress45(op), allowance: v?.toString(), allowanceFormatted: v === void 0 ? void 0 : v >= 2n ** 255n ? "UNLIMITED" : formatAmount(v, asset.decimals) };
         });
         return { data: { ...base, operators: list }, text: list.length ? list.map((o) => `${o.operator}: ${o.allowanceFormatted ?? "?"} ${assetLabel(asset)}`).join("\n") : `no operators for ${holder} on ${assetLabel(asset)}` };
       }
@@ -17431,7 +17781,7 @@ defineVerb({
           return { data: { ...base, tokenId: id, operator, isOperator: ok }, text: `${operator} is ${ok ? "" : "NOT "}an operator of token ${formatLsp8TokenId(id, asset.tokenIdFormat)}` };
         }
         const ops = await readOk(ctx, chainId, asset.address, LSP8_ABI(), "getOperatorsOf", [id]);
-        return { data: { ...base, tokenId: id, operators: ops.map((x) => getAddress44(x)) }, text: ops.length ? `operators of token ${formatLsp8TokenId(id, asset.tokenIdFormat)}: ${ops.join(", ")}` : "no operators" };
+        return { data: { ...base, tokenId: id, operators: ops.map((x) => getAddress45(x)) }, text: ops.length ? `operators of token ${formatLsp8TokenId(id, asset.tokenIdFormat)}: ${ops.join(", ")}` : "no operators" };
       }
       case "ERC20": {
         if (!operator) throw new UpError("BAD_ARGS", "ERC-20 allowances cannot be enumerated on-chain: pass --operator <spender>");
@@ -17445,7 +17795,7 @@ defineVerb({
         if (a["token-id"] !== void 0) {
           const id = parseUintTokenId(a["token-id"]);
           const ap = await readOk(ctx, chainId, asset.address, ERC721_ABI, "getApproved", [id]);
-          Object.assign(out, { tokenId: id.toString(), approved: getAddress44(ap) });
+          Object.assign(out, { tokenId: id.toString(), approved: getAddress45(ap) });
           lines.push(`token #${id} approved: ${ap}`);
         }
         if (operator) {
@@ -17579,14 +17929,14 @@ init_assets();
 init_errors();
 init_bundled();
 init_read();
-import { encodeFunctionData as encodeFunctionData21, getAddress as getAddress45 } from "./vendor-viem.mjs";
+import { encodeFunctionData as encodeFunctionData21, getAddress as getAddress46 } from "./vendor-viem.mjs";
 init_read();
 var abi;
 var LSP26_ABI = () => abi ??= bundledAbi("LSP26FollowerSystem");
 function lsp26Registry() {
   const p = assetJson("registry", "protocols.json").protocols?.lsp26FollowerSystem;
   if (!p?.address) throw new UpError("INTERNAL", "protocols.json has no lsp26FollowerSystem entry");
-  return { address: getAddress45(p.address), chains: p.chains, absentOn: p.absentOn };
+  return { address: getAddress46(p.address), chains: p.chains, absentOn: p.absentOn };
 }
 function chainName3(ctx, id) {
   try {
@@ -17638,7 +17988,7 @@ async function page(ctx, chainId, lsp26, addr2, kind, total, start, limit) {
   if (s >= total) return [];
   const end = s + BigInt(limit) > total ? total : s + BigInt(limit);
   const list = await read(ctx, chainId, { address: lsp26, abi: LSP26_ABI(), functionName: kind === "followers" ? "getFollowersByIndex" : "getFollowsByIndex", args: [addr2, s, end] });
-  return list.map((x) => getAddress45(x));
+  return list.map((x) => getAddress46(x));
 }
 function encodeFollow(fn, arg) {
   return encodeFunctionData21({ abi: LSP26_ABI(), functionName: fn, args: [arg] });
@@ -17802,7 +18152,7 @@ init_blockies();
 // src/display/qr.ts
 init_png();
 import QRCode from "./vendor-qrcode.mjs";
-import { getAddress as getAddress46, isAddress as isAddress18 } from "./vendor-viem.mjs";
+import { getAddress as getAddress47, isAddress as isAddress18 } from "./vendor-viem.mjs";
 function qrMatrix(text, errorCorrectionLevel = "M") {
   if (!text) throw new Error("QR text is empty");
   const q3 = QRCode.create(text, { errorCorrectionLevel });
@@ -17842,7 +18192,7 @@ function qrText(m, opts = {}) {
 }
 function checksummed(a, what) {
   if (!isAddress18(a, { strict: false })) throw new Error(`invalid ${what} address: ${a}`);
-  return getAddress46(a);
+  return getAddress47(a);
 }
 function nonNegative(v, what) {
   if (v < 0n) throw new Error(`${what} must not be negative`);
@@ -18057,7 +18407,7 @@ EIP-681: ${eip681.content}` : ""}`,
 init_verbs();
 init_errors();
 init_assets();
-import { existsSync as existsSync16, readdirSync as readdirSync2, readFileSync as readFileSync10 } from "node:fs";
+import { existsSync as existsSync17, readdirSync as readdirSync2, readFileSync as readFileSync10 } from "node:fs";
 import { join as join12 } from "node:path";
 
 // src/knowledge/standards.ts
@@ -18125,7 +18475,7 @@ function describe(text) {
 }
 function listDocTopics() {
   const dir = referencesDir();
-  if (!existsSync16(dir)) return [];
+  if (!existsSync17(dir)) return [];
   return readdirSync2(dir, { withFileTypes: true }).filter((d) => d.isFile() && d.name.endsWith(".md")).map((d) => {
     const text = readFileSync10(join12(dir, d.name), "utf8");
     return { topic: d.name.slice(0, -3), file: `references/${d.name}`, ...describe(text), lines: text.split(/\r?\n/).length };
@@ -18403,8 +18753,8 @@ init_profile_record();
 init_safe_text();
 init_select();
 init_multichain();
-import { getAddress as getAddress51, isAddress as isAddress21 } from "./vendor-viem.mjs";
-import { readdir as readdir2 } from "node:fs/promises";
+import { getAddress as getAddress52, isAddress as isAddress21 } from "./vendor-viem.mjs";
+import { readdir as readdir3 } from "node:fs/promises";
 var same = (a, b) => a.toLowerCase() === b.toLowerCase();
 function listWords3(items) {
   return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
@@ -18415,7 +18765,7 @@ function controllerText(cfg) {
     perChain = chainControllerList(cfg).map((c) => ({ chainId: c.chainId, address: c.address, backend: c.backend }));
   } catch {
   }
-  const def = cfg.controller?.address && isAddress21(cfg.controller.address, { strict: false }) ? { address: getAddress51(cfg.controller.address), backend: cfg.controller.backend } : null;
+  const def = cfg.controller?.address && isAddress21(cfg.controller.address, { strict: false }) ? { address: getAddress52(cfg.controller.address), backend: cfg.controller.backend } : null;
   return { default: def, perChain };
 }
 defineVerb({
@@ -18431,11 +18781,11 @@ defineVerb({
     const { collectProfiles: collectProfiles2 } = await Promise.resolve().then(() => (init_build(), build_exports));
     const warnings = [];
     const states = await collectProfiles2(ctx, cfg, warnings);
-    const names = (await readdir2(paths.profiles(ctx.home)).catch(() => [])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
+    const names = (await readdir3(paths.profiles(ctx.home)).catch(() => [])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
     const identities = /* @__PURE__ */ new Map();
-    for (const n of names) identities.set(n.slice(0, 42).toLowerCase(), getAddress51(n.slice(0, 42)));
-    if (cfg.defaultProfile && isAddress21(cfg.defaultProfile, { strict: false })) identities.set(cfg.defaultProfile.toLowerCase(), getAddress51(cfg.defaultProfile));
-    const defaultProfile = cfg.defaultProfile && isAddress21(cfg.defaultProfile, { strict: false }) ? getAddress51(cfg.defaultProfile) : null;
+    for (const n of names) identities.set(n.slice(0, 42).toLowerCase(), getAddress52(n.slice(0, 42)));
+    if (cfg.defaultProfile && isAddress21(cfg.defaultProfile, { strict: false })) identities.set(cfg.defaultProfile.toLowerCase(), getAddress52(cfg.defaultProfile));
+    const defaultProfile = cfg.defaultProfile && isAddress21(cfg.defaultProfile, { strict: false }) ? getAddress52(cfg.defaultProfile) : null;
     const aliasOf = (a) => Object.entries(cfg.aliases ?? {}).find(([, v]) => typeof v === "string" && same(v, a))?.[0];
     const ordered = [...identities.values()].sort((a, b) => defaultProfile && same(a, defaultProfile) ? -1 : defaultProfile && same(b, defaultProfile) ? 1 : a.localeCompare(b));
     const profiles = [];
@@ -18674,7 +19024,7 @@ init_errors();
 init_json();
 init_assets();
 import { createInterface } from "node:readline";
-import { readdirSync as readdirSync3, readFileSync as readFileSync11, existsSync as existsSync17 } from "node:fs";
+import { readdirSync as readdirSync3, readFileSync as readFileSync11, existsSync as existsSync18 } from "node:fs";
 import { join as join13 } from "node:path";
 init_secret_guard();
 init_safe_text();
@@ -18693,7 +19043,7 @@ function send(msg) {
 }
 function referenceFiles() {
   const dir = join13(skillDir(), "references");
-  if (!existsSync17(dir)) return [];
+  if (!existsSync18(dir)) return [];
   const out = [];
   const walk = (d, prefix) => {
     for (const n of readdirSync3(d, { withFileTypes: true })) {
@@ -18703,7 +19053,7 @@ function referenceFiles() {
   };
   walk(dir, "");
   const skill = join13(skillDir(), "SKILL.md");
-  if (existsSync17(skill)) out.unshift({ uri: "up://SKILL.md", name: "SKILL.md", path: skill });
+  if (existsSync18(skill)) out.unshift({ uri: "up://SKILL.md", name: "SKILL.md", path: skill });
   return out;
 }
 async function handleMcpMessage(msg) {
@@ -18760,7 +19110,7 @@ risk: ${v.risk}`,
           const payload = redact({ ok: true, verb: v.name, data: r.data, media: r.media, warnings: r.warnings });
           const content = [{ type: "text", text: (r.text ? r.text + "\n\n" : "") + JSON.stringify(payload, replacer, 2) }];
           for (const m of r.media ?? []) {
-            if (m.mimeType.startsWith("image/") && existsSync17(m.path)) content.push({ type: "image", data: readFileSync11(m.path).toString("base64"), mimeType: m.mimeType });
+            if (m.mimeType.startsWith("image/") && existsSync18(m.path)) content.push({ type: "image", data: readFileSync11(m.path).toString("base64"), mimeType: m.mimeType });
           }
           return ok({ content, structuredContent: JSON.parse(JSON.stringify(payload, replacer)), isError: false });
         } catch (e) {

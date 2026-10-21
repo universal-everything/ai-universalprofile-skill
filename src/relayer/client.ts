@@ -119,13 +119,13 @@ const ERROR_TABLE: Record<string, { message: string; hint: string; retryable: bo
   quota_exhausted: { message: "relayer quota exhausted", hint: "wait for the quota reset or execute directly with a funded controller (--via km)", retryable: false, fallback: "km" },
   auth_required: { message: "the relayer requires authentication", hint: "LSP15 relayers need no credentials; this relayer is not LSP15-conformant (lukso-live needs a LUKSO account)", retryable: false, fallback: "km" },
   profile_not_authorised: { message: "the relayer does not serve this profile or the controller is not authorised", hint: "register the profile with the relayer / check the controller's EXECUTE_RELAY_CALL permission", retryable: false, fallback: "km" },
-  nonce_conflict: { message: "the relay nonce is already used or pending", hint: "check up nonce: if the nonce was used the call already executed; never re-submit or re-sign elsewhere until the first is proven dropped", retryable: false, fallback: "none" },
+  nonce_conflict: { message: "the relay nonce is already used or pending", hint: "a used nonce does not prove that THIS call executed (another call of the same key on this channel uses it too): find the transaction that used it before anything else; never re-submit or re-sign elsewhere until this call is proven not executed", retryable: false, fallback: "none" },
   not_yet_valid: { message: "the relay call is not valid yet (validity window starts in the future)", hint: "re-sign with a window that starts now", retryable: true, fallback: "resign" },
   expired: { message: "the relay call validity window has expired", hint: "re-sign with a fresh validity window", retryable: true, fallback: "resign" },
-  chain_submission_failed: { message: "the relayer reports a failed or uncertain submission to the chain", hint: "do not resend; check `up nonce` (has the nonce been used?) or wait until the validity window ends", retryable: false, fallback: "none" },
+  chain_submission_failed: { message: "the relayer reports a failed or uncertain submission to the chain", hint: "do not resend; check whether this call executed (find its transaction; a used nonce alone does not prove it) or wait until the validity window ends", retryable: false, fallback: "none" },
 };
 
-export const AMBIGUOUS_HINT = "do not resend; check `up nonce` (has the nonce been used?) or wait until the validity window ends";
+export const AMBIGUOUS_HINT = "do not resend; check whether this call executed (find its transaction; a used nonce alone does not prove it) or wait until the validity window ends";
 
 const STATUS_DEFAULT_CODE: Record<number, string> = { 400: "bad_request", 401: "auth_required", 402: "quota_exhausted", 403: "profile_not_authorised", 409: "nonce_conflict", 410: "expired", 425: "not_yet_valid", 502: "chain_submission_failed" };
 

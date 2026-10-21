@@ -52,6 +52,8 @@ export interface MockRelayerOptions {
   failAfterSubmit?: boolean;
   /** answer 502 without submitting (ambiguous: the call did NOT land) */
   failBeforeSubmit?: boolean;
+  /** test hook, called with a well-formed, chain-bound /execute body: a returned [status, body] is the answer and nothing else is submitted */
+  respond?: (body: any) => Promise<[number, any] | undefined>;
 }
 
 export interface MockRelayer {
@@ -131,6 +133,10 @@ export async function startMockRelayer(opts: MockRelayerOptions): Promise<MockRe
     const perms = permsRaw.length >= 130 + 2 ? BigInt("0x" + permsRaw.slice(130, 194)) : 0n;
     if (perms === 0n) return [422, { error: "chain_binding_mismatch", message: "signature does not recover to a controller of this profile on this chain" }];
     const data = encodeFunctionData({ abi: KM_ABI, functionName: "executeRelayCall", args: [t.signature as Hex, nonce, validity, t.abi as Hex] });
+    if (opts.respond) {
+      const r = await opts.respond(b);
+      if (r) return r;
+    }
     if (opts.lieWithHash) return [200, { transactionHash: opts.lieWithHash, chainId }];
     if (opts.failBeforeSubmit) return [502, { error: "chain_submission_failed", message: "upstream timeout" }];
     if (opts.lie) {

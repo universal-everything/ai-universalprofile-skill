@@ -95,7 +95,7 @@ export function hintForRevert(d: DecodedRevert): string | undefined {
     case "NoERC725YDataKeysAllowed":
       return "the data key is not in AllowedERC725YDataKeys for this controller";
     case "InvalidRelayNonce":
-      return "relay nonce is stale or reused; fetch a fresh one with: up nonce";
+      return "the relay nonce on this channel was already used (or the signature does not match): first check whether your previous call on this channel executed (up exec receipt <hash>; up nonce shows only that some call used it); if it did, do not repeat it; if it did not, run the same command again (the skill reads the current nonce itself; never type or compute a nonce, never switch channel to get around it)";
     case "RelayCallBeforeStartTime":
     case "RelayCallExpired":
       return "the relay call validity window is not satisfied; re-sign with a fresh window";

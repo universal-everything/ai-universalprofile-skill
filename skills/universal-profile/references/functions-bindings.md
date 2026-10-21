@@ -30,7 +30,7 @@ Every unique external signature of the LUKSO packages, classified by how the age
 | 0xbf0176ff | `executeBatch(uint256[],bytes[])` | LSP6 | verb `exec batch` (KM) | W,P |
 | 0x28c4d14e | `executePostDeployment(address,address,bytes)` | LSP23 module | internal (called by factory) | W |
 | 0x4c8a4e74 | `executeRelayCall(bytes,uint256,uint256,bytes)` | LSP25 (on KM) | verb `exec relay` | W,P,R |
-| 0xa20856a5 | `executeRelayCallBatch(bytes[],uint256[],uint256[],uint256[],bytes[])` | LSP25 | verb `exec relay` (batch) | W,P,R |
+| 0xa20856a5 | `executeRelayCallBatch(bytes[],uint256[],uint256[],uint256[],bytes[])` | LSP25 | internal: library only (`signRelayBatch`); no verb sends it — `exec batch --via relay` signs one `executeRelayCall` with a `UP.executeBatch` payload | W,P,R |
 | 0x1a17ccbf | `generateSalt(bytes32,bool,bytes)` | LSP16 | knowledge | V |
 | 0x6289a163 | `getCommitmentInfoOf(address,uint256,address)` | LSP11 | generic | V |
 | 0x54f6127f | `getData(bytes32)` | ERC725Y | verb `account data get` | V |
@@ -78,7 +78,7 @@ Every unique external signature of the LUKSO packages, classified by how the age
 | 0xffa1ad74 | `VERSION()` | Version | verb `account info` | V |
 | 0xfa04a7f1 | `voteForRecovery(address,address,address)` | LSP11 | generic | W |
 
-Account-stack counts: 71 → 24 verbs · 13 internal · 25 generic (LSP11, LSP16, misc) · 9 knowledge.
+Account-stack counts: 71 → 23 verbs · 12 internal · 27 generic (LSP11, LSP16, misc) · 9 knowledge.
 
 ## B. Token and social packages (93 unique signatures across lsp4/lsp7/lsp8/lsp26)
 

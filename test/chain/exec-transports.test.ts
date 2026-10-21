@@ -15,6 +15,7 @@ import { KM_ABI, UP_ABI } from "../../src/lsp/abis.ts";
 import { encodeExecuteRelayCallBatch, getRelayNonce, signRelayBatch, defaultChannel, splitNonce, lsp25Digest, signLsp25, recoverLsp25Signer } from "../../src/lsp/lsp25.ts";
 import { encodeUpExecute } from "../../src/exec/common.ts";
 import type { Signer, VerbContext } from "../../src/core/types.ts";
+import { relayChannelState } from "../../src/lsp/relay-channel.ts";
 
 let h: Harness;
 let signer: Signer;
@@ -157,18 +158,26 @@ describe("refusals, simulation and dry-run", () => {
 });
 
 describe("relay specifics", () => {
-  it("uses the relayer×chain nonce channel and sends chainId top-level; quota signature verified", async () => {
-    const ch = defaultChannel("mock", h.chainId);
-    const n0 = await getRelayNonce(ctx, h.chainId, km, signer.address, ch);
-    await send("relay", recA, 0n, "0x99");
-    const n1 = await getRelayNonce(ctx, h.chainId, km, signer.address, ch);
+  it("uses the profile's saved random relay channel (not the relayer×chain channel, not 0), sends the full packed nonce and chainId top-level; quota signature verified", async () => {
+    const saved = (await relayChannelState(ctx.home, profile)).saved!; // created by the first relayed send above
+    expect(saved.channel).toBeGreaterThanOrEqual(4n);
+    const legacy = defaultChannel("mock", h.chainId);
+    expect(saved.channel).not.toBe(legacy);
+    const l0 = await getRelayNonce(ctx, h.chainId, km, signer.address, legacy);
+    const n0 = await getRelayNonce(ctx, h.chainId, km, signer.address, saved.channel);
+    const out = await send("relay", recA, 0n, "0x99");
+    const n1 = await getRelayNonce(ctx, h.chainId, km, signer.address, saved.channel);
     expect(n1).toBe(n0 + 1n);
-    expect(splitNonce(n1).channelId).toBe(ch);
+    expect(splitNonce(n1).channelId).toBe(saved.channel);
+    expect(await getRelayNonce(ctx, h.chainId, km, signer.address, legacy)).toBe(l0);
+    expect(out.confirmation.lsp25).toMatchObject({ channel: saved.channel.toString(), channelSource: "saved", nonce: n0.toString() });
+    expect(out.confirmation.attribution).toEqual({ transaction: out.txHash, entry: "executeRelayCall" });
     const exec = relayer.requests.filter((r) => r.path === "POST /api/execute").at(-1)!;
     expect(exec.body.chainId).toBe(h.chainId);
     expect(exec.body.address).toBe(profile);
     expect(exec.body.transaction.nonce).toBe("0x" + n0.toString(16));
     expect(relayer.quotaChecks.at(-1)).toMatchObject({ ok: true, recovered: signer.address, version: 2 });
+    expect((await relayChannelState(ctx.home, profile)).saved).toEqual(saved); // never rotated
   });
 
   it("validity window in the past is decoded as RelayCallExpired before anything is sent", async () => {
@@ -228,7 +237,12 @@ describe("relay specifics", () => {
     expect(out.warnings?.join()).toMatch(/LUKSO account/);
     const body = live.requests.find((r) => r.path === "POST /api/execute")!.body;
     expect(body.chainId).toBeUndefined();
-    expect(typeof body.transaction.nonce).toBe("number");
+    // no implicit channel 0: the saved channel's full nonce (> 2^53) goes as an exact decimal string, labelled unverified
+    const saved = (await relayChannelState(ctx.home, profile)).saved!;
+    expect(typeof body.transaction.nonce).toBe("string");
+    expect(body.transaction.nonce).toMatch(/^[1-9]\d+$/);
+    expect(BigInt(body.transaction.nonce) >> 128n).toBe(saved.channel);
+    expect(out.warnings?.join()).toMatch(/LUKSO's live relayer documents the nonce as a JSON number.*not verified/);
     await live.close();
   });
 
@@ -363,7 +377,8 @@ describe("ambiguous relay outcomes never suggest another path", () => {
     const out = await send("relay", recA, 0n, "0xfeed", { relayer: "flaky-after" });
     expect(out.status).toBe("success");
     expect(out.txHash).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(out.warnings?.join()).toMatch(/nonce was consumed, so the signed call WAS executed/);
+    expect(out.warnings?.join()).toMatch(/this exact signed call executed in 0x[0-9a-f]{64} \(executeRelayCall, decoded from that transaction\)/);
+    expect(out.confirmation.attribution).toEqual({ transaction: out.txHash, entry: "executeRelayCall" });
     expect((await readRecorder(h.request, recA)).count).toBe(before.count + 1n);
     await r.close();
   });
@@ -376,7 +391,7 @@ describe("ambiguous relay outcomes never suggest another path", () => {
     try {
       const err = await send("relay", recA, 0n, "0xbeef", { relayer: "flaky-before" }).catch((e) => e);
       expect(err.code).toBe("RELAYER_ERROR");
-      expect(err.hint).toMatch(/^do not resend; check `up nonce` \(has the nonce been used\?\) or wait until the validity window ends/);
+      expect(err.hint).toMatch(/^do not resend and do not re-sign: this signed call stays executable until unix \d+\. A used nonce \(up nonce\) alone does not show that it was this call/);
       expect(err.hint).not.toMatch(/--via km/);
       expect(err.details).toMatchObject({ ambiguous: true, code: "relay_outcome_unknown", fallback: "none", keyManager: km, signer: signer.address });
       expect(err.details.nonce).toMatch(/^\d+$/);
