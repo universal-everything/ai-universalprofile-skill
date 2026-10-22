@@ -29,9 +29,6 @@ import { confirmationBlock, consentForRequest, decodeReceiptEvents, upPayload, v
 
 const POLL_MS = () => Number(process.env.UP_POLL_MS ?? 2000);
 const TIMEOUT_MS = () => Number(process.env.UP_RECEIPT_TIMEOUT_MS ?? 180_000);
-const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
-const LIVE_NONCE_NOTE =
-  "LUKSO's live relayer documents the nonce as a JSON number; this relay nonce has more than 53 bits (channel × 2^128 + counter), so it is sent as an exact decimal string, and that this relayer accepts it is not verified. If it refuses, it did not execute the call";
 
 async function waitForTask(client: RelayerClient, taskId: string): Promise<Hex> {
   const deadline = Date.now() + TIMEOUT_MS();
@@ -132,8 +129,6 @@ export const relayTransport: ExecTransport = {
     const vstate = checkValidity(validityTimestamps, now);
     if (vstate !== "ok") warnings.push(`validity window is ${vstate} at the current block time ${now}`);
     if (validityTimestamps === 0n) warnings.push("unlimited validity: the signed call stays executable until its nonce is used");
-    const stringNonce = relayer.profile === "lukso-live" && (nonce === undefined || nonce > MAX_SAFE);
-    if (stringNonce) warnings.push(LIVE_NONCE_NOTE);
 
     const v = decodeValidityTimestamps(validityTimestamps);
     const confirmation = confirmationBlock(ctx, req, {
@@ -148,7 +143,7 @@ export const relayTransport: ExecTransport = {
         relayer: { name: relayer.name, baseUrl: relayer.baseUrl, profile: relayer.profile, legacy: caps.legacy, lsp15Version: caps.lsp15Version },
         lsp25: { nonce: nonce?.toString() ?? null, channel: channel?.toString() ?? null, channelSource, sequence: nonce !== undefined ? splitNonce(nonce).sequence.toString() : "0", validityTimestamps: "0x" + validityTimestamps.toString(16), validFrom: v.start.toString(), validUntil: v.unlimited ? "unlimited" : v.end.toString(), signedValue: "0" },
         quota: ctx.flags.dryRun ? "not checked in dry-run (no signatures in dry-run)" : opts.skipQuota ? "skipped" : `checked AFTER approval and before the LSP25 signature, with the LSP15 /quota login message only: personal_sign(keccak256(abi.encodePacked(address, uint256 timestamp[, uint256 chainId]))) — authorises nothing`,
-        relayEntry: "KeyManager.executeRelayCall(signature, nonce, validityTimestamps, payload) — the signature is created only after approval; the relayer receives {address, chainId, transaction:{abi: payload, signature, nonce, validityTimestamps}}",
+        relayEntry: "KeyManager.executeRelayCall(signature, nonce, validityTimestamps, payload) — the signature is created only after approval; the relayer receives {address, chainId, transaction:{abi: payload, signature, nonce, validityTimestamps}} (no chainId for lukso-live; nonce = the full getNonce value and validityTimestamps, both as exact 0x hex)",
       },
     });
 
@@ -187,7 +182,7 @@ export const relayTransport: ExecTransport = {
     try {
       res = await client.execute({ address: req.profile, chainId, transaction: { abi: payload, signature, nonce, validityTimestamps } });
     } catch (e) {
-      if (!isAmbiguousSubmitError(e)) throw stringNonce ? liveRefusal(e, validityTimestamps) : e; // explicit rejection before submission
+      if (!isAmbiguousSubmitError(e)) throw e; // an explicit refusal: passed on as the relayer's error
       return settleAmbiguous(pending, base, confirmation, `relayer ${relayer.name} answered /execute ambiguously (${(e as Error).message})`, e);
     }
     let hash: Hex | undefined;
@@ -317,16 +312,6 @@ const untilText = (validityTimestamps: bigint) => {
 
 export function ambiguousRelayHint(validityTimestamps: bigint): string {
   return `do not resend and do not re-sign: this signed call ${untilText(validityTimestamps)}. A used nonce (up nonce) alone does not show that it was this call: find the transaction that used it (up exec receipt <hash>) or wait until the window ends before repeating the action`;
-}
-
-/** An explicit refusal by LUKSO's live relayer of a nonce sent as a decimal string: nothing executed, and no reason to switch channel or path. */
-function liveRefusal(e: unknown, validityTimestamps: bigint): unknown {
-  if (!(e instanceof UpError)) return e;
-  return new UpError(e.code, e.message, {
-    hint: `LUKSO's live relayer may not accept a nonce sent as an exact decimal string (it has more than 53 bits; its docs show a JSON number) and refused this call, so it did not execute it. Retrying on the same channel is safe (it reuses this nonce). Do not switch to another channel, relayer or path while this signed call ${untilText(validityTimestamps)}, or both could execute${e.hint ? `. ${e.hint}` : ""}`,
-    details: { ...((e.details as object) ?? {}), nonceFormat: "exact decimal string", fallback: "none" },
-    cause: e,
-  });
 }
 
 const MAX_CANDIDATES = 25;

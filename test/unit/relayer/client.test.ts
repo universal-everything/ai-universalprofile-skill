@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { createServer } from "node:http";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { encodePacked, keccak256, recoverMessageAddress, type Hex } from "viem";
-import { testSigner } from "../../support/context.ts";
+import { testContext, testSigner } from "../../support/context.ts";
+import { runVerb } from "../../support/mock-relayer.ts";
 import { AMBIGUOUS_HINT, RelayerClient, joinUrl, mapRelayerError, quotaMessageHash, quotaPositive, signQuota, type FetchLike, type RelayerEntry } from "../../../src/relayer/client.ts";
+import { listRelayers } from "../../../src/relayer/registry.ts";
+import { composeNonce, lsp25Digest, recoverLsp25Signer, signLsp25, splitNonce } from "../../../src/lsp/lsp25.ts";
 import { UpError } from "../../../src/core/errors.ts";
+import "../../../src/relayer/verbs.ts";
 
 const PK = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" as Hex; // hardhat account #1 (public test key)
 const UP = "0xBB645D97B0c7D101ca0d73131e521fe89B463BFD" as const;
@@ -10,13 +18,15 @@ const UP = "0xBB645D97B0c7D101ca0d73131e521fe89B463BFD" as const;
 interface Call {
   url: string;
   method: string;
+  /** the request body exactly as sent over HTTP */
+  raw?: string;
   body?: any;
 }
 
 function mockFetch(routes: Record<string, (c: Call) => { status: number; body?: unknown }>) {
   const calls: Call[] = [];
   const f: FetchLike = async (url, init) => {
-    const c: Call = { url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined };
+    const c: Call = { url, method: init?.method ?? "GET", raw: init?.body ? String(init.body) : undefined, body: init?.body ? JSON.parse(String(init.body)) : undefined };
     calls.push(c);
     const key = `${c.method} ${new URL(url).pathname}`;
     const h = routes[key];
@@ -65,7 +75,7 @@ describe("POST /execute request shape", () => {
     expect(r.transactionHash).toBe("0x" + "ab".repeat(32));
     expect(calls[0].body).toEqual({ address: UP, chainId: 42, transaction: { abi: tx.abi, signature: tx.signature, nonce: "0x" + tx.nonce.toString(16), validityTimestamps: "0x" + tx.validityTimestamps.toString(16) } });
   });
-  it("lukso-live: no chainId field, numeric nonce when safe, taskId tracking", async () => {
+  it("lukso-live: no chainId field, the full nonce and the validity window as 0x hex uints, taskId tracking", async () => {
     const { f, calls } = mockFetch({
       "POST /api/execute": () => ({ status: 201, body: { taskId: "t1", transactionHash: "0x" + "cd".repeat(32) } }),
       "GET /api/task/t1": () => ({ status: 200, body: { taskId: "t1", status: "COMPLETE", transactionHash: "0x" + "cd".repeat(32) } }),
@@ -73,11 +83,10 @@ describe("POST /execute request shape", () => {
     const c = new RelayerClient(entry({ profile: "lukso-live" }), { fetch: f });
     const r = await c.execute({ address: UP, chainId: 42, transaction: { ...tx, nonce: 7n } });
     expect(r.taskId).toBe("t1");
-    expect(calls[0].body.chainId).toBeUndefined();
-    expect(calls[0].body.transaction.nonce).toBe(7);
+    expect(calls[0].body).toEqual({ address: UP, transaction: { abi: tx.abi, signature: tx.signature, nonce: "0x7", validityTimestamps: "0x" + tx.validityTimestamps.toString(16) } });
     expect((await c.task("t1")).status).toBe("COMPLETE");
     const r2 = await c.execute({ address: UP, chainId: 42, transaction: tx });
-    expect(calls[2].body.transaction.nonce).toBe(tx.nonce.toString());
+    expect(calls[2].body.transaction.nonce).toBe("0x" + tx.nonce.toString(16));
     expect(r2.transactionHash).toBeDefined();
   });
   it("refuses a response echoing another chainId or carrying no hash/task", async () => {
@@ -91,6 +100,97 @@ describe("POST /execute request shape", () => {
       throw new TypeError("fetch failed");
     };
     await expect(new RelayerClient(entry(), { fetch: f }).execute({ address: UP, chainId: 42, transaction: tx })).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+  });
+});
+
+// The relay nonce is the full value getNonce(controller, channel) returns: channel in the high 128 bits, counter in
+// the low 128 bits. Every relayer profile gets it (and the validity window) as an exact 0x hex uint256 string:
+// minimal form (lowercase, no leading zeros, "0x0" for zero), never a JSON number (not exact above 2^53 - 1) and
+// never a decimal string. The hex form changes neither the value nor the LSP25 digest (that packs a 32-byte uint256).
+describe("relay nonce on the wire: the full getNonce value as a 0x hex uint256", () => {
+  const U128 = (1n << 128n) - 1n;
+  const SAVED = 0x9f3c5be1d2a4476e8b0c1d2e3f405162n; // a saved random channel
+  const nonces: [string, bigint][] = [
+    ["0: channel 0, first counter", 0n],
+    ["1", 1n],
+    ["2^53 - 1: the largest exact JSON number", 2n ** 53n - 1n],
+    ["2^53", 2n ** 53n],
+    ["2^53 + 1: the first value a JSON number cannot carry", 2n ** 53n + 1n],
+    ["2^128: channel 1, first counter", 2n ** 128n],
+    ["2^128 + 1: channel 1, second counter", 2n ** 128n + 1n],
+    ["a saved random channel, first counter", composeNonce(SAVED, 0n)],
+    ["a saved random channel, counter 41", composeNonce(SAVED, 41n)],
+    ["the largest channel, first counter", composeNonce(U128, 0n)],
+    ["the largest channel and counter: 2^256 - 1", composeNonce(U128, U128)],
+  ];
+  for (const profile of ["lsp15", "lukso-live"] as const) {
+    it.each(nonces)(`${profile}: %s`, async (_label, nonce) => {
+      const { f, calls } = mockFetch({ "POST /api/execute": () => ({ status: 200, body: { transactionHash: "0x" + "ab".repeat(32), ...(profile === "lsp15" ? { chainId: 42 } : { taskId: "t1" }) } }) });
+      await new RelayerClient(entry({ profile }), { fetch: f }).execute({ address: UP, chainId: 42, transaction: { ...tx, nonce } });
+      expect(calls).toHaveLength(1);
+      const wire = calls[0].body.transaction.nonce;
+      expect(wire).toBe("0x" + nonce.toString(16));
+      expect(wire).toMatch(/^0x(0|[1-9a-f][0-9a-f]{0,63})$/);
+      expect(calls[0].raw).toContain(`"nonce":"${wire}"`); // a JSON string in the HTTP body, not a number
+      expect(BigInt(wire)).toBe(nonce); // exact: decoded, it is the very value that was signed
+      expect(splitNonce(BigInt(wire))).toEqual(splitNonce(nonce)); // channel and counter unchanged, not packed twice
+    });
+  }
+
+  it("the decoded wire values reproduce the signed LSP25 message: same digest, the signature recovers to the controller (both profiles)", async () => {
+    const s = testSigner(PK);
+    const keyManager = "0x1234567890AbcdEF1234567890aBcdef12345678" as const;
+    for (const nonce of [0n, 2n ** 53n + 1n, composeNonce(SAVED, 0n), composeNonce(U128, U128)]) {
+      const msg = { keyManager, chainId: 42, nonce, validityTimestamps: tx.validityTimestamps, value: 0n, payload: tx.abi };
+      const signature = await signLsp25(s, msg);
+      for (const profile of ["lsp15", "lukso-live"] as const) {
+        const { f, calls } = mockFetch({ "POST /api/execute": () => ({ status: 200, body: { transactionHash: "0x" + "ab".repeat(32), ...(profile === "lsp15" ? { chainId: 42 } : { taskId: "t1" }) } }) });
+        await new RelayerClient(entry({ profile }), { fetch: f }).execute({ address: UP, chainId: 42, transaction: { abi: tx.abi, signature, nonce, validityTimestamps: tx.validityTimestamps } });
+        const t = JSON.parse(calls[0].raw!).transaction;
+        const decoded = { keyManager, chainId: 42, nonce: BigInt(t.nonce), validityTimestamps: BigInt(t.validityTimestamps), value: 0n, payload: t.abi as Hex };
+        expect(decoded.nonce).toBe(nonce);
+        expect(lsp25Digest(decoded)).toBe(lsp25Digest(msg));
+        expect(await recoverLsp25Signer(decoded, t.signature)).toBe(s.address);
+      }
+    }
+  });
+
+  it("a nonce or validity window that is not a uint256 bigint is refused before anything is sent", async () => {
+    const bad: unknown[] = [-1n, 2n ** 256n, 7, Number.MAX_SAFE_INTEGER + 2, "0x7", "7", undefined];
+    for (const profile of ["lsp15", "lukso-live"] as const) {
+      for (const v of bad) {
+        for (const field of ["nonce", "validityTimestamps"] as const) {
+          const { f, calls } = mockFetch({});
+          const err = await new RelayerClient(entry({ profile }), { fetch: f }).execute({ address: UP, chainId: 42, transaction: { ...tx, [field]: v as bigint } }).catch((e) => e);
+          expect(err, `${profile} ${field} ${String(v)}`).toBeInstanceOf(UpError);
+          expect(err.code).toBe("INTERNAL");
+          expect(calls).toHaveLength(0);
+        }
+      }
+    }
+  });
+});
+
+describe("relayer API targets: LUKSO's public relayer is lukso-live, any other URL (e.g. the Universal Relayer) is lsp15", () => {
+  it("the bundled registry lists LUKSO's public relayer for LUKSO Mainnet and Testnet as lukso-live", async () => {
+    const ctx = testContext(mkdtempSync(join(tmpdir(), "up-relayer-target-")));
+    expect((await listRelayers(ctx, 42)).map((r) => [r.baseUrl, r.profile])).toEqual([["https://relayer.mainnet.lukso.network/api", "lukso-live"]]);
+    expect((await listRelayers(ctx, 4201)).map((r) => [r.baseUrl, r.profile])).toEqual([["https://relayer.testnet.lukso.network/api", "lukso-live"]]);
+  });
+  it("relayer add: a relayer URL that is not LUKSO's (e.g. the Universal Relayer) gets the lsp15 profile", async () => {
+    const ctx = testContext(mkdtempSync(join(tmpdir(), "up-relayer-target-")));
+    const srv = createServer((_req, res) => {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end("{}");
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    try {
+      const url = `http://127.0.0.1:${(srv.address() as any).port}/api`;
+      const other = await runVerb(ctx, "relayer add", { url, name: "universal", chains: ["42"] });
+      expect(other.data.relayer).toMatchObject({ name: "universal", baseUrl: url, profile: "lsp15", chainIds: [42] });
+    } finally {
+      await new Promise<void>((r) => srv.close(() => r()));
+    }
   });
 });
 

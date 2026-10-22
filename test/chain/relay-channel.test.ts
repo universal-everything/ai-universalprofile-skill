@@ -3,15 +3,16 @@
 //  - the profile's saved random channel is created at the first relayed send — never by a dry run, exec simulate
 //    or the nonce verbs — and reused across new contexts (restarts), relayers and the auto path; never channel 0;
 //  - --channel overrides one call only; two state folders get their own channels; a restored profile needs an
-//    explicit step (and can continue its earlier channel); LUKSO's live relayer refusing the decimal-string
-//    nonce gets a compatibility hint without any channel or path switch; the first call on a channel pays the
-//    counter's zero→non-zero write once;
+//    explicit step (and can continue its earlier channel); LUKSO's live relayer gets the full nonce as an exact
+//    0x hex uint (nonce 0, first counters, the largest channel), and a refusal by it is passed on as is (no
+//    channel or path switch, no claim that nothing executed); the first call on a channel pays the counter's
+//    zero→non-zero write once;
 //  - an ambiguous or doubtful relay outcome is attributed only to a transaction that carries exactly this signed
 //    call (decoded): another call of the same key with this nonce is proven "not executed", undecodable wrappers
 //    stay unresolved, batches and concurrent channels are told apart.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { getAddress, parseEther, type Address, type Hex } from "viem";
+import { decodeFunctionData, getAddress, parseEther, type Address, type Hex } from "viem";
 import { generatePrivateKey } from "viem/accounts";
 import { getHarness, type Harness } from "./harness.ts";
 import { testContext, testSigner } from "../support/context.ts";
@@ -22,6 +23,7 @@ import { executeAsProfile } from "../../src/exec/transport.ts";
 import { executeAuto } from "../../src/exec/auto.ts";
 import { encodeUpExecute } from "../../src/exec/common.ts";
 import { defaultChannel, encodeExecuteRelayCall, encodeExecuteRelayCallBatch, getRelayNonce, signLsp25, splitNonce } from "../../src/lsp/lsp25.ts";
+import { KM_ABI } from "../../src/lsp/abis.ts";
 import { relayChannelState, setChannelEntropy } from "../../src/lsp/relay-channel.ts";
 import { paths } from "../../src/core/home.ts";
 import { updateProfileRecord } from "../../src/core/profile-record.ts";
@@ -243,15 +245,58 @@ describe("the profile's saved relay channel", () => {
     expect(g1 - g2).toBeGreaterThanOrEqual(15_000n);
   });
 
-  it("LUKSO's live relayer refusing the decimal-string nonce: compatibility hint, nothing executed, no channel or path switch suggested", async () => {
-    await withRelayer({ mode: "lukso-live", respond: async (b) => (typeof b.transaction.nonce === "string" ? [400, { message: "nonce must be a number" }] : undefined) }, async (name) => {
-      const c0 = await count(rec);
+  it("LUKSO's live relayer gets the full nonce as an exact 0x hex uint: nonce 0, a new saved channel's first and next call, the largest channel; wire = signed = executed", async () => {
+    const U128 = (1n << 128n) - 1n;
+    const C2 = 0x7e57c0de7e57c0de7e57c0de7e57c0den;
+    const key = testSigner(generatePrivateKey()); // a fresh key: its channel 0 is unused, so the first call there has nonce 0
+    await h.fund(key.address, parseEther("1"));
+    const c = testContext(h.newHome(), key, APPROVAL);
+    const m = await deployProfileFor(c, key, h.chainId);
+    const live = await startMockRelayer({ request: h.request, chainId: h.chainId, relayerAccount: h.accounts[7], mode: "lukso-live" });
+    await c.saveConfig({ ...(await c.config()), relayers: [{ name: "live", baseUrl: live.url, chainIds: [h.chainId], profile: "lukso-live" }] });
+    const keyNonce = (channel: bigint) => getRelayNonce(c, h.chainId, m.keyManager, key.address, channel);
+    try {
+      setChannelEntropy(fixture(C2));
+      const one = [{ operation: 0 as const, to: rec, value: 0n, data: "0x0e" as Hex }];
+      const two = [...one, { operation: 0 as const, to: recOther, value: 0n, data: "0x0f" as Hex }]; // one relayed call whose payload is the profile's executeBatch
+      const cases: [string, Record<string, unknown>, bigint, typeof two][] = [
+        ["channel 0, first counter: nonce 0", { channel: 0n }, 0n, one],
+        ["the saved channel, created now: first counter", {}, C2 << 128n, one],
+        ["the saved channel: next counter, two calls in one relayed executeBatch", {}, (C2 << 128n) | 1n, two],
+        ["the largest channel, first counter", { channel: U128 }, U128 << 128n, one],
+      ];
+      for (const [label, extra, nonce, calls] of cases) {
+        expect(await keyNonce(nonce >> 128n), label).toBe(nonce);
+        const [c0, o0] = [await count(rec), await count(recOther)];
+        const out = await executeAsProfile(c, { chainId: h.chainId, profile: m.profile, calls }, { via: "relay", relayer: "live", ...extra } as any);
+        expect(out.status, label).toBe("success");
+        expect(out.warnings?.join() ?? "", label).not.toMatch(/JSON number|decimal string|not verified/);
+        const req = live.requests.filter((x) => x.path === "POST /api/execute").at(-1)!;
+        expect(req.status, label).toBe(201);
+        const wire = req.body.transaction.nonce;
+        expect(wire, label).toBe("0x" + nonce.toString(16));
+        expect(req.raw, label).toContain(`"nonce":"${wire}"`);
+        expect(out.confirmation.lsp25, label).toMatchObject({ nonce: nonce.toString() }); // the signed value
+        const mined = await h.request("eth_getTransactionByHash", [out.txHash]);
+        expect(decodeFunctionData({ abi: KM_ABI, data: mined.input }).args?.[1], label).toBe(BigInt(wire)); // the executed value
+        expect(await keyNonce(nonce >> 128n), label).toBe(nonce + 1n);
+        expect(await count(rec), label).toBe(c0 + 1n);
+        expect(await count(recOther), label).toBe(o0 + (calls === two ? 1n : 0n));
+      }
+      expect((await relayChannelState(c.home, m.profile)).saved?.channel).toBe(C2); // never rotated, never 0
+    } finally {
+      await live.close();
+    }
+  });
+
+  it("a refusal by LUKSO's live relayer is passed on as the relayer's error: no nonce-format hint, no claim that the call did not execute, no channel or path switch", async () => {
+    await withRelayer({ mode: "lukso-live", respond: async () => [400, { message: "bad request" }] }, async (name) => {
       const err = await send(ctx, { relayer: name }, "0x0e").catch((e) => e);
       expect(err.code).toBe("RELAYER_ERROR");
-      expect(err.details).toMatchObject({ status: 400, nonceFormat: "exact decimal string", fallback: "none" });
-      expect(err.hint).toMatch(/^LUKSO's live relayer may not accept a nonce sent as an exact decimal string .* Retrying on the same channel is safe/);
-      expect(err.hint).not.toMatch(/--channel 0|--via km/);
-      expect(await count(rec)).toBe(c0);
+      expect(err.details).toMatchObject({ status: 400, fallback: "none" });
+      expect(err.details.nonceFormat).toBeUndefined();
+      expect(err.hint).not.toMatch(/decimal|did not execute|safe to retry|Retrying on the same channel is safe/i);
+      expect(err.hint).not.toMatch(/--channel|--via km/);
     });
   });
 });

@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 141791651b33 (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint d0360c6ba6ce (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -6870,6 +6870,12 @@ var init_profile = __esm({
 
 // src/relayer/client.ts
 import { encodePacked, getAddress as getAddress15, keccak256 as keccak2569 } from "./vendor-viem.mjs";
+function relayUint(v, field) {
+  if (typeof v !== "bigint" || v < 0n || v > MAX_UINT256) {
+    throw new UpError("INTERNAL", `relay ${field} must be a uint256 (bigint), got ${typeof v === "bigint" ? v.toString() : typeof v}`, { hint: "nothing was sent to the relayer; this is a bug in the caller", details: { field } });
+  }
+  return `0x${v.toString(16)}`;
+}
 function joinUrl(base, path) {
   return base.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
 }
@@ -6910,12 +6916,13 @@ function quotaPositive(q3) {
     return Number(q3.quota) > 0;
   }
 }
-var TIMEOUT_MS2, ERROR_TABLE, AMBIGUOUS_HINT, STATUS_DEFAULT_CODE, LUKSO_LIVE_ERRORS, RelayerClient;
+var TIMEOUT_MS2, MAX_UINT256, ERROR_TABLE, AMBIGUOUS_HINT, STATUS_DEFAULT_CODE, LUKSO_LIVE_ERRORS, RelayerClient;
 var init_client = __esm({
   "src/relayer/client.ts"() {
     "use strict";
     init_errors();
     TIMEOUT_MS2 = Number(process.env.UP_RELAYER_TIMEOUT_MS ?? 2e4);
+    MAX_UINT256 = (1n << 256n) - 1n;
     ERROR_TABLE = {
       chainId_required: { message: "the relayer serves several chains and requires a top-level chainId", hint: "update the skill; the client always sends chainId to lsp15 relayers", retryable: false, fallback: "none" },
       chain_unsupported: { message: "the relayer does not serve this chain", hint: "pick another relayer for this chain or execute directly (--via km)", retryable: false, fallback: "km" },
@@ -7012,14 +7019,14 @@ var init_client = __esm({
           throw new UpError("RELAYER_ERROR", `relayer ${this.entry.name} is configured for chain(s) ${this.entry.chainIds.join(", ")}, not ${chainId}`, { hint: "legacy relayers serve one chain per base URL; add the right URL with up relayer add <url> --chains " + chainId });
         }
       }
-      /** POST /execute. The body follows LSP15 (`abi` = the payload passed to executeRelayCall) + top-level chainId. */
+      /** POST /execute. The body follows LSP15 (`abi` = the payload passed to executeRelayCall) + top-level chainId (not lukso-live). */
       async execute(req) {
         const live = this.entry.profile === "lukso-live";
-        const nonce = live ? req.transaction.nonce <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(req.transaction.nonce) : req.transaction.nonce.toString() : "0x" + req.transaction.nonce.toString(16);
+        const { abi: abi2, signature, nonce, validityTimestamps } = req.transaction;
         const body = {
           address: getAddress15(req.address),
           ...live ? {} : { chainId: req.chainId },
-          transaction: { abi: req.transaction.abi, signature: req.transaction.signature, nonce, validityTimestamps: "0x" + req.transaction.validityTimestamps.toString(16) }
+          transaction: { abi: abi2, signature, nonce: relayUint(nonce, "nonce"), validityTimestamps: relayUint(validityTimestamps, "validityTimestamps") }
         };
         let r;
         try {
@@ -9059,7 +9066,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "141791651b33" : "source";
+var SOURCE = true ? "d0360c6ba6ce" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -10242,8 +10249,6 @@ init_registry2();
 init_client();
 var POLL_MS = () => Number(process.env.UP_POLL_MS ?? 2e3);
 var TIMEOUT_MS3 = () => Number(process.env.UP_RECEIPT_TIMEOUT_MS ?? 18e4);
-var MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
-var LIVE_NONCE_NOTE = "LUKSO's live relayer documents the nonce as a JSON number; this relay nonce has more than 53 bits (channel × 2^128 + counter), so it is sent as an exact decimal string, and that this relayer accepts it is not verified. If it refuses, it did not execute the call";
 async function waitForTask(client, taskId) {
   const deadline = Date.now() + TIMEOUT_MS3();
   let last = "";
@@ -10325,8 +10330,6 @@ var relayTransport = {
     const vstate = checkValidity(validityTimestamps, now);
     if (vstate !== "ok") warnings.push(`validity window is ${vstate} at the current block time ${now}`);
     if (validityTimestamps === 0n) warnings.push("unlimited validity: the signed call stays executable until its nonce is used");
-    const stringNonce = relayer.profile === "lukso-live" && (nonce === void 0 || nonce > MAX_SAFE);
-    if (stringNonce) warnings.push(LIVE_NONCE_NOTE);
     const v = decodeValidityTimestamps(validityTimestamps);
     const confirmation = confirmationBlock(ctx, req, {
       path: "relay",
@@ -10340,7 +10343,7 @@ var relayTransport = {
         relayer: { name: relayer.name, baseUrl: relayer.baseUrl, profile: relayer.profile, legacy: caps.legacy, lsp15Version: caps.lsp15Version },
         lsp25: { nonce: nonce?.toString() ?? null, channel: channel?.toString() ?? null, channelSource, sequence: nonce !== void 0 ? splitNonce(nonce).sequence.toString() : "0", validityTimestamps: "0x" + validityTimestamps.toString(16), validFrom: v.start.toString(), validUntil: v.unlimited ? "unlimited" : v.end.toString(), signedValue: "0" },
         quota: ctx.flags.dryRun ? "not checked in dry-run (no signatures in dry-run)" : opts.skipQuota ? "skipped" : `checked AFTER approval and before the LSP25 signature, with the LSP15 /quota login message only: personal_sign(keccak256(abi.encodePacked(address, uint256 timestamp[, uint256 chainId]))) — authorises nothing`,
-        relayEntry: "KeyManager.executeRelayCall(signature, nonce, validityTimestamps, payload) — the signature is created only after approval; the relayer receives {address, chainId, transaction:{abi: payload, signature, nonce, validityTimestamps}}"
+        relayEntry: "KeyManager.executeRelayCall(signature, nonce, validityTimestamps, payload) — the signature is created only after approval; the relayer receives {address, chainId, transaction:{abi: payload, signature, nonce, validityTimestamps}} (no chainId for lukso-live; nonce = the full getNonce value and validityTimestamps, both as exact 0x hex)"
       }
     });
     await consentForRequest(ctx, req, confirmation);
@@ -10371,7 +10374,7 @@ var relayTransport = {
     try {
       res = await client.execute({ address: req.profile, chainId, transaction: { abi: payload, signature, nonce, validityTimestamps } });
     } catch (e) {
-      if (!isAmbiguousSubmitError(e)) throw stringNonce ? liveRefusal(e, validityTimestamps) : e;
+      if (!isAmbiguousSubmitError(e)) throw e;
       return settleAmbiguous(pending, base, confirmation, `relayer ${relayer.name} answered /execute ambiguously (${e.message})`, e);
     }
     let hash;
@@ -10459,14 +10462,6 @@ var untilText = (validityTimestamps) => {
 };
 function ambiguousRelayHint(validityTimestamps) {
   return `do not resend and do not re-sign: this signed call ${untilText(validityTimestamps)}. A used nonce (up nonce) alone does not show that it was this call: find the transaction that used it (up exec receipt <hash>) or wait until the window ends before repeating the action`;
-}
-function liveRefusal(e, validityTimestamps) {
-  if (!(e instanceof UpError)) return e;
-  return new UpError(e.code, e.message, {
-    hint: `LUKSO's live relayer may not accept a nonce sent as an exact decimal string (it has more than 53 bits; its docs show a JSON number) and refused this call, so it did not execute it. Retrying on the same channel is safe (it reuses this nonce). Do not switch to another channel, relayer or path while this signed call ${untilText(validityTimestamps)}, or both could execute${e.hint ? `. ${e.hint}` : ""}`,
-    details: { ...e.details ?? {}, nonceFormat: "exact decimal string", fallback: "none" },
-    cause: e
-  });
 }
 var MAX_CANDIDATES = 25;
 async function findNonceUse(p, knownHash) {
@@ -13554,6 +13549,7 @@ defineVerb({
   name: "relayer execute",
   group: "relayer",
   summary: "Send a call or a raw UP payload (e.g. setData calldata) through an LSP15 relayer as an LSP25 relay call.",
+  description: "The skill reads the relay nonce live with getNonce (the profile's saved relay channel, or --channel, in the high 128 bits; its counter in the low 128 bits), signs exactly that full value and sends it to the relayer, LUKSO's live relayer included, as an exact 0x hex uint256, like validityTimestamps. There is no nonce option: never compute, split, pack or format a nonce yourself.",
   risk: "write",
   params: [
     { name: "payload", type: "string", description: "Raw calldata for the Universal Profile (execute/setData/…); alternative to --to/--data/--fn." },

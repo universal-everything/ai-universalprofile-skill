@@ -2,7 +2,7 @@
 // relay): msg.sender at the target is the profile, value comes from the profile
 // balance (or the controller with fundFromController), batches, revert decoding.
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
-import { encodeFunctionData, getAddress, parseEther, zeroAddress, type Address, type Hex } from "viem";
+import { decodeFunctionData, encodeFunctionData, getAddress, parseEther, zeroAddress, type Address, type Hex } from "viem";
 import { generatePrivateKey } from "viem/accounts";
 import { getHarness, type Harness } from "./harness.ts";
 import { testContext, testSigner } from "../support/context.ts";
@@ -227,22 +227,34 @@ describe("relay specifics", () => {
     }
   });
 
-  it("lukso-live profile: taskId tracking, quota reported unavailable", async () => {
+  it("lukso-live profile: taskId tracking, quota reported unavailable, the full nonce as a 0x hex uint (wire = signed = executed by the Key Manager)", async () => {
     const live = await startMockRelayer({ request: h.request, chainId: h.chainId, relayerAccount: h.accounts[2], mode: "lukso-live" });
     const cfg = await ctx.config();
     await ctx.saveConfig({ ...cfg, relayers: [...(cfg.relayers ?? []), { name: "live", baseUrl: live.url, chainIds: [h.chainId], profile: "lukso-live" }] });
+    // no implicit channel 0: the saved channel (high 128 bits) and its live counter (low 128 bits), read with getNonce
+    const saved = (await relayChannelState(ctx.home, profile)).saved!;
+    const n0 = await getRelayNonce(ctx, h.chainId, km, signer.address, saved.channel);
+    expect(n0 > BigInt(Number.MAX_SAFE_INTEGER)).toBe(true);
     const out = await send("relay", recA, 0n, "0x55", { relayer: "live" });
     expect(out.status).toBe("success");
     expect(out.relayTaskId).toMatch(/^task-/);
     expect(out.warnings?.join()).toMatch(/LUKSO account/);
-    const body = live.requests.find((r) => r.path === "POST /api/execute")!.body;
-    expect(body.chainId).toBeUndefined();
-    // no implicit channel 0: the saved channel's full nonce (> 2^53) goes as an exact decimal string, labelled unverified
-    const saved = (await relayChannelState(ctx.home, profile)).saved!;
-    expect(typeof body.transaction.nonce).toBe("string");
-    expect(body.transaction.nonce).toMatch(/^[1-9]\d+$/);
-    expect(BigInt(body.transaction.nonce) >> 128n).toBe(saved.channel);
-    expect(out.warnings?.join()).toMatch(/LUKSO's live relayer documents the nonce as a JSON number.*not verified/);
+    expect(out.warnings?.join()).not.toMatch(/JSON number|decimal string|not verified/);
+    const req = live.requests.find((r) => r.path === "POST /api/execute")!;
+    expect(req.status).toBe(201);
+    expect(req.body.chainId).toBeUndefined();
+    expect(req.body.transaction.nonce).toBe("0x" + n0.toString(16));
+    expect(req.raw).toContain(`"nonce":"0x${n0.toString(16)}"`);
+    expect(splitNonce(BigInt(req.body.transaction.nonce)).channelId).toBe(saved.channel);
+    expect(out.confirmation.lsp25).toMatchObject({ nonce: n0.toString(), channel: saved.channel.toString() });
+    // the value on the wire is the one signed and the one the Key Manager used
+    const t = req.body.transaction;
+    expect(await recoverLsp25Signer({ keyManager: km, chainId: h.chainId, nonce: BigInt(t.nonce), validityTimestamps: BigInt(t.validityTimestamps), value: 0n, payload: t.abi }, t.signature)).toBe(signer.address);
+    const mined = await h.request("eth_getTransactionByHash", [out.txHash]);
+    const call = decodeFunctionData({ abi: KM_ABI, data: mined.input });
+    expect(call.functionName).toBe("executeRelayCall");
+    expect(call.args?.[1]).toBe(BigInt(t.nonce));
+    expect(await getRelayNonce(ctx, h.chainId, km, signer.address, saved.channel)).toBe(n0 + 1n);
     await live.close();
   });
 

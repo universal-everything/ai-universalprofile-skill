@@ -123,6 +123,8 @@ defineVerb({
   name: "relayer execute",
   group: "relayer",
   summary: "Send a call or a raw UP payload (e.g. setData calldata) through an LSP15 relayer as an LSP25 relay call.",
+  description:
+    "The skill reads the relay nonce live with getNonce (the profile's saved relay channel, or --channel, in the high 128 bits; its counter in the low 128 bits), signs exactly that full value and sends it to the relayer, LUKSO's live relayer included, as an exact 0x hex uint256, like validityTimestamps. There is no nonce option: never compute, split, pack or format a nonce yourself.",
   risk: "write",
   params: [
     { name: "payload", type: "string", description: "Raw calldata for the Universal Profile (execute/setData/…); alternative to --to/--data/--fn." },

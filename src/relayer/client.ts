@@ -7,9 +7,11 @@
 //    GET /.well-known/lsp15.json (or /capabilities), quota signature v2 that also signs chainId.
 //    No JWT, no API key: /execute is authorised by the LSP25 signature, /quota by the
 //    LSP15 signed message.
-//  - "lukso-live": LUKSO's current public relayer. /execute returns { taskId, transactionHash }
-//    and GET /task/{taskId} reports progress; /quota is SIWE→JWT-gated there, so quota is
-//    reported as unavailable instead of failing.
+//  - "lukso-live": LUKSO's current public relayer. /execute takes the LSP15 body without chainId
+//    and returns { taskId, transactionHash }; GET /task/{taskId} reports progress; /quota is
+//    SIWE→JWT-gated there, so quota is reported as unavailable instead of failing.
+//
+// /execute nonce and validityTimestamps (both profiles): uint256 values as exact 0x hex strings (relayUint).
 //
 // /quota signature (LSP15 + docs.lukso.tech example + tools-mock-relayer):
 //   v1: personal_sign(keccak256(abi.encodePacked(address address, uint256 timestamp)))
@@ -89,6 +91,21 @@ export interface TaskStatus {
 }
 
 const TIMEOUT_MS = Number(process.env.UP_RELAYER_TIMEOUT_MS ?? 20_000);
+const MAX_UINT256 = (1n << 256n) - 1n;
+
+/**
+ * A uint256 of the /execute body (nonce, validityTimestamps) as every relayer profile receives it: an exact 0x hex
+ * string, minimal form (lowercase, no leading zeros, "0x0" for zero). The nonce is the full value getNonce returns
+ * (channel in the high 128 bits, counter in the low 128 bits), sent as is: never a JSON number (not exact above
+ * 2^53 - 1), never a decimal string, never split or packed again. The LSP25 digest packs the same value as a 32-byte
+ * uint256, so the hex form changes neither the nonce nor the digest. Anything else is refused before sending.
+ */
+export function relayUint(v: bigint, field: string): Hex {
+  if (typeof v !== "bigint" || v < 0n || v > MAX_UINT256) {
+    throw new UpError("INTERNAL", `relay ${field} must be a uint256 (bigint), got ${typeof v === "bigint" ? v.toString() : typeof v}`, { hint: "nothing was sent to the relayer; this is a bug in the caller", details: { field } });
+  }
+  return `0x${v.toString(16)}`;
+}
 
 export function joinUrl(base: string, path: string): string {
   return base.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
@@ -237,14 +254,14 @@ export class RelayerClient {
     }
   }
 
-  /** POST /execute. The body follows LSP15 (`abi` = the payload passed to executeRelayCall) + top-level chainId. */
+  /** POST /execute. The body follows LSP15 (`abi` = the payload passed to executeRelayCall) + top-level chainId (not lukso-live). */
   async execute(req: ExecuteRequest): Promise<ExecuteResult> {
     const live = this.entry.profile === "lukso-live";
-    const nonce = live ? (req.transaction.nonce <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(req.transaction.nonce) : req.transaction.nonce.toString()) : "0x" + req.transaction.nonce.toString(16);
+    const { abi, signature, nonce, validityTimestamps } = req.transaction;
     const body: Record<string, unknown> = {
       address: getAddress(req.address),
       ...(live ? {} : { chainId: req.chainId }),
-      transaction: { abi: req.transaction.abi, signature: req.transaction.signature, nonce, validityTimestamps: "0x" + req.transaction.validityTimestamps.toString(16) },
+      transaction: { abi, signature, nonce: relayUint(nonce, "nonce"), validityTimestamps: relayUint(validityTimestamps, "validityTimestamps") },
     };
     let r: { status: number; body: unknown };
     try {

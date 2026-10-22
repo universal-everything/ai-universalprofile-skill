@@ -3,10 +3,11 @@
 //
 // Implements, over real HTTP:
 //   GET  /api/.well-known/lsp15.json   capability document (absent in "legacy" mode)
-//   POST /api/execute                  LSP15 + top-level chainId; verifies shape, chainId routing and the
-//                                      LSP25 chain binding (digest recomputed with the KM resolved on that
-//                                      chain), simulates, then submits KM.executeRelayCall from a funded
-//                                      relayer account (relayer pays gas)
+//   POST /api/execute                  LSP15 + top-level chainId; verifies shape (nonce and validityTimestamps
+//                                      only as 0x hex uint256 strings, like the relayers the client targets),
+//                                      chainId routing and the LSP25 chain binding (digest recomputed with the
+//                                      KM resolved on that chain), simulates, then submits KM.executeRelayCall
+//                                      from a funded relayer account (relayer pays gas)
 //   POST /api/quota                    verifies the LSP15 signed message (v1/v2, ±300 s)
 //   GET  /api/task/:id                 "lukso-live" mode only
 import { createServer, type Server } from "node:http";
@@ -58,11 +59,15 @@ export interface MockRelayerOptions {
 
 export interface MockRelayer {
   url: string;
-  requests: { path: string; body: any; status: number; response: any }[];
+  /** `raw` is the request body exactly as it arrived over HTTP (before JSON.parse) */
+  requests: { path: string; raw: string; body: any; status: number; response: any }[];
   quotaChecks: { recovered: Address; subject: Address; version: number; ok: boolean }[];
   opts: MockRelayerOptions;
   close(): Promise<void>;
 }
+
+/** A uint256 as a 0x hex string (what the client sends); JSON numbers and decimal strings are refused. */
+const isHexUint256 = (v: unknown): v is string => typeof v === "string" && /^0x[0-9a-fA-F]{1,64}$/.test(v);
 
 const call = async (request: RpcRequest, to: Address, data: Hex, from?: Address) => request("eth_call", [{ to, data, from }, "latest"]) as Promise<Hex>;
 
@@ -107,6 +112,9 @@ export async function startMockRelayer(opts: MockRelayerOptions): Promise<MockRe
     const t = b.transaction;
     if (typeof t.abi !== "string" || !/^0x[0-9a-fA-F]{8,}$/.test(t.abi) || typeof t.signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(t.signature) || t.nonce === undefined) {
       return [400, { error: "bad_request", message: "transaction.abi, signature and nonce are required" }];
+    }
+    if (!isHexUint256(t.nonce) || (t.validityTimestamps !== undefined && !isHexUint256(t.validityTimestamps))) {
+      return [400, { error: "bad_request", message: "transaction.nonce and validityTimestamps must be uint256 values as 0x hex strings" }];
     }
     let chainId = opts.chainId;
     if (mode === "lsp15") {
@@ -215,7 +223,7 @@ export async function startMockRelayer(opts: MockRelayerOptions): Promise<MockRe
       status = 500;
       response = { error: "internal", message: String(e?.message ?? e).slice(0, 200) };
     }
-    requests.push({ path: `${req.method} ${path}`, body: parsed, status, response });
+    requests.push({ path: `${req.method} ${path}`, raw: body, body: parsed, status, response });
     res.writeHead(status, { "content-type": "application/json" });
     res.end(JSON.stringify(response));
   });

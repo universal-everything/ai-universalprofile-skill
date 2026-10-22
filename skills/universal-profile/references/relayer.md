@@ -53,14 +53,18 @@ This extension is a proposal for an LSP15 revision, implemented by the skill and
 
 The live LUKSO relayer API (documented at https://docs.lukso.tech) differs from the LSP15 text: `POST /execute` returns `{ taskId, transactionHash }` and the task status is read with `GET /task/{taskId}` (CREATED, PROCESSING, COMPLETE, FAILED); its quota endpoint uses a Sign-In-With-Ethereum login that returns a bearer token instead of the signed quota message; profiles must be registered with it to get an allowance. The skill talks to it through a separate client profile (`lukso-live`) behind the same verbs; the task id is tracked until the chain receipt arrives, because a re-submitted task can get a new transaction hash. Chains are separated by base URL (no `chainId` field).
 
-Its documentation shows `nonce` as a JSON number. The skill sends a JSON number only when the value fits in 53 bits; the nonce of the profile's saved relay channel never does (channel × 2^128), so it is sent as the exact decimal string: never rounded, never switched to channel 0. **Whether LUKSO's live relayer accepts that is not verified.** If it refuses, it did not execute the call: retrying on the same channel is safe; another relayer or `--via km` only after the call's validity window has ended.
+The nonce goes to it exactly as to every other relayer: a `0x` hex uint256 (see "Nonce on the wire" below). The examples in its documentation show a small JSON number (`0`, `Number(nonce)`); that is exact only below 2^53 and cannot carry the nonce of the profile's saved relay channel (channel × 2^128 + counter), so the skill never sends a JSON number or a decimal string, and never falls back to channel 0.
+
+### Nonce on the wire
+
+The skill builds the `/execute` body itself; agents never compute, split, pack or format a nonce. `transaction.nonce` is the full value `getNonce(controller, channel)` returns (the channel in the high 128 bits, the counter in the low 128 bits), sent unchanged as an exact `0x` hex uint256 in minimal form (`"0x0"`, `"0x7e57…0001"`), to every relayer profile; `validityTimestamps` likewise. The LSP25 signature packs the same value as a 32-byte uint256, so the hex form changes neither the nonce nor the signed digest. If a relayer refuses a call, the skill passes on its error as is: it does not switch channel, relayer or path for you.
 
 ## Flow of a relayed action
 
 1. `up relayer quota --chain <id>`: enough quota for the estimated gas? If not, stop or fall back to `--via km` only if the controller is funded and the action is still approved.
 2. The skill builds the payload, reads the full nonce of the profile's saved relay channel (`getNonce(controller, channel)`; `up nonce channel`), sets the validity window (default: 60 s ago → 10 min ahead), signs the LSP25 digest locally, and simulates `executeRelayCall` against the chain.
 3. It shows the confirmation block: relayer, chain, profile, Key Manager, nonce channel, validity window, decoded payload.
-4. `POST /execute` (with `chainId` where supported).
+4. `POST /execute` (with `chainId` where supported; nonce and validity window as `0x` hex).
 5. It waits for the receipt on the same chain, checks that the transaction carries exactly this signed call (decoded from its calldata; a used nonce alone is no proof), and decodes events or the revert.
 
 Never re-send the same signed call (same nonce) to a different relayer until the first relayer's submission is proven dropped (validity window passed, or nonce still unused after it); otherwise both could land.
