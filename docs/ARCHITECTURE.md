@@ -3,7 +3,7 @@
 The repository has two branches: `main` is exactly the shipped skill (`SKILL.md` at the root, what every installer fetches), and `source` (this branch) contains:
 
 1. **The shipped Agent Skill** in [`skills/universal-profile/`](../skills/universal-profile) — `SKILL.md`, `references/`, `assets/` (ABIs, registry, bytecode) and the pre-built, unminified tools in `scripts/`. This folder is what users and catalogues install; `build/publish-main.mjs` publishes it as the tree of `main` (one commit per publish, no history rewrite). It needs only Node.js ≥ 22; it has no `node_modules`.
-2. **The source** in `src/` (TypeScript), the generators in `build/`, and the tests in `test/`. `npm ci && npm run build` reproduces `skills/universal-profile/scripts/` byte-for-byte (checked in CI).
+2. **The source** in `src/` (TypeScript), the generators in `build/`, and the tests in `test/`. `npm ci && npm run build` reproduces `skills/universal-profile/scripts/` byte-for-byte (checked in CI). The source fingerprint stamped into the bundles and `scripts/BUILD.json` (`build/fingerprint.mjs`) covers exactly the files the build reads: the modules esbuild bundled, the build scripts and the package manifests. Local files that nothing imports (`.DS_Store`, tool databases) cannot change it.
 
 ## Runtime layout (shipped)
 

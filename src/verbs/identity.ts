@@ -49,7 +49,7 @@ defineVerb({
     const cfg = await ctx.config();
     const { collectProfiles } = await import("../backup/build.ts");
     const warnings: string[] = [];
-    const states = await collectProfiles(ctx, cfg, warnings);
+    const states = await collectProfiles(ctx, cfg, warnings, { damaged: "warn" });
 
     const names = (await readdir(paths.profiles(ctx.home)).catch(() => [] as string[])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
     const identities = new Map<string, Address>();
@@ -65,10 +65,18 @@ defineVerb({
       alias?: string;
       isDefault: boolean;
       networks: Record<string, any>[];
+      recordDamaged?: true;
     }
     const profiles: Entry[] = [];
     for (const id of ordered) {
-      const record = await readProfileRecord(ctx.home, id);
+      // a damaged record: the address is still listed, without its saved networks (collectProfiles warned; nothing is written)
+      let record: Record<string, any> = {};
+      let damaged = false;
+      try {
+        record = await readProfileRecord(ctx.home, id);
+      } catch {
+        damaged = true;
+      }
       const linked = chainAddressesOf(record);
       const own = states.find((s) => same(s.address, id));
       const networks: Record<string, any>[] = [];
@@ -94,7 +102,7 @@ defineVerb({
       }
       networks.sort((a, b) => a.chainId - b.chainId);
       const alias = aliasOf(id);
-      profiles.push({ address: id, ...(alias ? { alias: safeFileText(alias, 40) } : {}), isDefault: !!defaultProfile && same(id, defaultProfile), networks });
+      profiles.push({ address: id, ...(alias ? { alias: safeFileText(alias, 40) } : {}), isDefault: !!defaultProfile && same(id, defaultProfile), networks, ...(damaged ? { recordDamaged: true as const } : {}) });
     }
 
     const agentControllers = controllerText(cfg);
@@ -104,7 +112,7 @@ defineVerb({
 
     const lines = (p: Entry): string => {
       const nets = p.networks.map((n) => `${n.network}${n.linkedAddress ? ` (as ${n.address})` : ""}`);
-      return `${p.address}${p.alias ? ` ("${p.alias}")` : ""}${nets.length ? ` on ${listWords(nets)}` : " (no network recorded yet)"}`;
+      return `${p.address}${p.alias ? ` ("${p.alias}")` : ""}${nets.length ? ` on ${listWords(nets)}` : p.recordDamaged ? " (its saved details are damaged and need a repair)" : " (no network recorded yet)"}`;
     };
     const say = found
       ? profiles.length === 1
@@ -131,6 +139,9 @@ defineVerb({
               "Saved is not current: run `up profile status` for what is deployed and permitted on each network right now before acting or answering about permissions or balances; never quote old permissions or call a network deployed from the address alone.",
               "Tell the human the address, network names and link in plain words, not file names or commands. Keep the profile (the account), the agent's key address and a controller's recorded address apart.",
               ...(hasKeys ? [] : ["No agent key address is saved here: if signing is needed, `up doctor` says why; never regenerate a key to replace a missing one."]),
+              ...(profiles.some((p) => p.recordDamaged)
+                ? ["A saved profile record is damaged (see warnings): tell the human and ask them to repair the file; never delete it and never create a new profile, key or relay channel because of it. Commands that use or change that record stop until it is repaired."]
+                : []),
             ]
           : [
               "Nothing is saved here. Tell the human plainly, without claiming that no profile exists anywhere, and ask whether they already have a Universal Profile or a backup file before offering a new one.",

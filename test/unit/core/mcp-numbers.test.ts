@@ -48,7 +48,7 @@ describe("MCP: JSON numbers above 2^53 - 1 are refused before string coercion", 
     for (const [tool, args] of [
       ["up_exec_send", `{"profile":"${PROFILE}","to":"${TARGET}","data":"0x01","channel":9007199254740992}`],
       ["up_nonce", `{"profile":"${PROFILE}","channel":340282366920938463463374607431768211455}`],
-      ["up_nonce_channel", `{"profile":"${PROFILE}","create":true,"channel":340282366920938463463374607431768211455}`],
+      ["up_nonce_channel_create", `{"profile":"${PROFILE}","channel":340282366920938463463374607431768211455}`],
     ]) {
       const r = await call(tool, args);
       expect(r.structuredContent.error?.code, tool).toBe("BAD_ARGS");
@@ -70,8 +70,8 @@ describe("MCP: JSON numbers above 2^53 - 1 are refused before string coercion", 
     expect(network).toBe(0);
   });
 
-  it("safe JSON numbers keep working at the MCP boundary (a channel saved through up_nonce_channel)", async () => {
-    const r = await call("up_nonce_channel", `{"profile":"${PROFILE}","create":true,"channel":7}`);
+  it("safe JSON numbers keep working at the MCP boundary (a channel saved through up_nonce_channel_create)", async () => {
+    const r = await call("up_nonce_channel_create", `{"profile":"${PROFILE}","channel":7,"yes":true}`);
     expect(r.isError).toBe(false);
     expect(r.structuredContent.data).toMatchObject({ created: true, relayChannel: { channel: "7", source: "adopted" } });
     expect(JSON.parse(readFileSync(join(home, "profiles", `${PROFILE.toLowerCase()}.json`), "utf8")).relayChannel.channel).toBe("7");
@@ -79,10 +79,10 @@ describe("MCP: JSON numbers above 2^53 - 1 are refused before string coercion", 
 
   it("decimal and 0x strings are exact up to 2^128 - 1 (through MCP and the CLI path), 2^128 and malformed values are BAD_ARGS", async () => {
     const big = "0x" + "AB".repeat(20);
-    const r = await call("up_nonce_channel", `{"profile":"${big}","create":true,"channel":"${U128}"}`);
+    const r = await call("up_nonce_channel_create", `{"profile":"${big}","channel":"${U128}","yes":true}`);
     expect(r.structuredContent.data.relayChannel.channel).toBe(U128.toString());
     const hexProfile = "0x" + "cd".repeat(20);
-    const h = await call("up_nonce_channel", `{"profile":"${hexProfile}","create":true,"channel":"0x${(U128 - 5n).toString(16)}"}`);
+    const h = await call("up_nonce_channel_create", `{"profile":"${hexProfile}","channel":"0x${(U128 - 5n).toString(16)}","yes":true}`);
     expect(h.structuredContent.data.relayChannel.channel).toBe((U128 - 5n).toString());
     const v = getVerb("exec relay")!;
     expect(execOptions(coerceArgs(v, { channel: U128.toString() })).channel).toBe(U128);

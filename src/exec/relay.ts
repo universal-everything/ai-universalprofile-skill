@@ -90,6 +90,7 @@ export const relayTransport: ExecTransport = {
     const identity = await profileIdentityFor(ctx, chainId, req.profile);
     let channel = opts.channel;
     let channelSource: string;
+    let created = false;
     if (opts.channel !== undefined) {
       const saved = (await relayChannelState(ctx.home, identity).catch(() => undefined))?.saved;
       channelSource = `--channel for this call only; the saved channel (${saved ? saved.channel : "none yet"}) is unchanged`;
@@ -102,16 +103,29 @@ export const relayTransport: ExecTransport = {
     } else {
       const c = await ensureRelayChannel(ctx.home, identity);
       channel = c.channel;
+      created = c.created;
       channelSource = c.created ? "created now (random, saved)" : "saved";
-      if (c.created) {
-        // migration from the earlier defaults: say so only when this key really used one of them here
-        const earlier = await earlierChannelsInUse(ctx, chainId, keyManager, signer.address);
-        if (earlier.length) warnings.push(`this profile's relay channel ${c.channel} was created now (random, saved in this state folder, used from now on on every chain and relayer). This key relayed before on ${earlier.map((e) => `channel ${e.channel} (sequence ${e.sequence})`).join(", ")}: those counters stay on chain (up nonce shows them); if a call signed there may still be pending, check it before repeating its action`);
-      }
     }
     // the nonce read below is unused at this block, so whatever uses it later is in a later block (small margin for RPC failover)
     const start = await latestBlock(ctx, chainId);
     const nonce = channel === undefined ? undefined : await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
+    // Migration: until a call of this key has executed on the saved channel here (sequence 0, also after a first send that
+    // failed or a dry run), say which other channels it used here, so a call signed on one of them that may still be
+    // pending is checked first: the earlier defaults, and the address's own saved channel when another profile links it.
+    if (opts.channel === undefined && (nonce === undefined || splitNonce(nonce).sequence === 0n)) {
+      const own = identity !== getAddress(req.profile) ? (await relayChannelState(ctx.home, req.profile)).saved : undefined;
+      const earlier = (await earlierChannelsInUse(ctx, chainId, keyManager, signer.address, own ? [own.channel] : [])).filter((e) => e.channel !== channel);
+      if (earlier.length) {
+        const head =
+          channel === undefined
+            ? "the first relayed send creates this profile's relay channel (random, saved in this state folder, used from then on on every chain and relayer)."
+            : created
+              ? `this profile's relay channel ${channel} was created now (random, saved in this state folder, used from now on on every chain and relayer).`
+              : `no call of this key has executed on this profile's relay channel ${channel} on chain ${chainId} yet.`;
+        const ownNote = own && earlier.some((e) => e.channel === own.channel) ? ` (channel ${own.channel} is the saved channel of ${getAddress(req.profile)} itself; ${identity} links that address here, so its channel is used)` : "";
+        warnings.push(`${head} This key relayed before on ${earlier.map((e) => `channel ${e.channel} (sequence ${e.sequence})`).join(", ")}${ownNote}: those counters stay on chain (up nonce shows them); if a call signed there may still be pending, check it before repeating its action`);
+      }
+    }
     const now = start.timestamp || BigInt(Math.floor(Date.now() / 1000));
     const validityTimestamps =
       opts.validFrom !== undefined || opts.validUntil !== undefined ? encodeValidityTimestamps(opts.validFrom ?? 0n, opts.validUntil ?? 0n) : validityWindow(now, opts.validitySeconds ?? 600);
@@ -210,12 +224,13 @@ export const relayTransport: ExecTransport = {
 };
 
 /** The earlier default channels (channel 0, each relayer's hashed channel) on which this key already relayed on this chain. */
-async function earlierChannelsInUse(ctx: VerbContext, chainId: number, keyManager: Address, signer: Address): Promise<{ channel: bigint; sequence: bigint }[]> {
+async function earlierChannelsInUse(ctx: VerbContext, chainId: number, keyManager: Address, signer: Address, also: bigint[] = []): Promise<{ channel: bigint; sequence: bigint }[]> {
   const channels = [0n];
   for (const r of await listRelayers(ctx, chainId)) {
     const c = r.profile === "lukso-live" ? 0n : defaultChannel(r.name, chainId);
     if (!channels.includes(c)) channels.push(c);
   }
+  for (const c of also) if (!channels.includes(c)) channels.push(c);
   const out: { channel: bigint; sequence: bigint }[] = [];
   for (const channel of channels) {
     const sequence = splitNonce(await getRelayNonce(ctx, chainId, keyManager, signer, channel)).sequence;

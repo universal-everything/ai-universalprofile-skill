@@ -6,6 +6,7 @@ import type { Address } from "viem";
 import { UpError } from "../core/errors.ts";
 import { paths } from "../core/home.ts";
 import { releaseKeys } from "../core/json.ts";
+import { readProfileRecord } from "../core/profile-record.ts";
 import { assertNoKeyMaterial } from "../core/public-record.ts";
 import { safeFileText } from "../core/safe-text.ts";
 import type { VerbContext, VerbResult } from "../core/types.ts";
@@ -455,6 +456,8 @@ export async function runImport(ctx: VerbContext, a: Record<string, any>): Promi
     };
   }
 
+  // a damaged record of a profile to restore stops here, before the consent and before any key is stored (its update would refuse it)
+  for (const x of chosen) await readProfileRecord(ctx.home, x.account.address);
   const summary = {
     effect: "restore profiles and keys from a backup file into this agent's key store and records",
     ...plan,

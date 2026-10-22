@@ -11,7 +11,7 @@
 //    stay unresolved, batches and concurrent channels are told apart.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseEther, type Address, type Hex } from "viem";
+import { getAddress, parseEther, type Address, type Hex } from "viem";
 import { generatePrivateKey } from "viem/accounts";
 import { getHarness, type Harness } from "./harness.ts";
 import { testContext, testSigner } from "../support/context.ts";
@@ -132,6 +132,47 @@ describe("the profile's saved relay channel", () => {
     expect(n.data.relay.find((x: any) => x.channel === legacy.toString())).toMatchObject({ label: "earlier default channel of relayer mock (before saved channels)", sequence: "1" });
   });
 
+  it("migration: the notice is not lost when the send that created the channel fails; it comes with every send (and dry run) until a call executes on the saved channel", async () => {
+    const upgraded = await homeWithRelayer();
+    const legacy = defaultChannel("mock", h.chainId);
+    expect((await send(upgraded, { channel: legacy }, "0x15")).status).toBe("success");
+    const note = `This key relayed before on channel ${legacy} (sequence `;
+    expect((await send(testContext(upgraded.home, signer, { dryRun: true }), {}, "0x16")).warnings?.join(" ")).toContain(note);
+    const N = 0x4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4dn;
+    setChannelEntropy(fixture(N));
+    // the first real send creates the channel and then stops at the consent (neither --yes nor an approval)
+    await expect(send(testContext(upgraded.home, signer, { yes: false }), {}, "0x16")).rejects.toMatchObject({ code: "CONSENT_REQUIRED" });
+    expect((await relayChannelState(upgraded.home, profile)).saved?.channel).toBe(N);
+    const next = await send(upgraded, {}, "0x16");
+    expect(next.status).toBe("success");
+    expect(next.confirmation.lsp25).toMatchObject({ channel: N.toString(), channelSource: "saved", sequence: "0" });
+    expect(next.warnings?.join(" ")).toContain(note);
+    const later = await send(upgraded, {}, "0x17");
+    expect(later.confirmation.lsp25).toMatchObject({ channel: N.toString(), sequence: "1" });
+    expect(later.warnings?.join(" ") ?? "").not.toContain("relayed before");
+  });
+
+  it("an address another profile links here belongs to that profile: relays use its channel, and the first ones name the channel this key used for the address before", async () => {
+    const own = await homeWithRelayer();
+    const [P, X] = [0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0an, 0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0bn];
+    setChannelEntropy(fixture(P, X));
+    expect((await send(own, {}, "0x18")).status).toBe("success"); // nothing links it yet: the address is its own profile
+    expect((await relayChannelState(own.home, profile)).saved?.channel).toBe(P);
+    // the human links this address as profile L's address on this chain (what `profile link` stores in L's record)
+    const L = getAddress("0x" + "5e".repeat(20));
+    await updateProfileRecord(own.home, L, () => ({ chainAddresses: { [String(h.chainId)]: profile } }));
+    const next = await send(own, {}, "0x19");
+    expect(next.status).toBe("success");
+    expect(channelOf(bodies(relayer).at(-1))).toBe(X);
+    expect((await relayChannelState(own.home, L)).saved?.channel).toBe(X);
+    expect((await relayChannelState(own.home, profile)).saved?.channel).toBe(P); // never removed or replaced
+    expect(next.warnings?.join(" ")).toContain(`channel ${P} (sequence 1)`);
+    const n = await run(own, "nonce", { profile });
+    expect(n.data.identity).toBe(L);
+    expect(n.data.relayChannel.channel).toBe(X.toString());
+    expect(n.data.relay.find((x: any) => x.channel === P.toString())).toMatchObject({ sequence: "1", label: expect.stringContaining(`saved relay channel of ${profile} itself`) });
+  });
+
   it("the same channel after a restart (new context), through another relayer, the auto path and the verbs; it is never replaced", async () => {
     const legacy = await startMockRelayer({ request: h.request, chainId: h.chainId, relayerAccount: h.accounts[2], mode: "legacy" });
     try {
@@ -182,7 +223,7 @@ describe("the profile's saved relay channel", () => {
     await expect(send(testContext(restored.home, signer, { dryRun: true }))).rejects.toMatchObject({ code: "NOT_SUPPORTED" });
     expect(bodies(relayer).length).toBe(before);
     const n0 = await nonceOn(C);
-    const adopted = await run(restored, "nonce channel", { profile, create: true, channel: C.toString() });
+    const adopted = await run(restored, "nonce channel create", { profile, channel: C.toString() });
     expect(adopted.data).toMatchObject({ created: true, relayChannel: { channel: C.toString(), source: "adopted" } });
     expect((await send(restored, {}, "0x0c")).status).toBe("success");
     expect(channelOf(bodies(relayer).at(-1))).toBe(C);

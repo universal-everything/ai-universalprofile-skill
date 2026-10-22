@@ -137,9 +137,9 @@ describe("relayer verbs and the relay path", () => {
     // the explicit verb shows the same channel and never replaces it
     const c = await run(actx, "nonce channel", {});
     expect(c.data).toMatchObject({ profile, created: false, relayChannel: { channel: r.data.relayChannel.channel } });
-    const again = await run(actx, "nonce channel", { create: true });
+    const again = await run(actx, "nonce channel create", {});
     expect(again.data).toMatchObject({ created: false, relayChannel: { channel: r.data.relayChannel.channel } });
-    await expect(run(actx, "nonce channel", { create: true, channel: "12345" })).rejects.toMatchObject({ code: "BAD_ARGS", message: /never replaced/ });
+    await expect(run(actx, "nonce channel create", { channel: "12345" })).rejects.toMatchObject({ code: "BAD_ARGS", message: /never replaced/ });
   });
 
   it("dry-run relay: no signature, no relayer request, no state change", async () => {

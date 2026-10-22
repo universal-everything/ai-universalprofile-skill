@@ -37,7 +37,7 @@ Commit the rebuilt `skills/universal-profile/scripts/` together with the source 
 
 ## Publish to `main`
 
-`main` holds only the built skill. To publish the committed state of `skills/universal-profile/` from a clean, pushed `source` checkout:
+`main` holds only the built skill. To publish the committed state of `skills/universal-profile/` from a clean, pushed `source` checkout (no untracked files either; the package gate reads every file in the skill folder, so in a checkout with local files, e.g. tool databases, verify and publish from a clean temporary worktree: `git worktree add --detach <dir> <commit>`):
 
 ```bash
 npm run publish:main            # checks, then shows what would be published (dry run)

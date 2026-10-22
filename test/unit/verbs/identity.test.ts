@@ -142,8 +142,17 @@ describe("profile identity", () => {
   it("a damaged profile record or an address-only default still lists the address", async () => {
     mkdirSync(join(home, "profiles"), { recursive: true });
     writeFileSync(join(home, "profiles", `${m2.profile.toLowerCase()}.json`), "{ not json");
+    const before = snapshot(home);
     const r = await identity();
     expect(r.data.profiles.map((p: any) => p.address)).toContain(m2.profile);
+    // said plainly, never shown as "nothing recorded"; the file is left exactly as it is
+    expect(r.data.profiles.find((p: any) => p.address === m2.profile)).toMatchObject({ recordDamaged: true, networks: [] });
+    expect(r.data.profiles.find((p: any) => p.address === m1.profile).recordDamaged).toBeUndefined();
+    expect(r.warnings?.join(" ")).toMatch(new RegExp(`the saved record of ${m2.profile} is damaged.*not a valid profile record \\(not valid JSON\\).*never delete it`));
+    expect(r.data.next.join(" ")).toMatch(/damaged/);
+    expect(snapshot(home)).toEqual(before);
+    // a backup never silently leaves the damaged profile's data out: it stops
+    await expect((await import("../../../src/backup/build.ts")).collectProfiles(createContext({ home, flags: { json: true, dryRun: false, yes: false } }), JSON.parse(readFileSync(join(home, "config.json"), "utf8")), [])).rejects.toMatchObject({ code: "INTERNAL" });
   });
 
   it("separate process (the shipped bundle, as a new chat starts it): same answer, key store untouched", () => {

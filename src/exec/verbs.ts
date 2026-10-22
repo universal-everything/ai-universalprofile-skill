@@ -9,7 +9,7 @@ import { UP_ABI } from "../lsp/abis.ts";
 import { resolveKeyManager } from "../lsp/profile.ts";
 import { ethCall } from "../lsp/read.ts";
 import { defaultChannel, getRelayNonce, splitNonce } from "../lsp/lsp25.ts";
-import { ensureRelayChannel, profileIdentityFor, relayChannelState, type RelayChannel } from "../lsp/relay-channel.ts";
+import { assertSavableChannel, ensureRelayChannel, profileIdentityFor, relayChannelState, type RelayChannel } from "../lsp/relay-channel.ts";
 import { listRelayers } from "../relayer/registry.ts";
 import { controllerFor } from "../signer/select.ts";
 import type { ExecCall, ExecPath } from "./transport.ts";
@@ -266,8 +266,20 @@ export async function defaultControllerAddress(ctx: VerbContext): Promise<Addres
   return (await ctx.signer()).address;
 }
 
-const NOT_CREATED = "not created yet: the first relayed send creates one random channel for this profile and saves it (or create it now: up nonce channel --create)";
+const NOT_CREATED = "not created yet: the first relayed send creates one random channel for this profile and saves it (after a restore from a backup: up nonce channel create)";
+const CHANNEL_SCOPE = "this state folder (this agent) and this profile, on every chain and relayer; the counter is on chain per chain, Key Manager, key and channel (read with: up nonce)";
 const channelView = (c: RelayChannel) => ({ channel: c.channel.toString(), hex: "0x" + c.channel.toString(16), createdAt: c.createdAt, source: c.source });
+
+/** The profile the channel verbs are about: --profile (or the default); with --chain, a chain-specific address names the profile that links it. */
+async function channelIdentity(ctx: VerbContext, a: Record<string, any>): Promise<Address> {
+  await ctx.config();
+  const identity = await ctx.identity(a.profile);
+  let chainId: number | undefined;
+  try {
+    chainId = ctx.chainId(a.chain);
+  } catch {}
+  return chainId === undefined ? identity : profileIdentityFor(ctx, chainId, identity);
+}
 
 defineVerb({
   name: "nonce",
@@ -289,8 +301,11 @@ defineVerb({
     if (!km.keyManager) throw new UpError("NOT_SUPPORTED", `profile owner ${km.owner} is not a Key Manager`);
     const identity = await profileIdentityFor(ctx, chainId, profile);
     const { saved } = await relayChannelState(ctx.home, identity);
+    // another profile links this address here: the address's own saved channel (relayed as itself before) is not used here any more
+    const own = identity !== profile ? (await relayChannelState(ctx.home, profile)).saved : undefined;
     const channels: { channel: bigint; label: string }[] = [];
     if (saved) channels.push({ channel: saved.channel, label: "saved relay channel of this profile (every relayed call uses it)" });
+    if (own && own.channel !== saved?.channel) channels.push({ channel: own.channel, label: `saved relay channel of ${profile} itself (not used on this chain: ${identity} links ${profile} here)` });
     channels.push({ channel: 0n, label: "channel 0 (strictly ordered; shared with tools that pick it by hand)" });
     for (const r of await listRelayers(ctx, chainId)) {
       const c = r.profile === "lukso-live" ? 0n : defaultChannel(r.name, chainId);
@@ -313,31 +328,60 @@ defineVerb({
 defineVerb({
   name: "nonce channel",
   group: "execute",
-  summary: "Show this agent's saved LSP25 relay channel for the profile (one random uint128 per profile in this state folder, used by every relayed call on every chain and relayer); --create creates it now.",
+  summary: "Show this agent's saved LSP25 relay channel for the profile (one random uint128 per profile in this state folder, used by every relayed call on every chain and relayer). Read-only: never creates one (up nonce channel create does).",
   description:
-    "The channel is public (not a secret) and is never replaced: no new channel per chat, restart, upgrade, relayer or chain, and never one to get around a pending call. It is saved in this state folder's profile record, not in key backups. Without --create nothing is written. After a restore from a key backup it is not known here: first make sure no relayed action from before is still pending, then --create (new random channel) or --create --channel <earlier channel> to continue the one this agent used before. A missing channel is not a missing key: the key is never regenerated.",
+    "The channel is public (not a secret) and is never replaced: no new channel per chat, restart, upgrade, relayer or chain, and never one to get around a pending call. It is saved in this state folder's profile record, not in key backups. A missing channel is not a missing key: the key is never regenerated. With --chain, a chain-specific (linked) address names the profile that links it.",
   risk: "local",
-  params: [
-    { name: "create", type: "boolean", description: "Create and save the channel now if this profile has none in this state folder (random, from the operating system's CSPRNG); an existing one is kept." },
-    { name: "channel", type: "string", description: "With --create, only when none is saved yet: save this earlier channel of the same agent and profile instead of a new random one (decimal or 0x string, 4 to 2^128 - 1)." },
-  ],
-  examples: ["up nonce channel", "up nonce channel --create"],
+  params: [],
+  examples: ["up nonce channel"],
   async run(ctx, a) {
-    await ctx.config();
-    const adopt = parseU(a.channel, "channel");
-    if (adopt !== undefined && a.create !== true) throw new UpError("BAD_ARGS", "--channel needs --create: it only sets the channel of a profile that has none saved yet");
-    let identity = await ctx.identity(a.profile);
-    let chainId: number | undefined;
-    try {
-      chainId = ctx.chainId(a.chain);
-    } catch {}
-    if (chainId !== undefined) identity = await profileIdentityFor(ctx, chainId, identity); // a chain-specific address names its profile
-    const r = a.create === true ? await ensureRelayChannel(ctx.home, identity, { explicit: true, adopt }) : (await relayChannelState(ctx.home, identity)).saved;
-    const created = !!(r && "created" in r && r.created);
-    const scope = "this state folder (this agent) and this profile, on every chain and relayer; the counter is on chain per chain, Key Manager, key and channel (read with: up nonce)";
+    const identity = await channelIdentity(ctx, a);
+    const r = (await relayChannelState(ctx.home, identity)).saved;
     return {
-      data: { profile: identity, relayChannel: r ? channelView(r) : null, created, scope, ...(r ? {} : { note: NOT_CREATED }) },
-      text: r ? `relay channel of ${identity}: ${r.channel}${created ? " (created now)" : ""}` : `relay channel of ${identity}: ${NOT_CREATED}`,
+      data: { profile: identity, relayChannel: r ? channelView(r) : null, created: false, scope: CHANNEL_SCOPE, ...(r ? {} : { note: NOT_CREATED }) },
+      text: r ? `relay channel of ${identity}: ${r.channel}` : `relay channel of ${identity}: ${NOT_CREATED}`,
     };
+  },
+});
+
+defineVerb({
+  name: "nonce channel create",
+  group: "execute",
+  summary: "Save the profile's LSP25 relay channel now, when this state folder has none: a new random uint128 (operating system CSPRNG), or --channel to continue an earlier one. Permanent: a saved channel is never replaced.",
+  description:
+    "Needed after a restore from a key backup, where relayed sends stop with relay_channel_not_created (elsewhere the first relayed send creates the channel). First make sure no relayed action from before is still pending, then continue the earlier channel (--channel <earlier channel>: its calls and new ones stay in order) or save a new random one. It writes only this state folder (nothing is signed or sent), and it cannot be undone: it needs --yes inside the delegated policy or the human's --approval, and for a restored profile the human's --approval (unless policy.allowAdmin). --dry-run shows what would be saved and writes nothing. A channel that is already saved is kept and shown.",
+  risk: "write",
+  params: [{ name: "channel", type: "string", description: "Save this earlier channel of the same agent and profile instead of a new random one (decimal or 0x string, 4 to 2^128 - 1); only while none is saved." }],
+  examples: ["up nonce channel create --dry-run", 'up nonce channel create --channel <earlier channel> --approval "<human\'s words>"'],
+  async run(ctx, a) {
+    const adopt = parseU(a.channel, "channel");
+    if (adopt !== undefined) assertSavableChannel(adopt);
+    const identity = await channelIdentity(ctx, a);
+    const st = await relayChannelState(ctx.home, identity);
+    if (st.saved) {
+      // nothing to create: the saved channel is shown (and a different --channel refused), nothing is written
+      const r = await ensureRelayChannel(ctx.home, identity, { explicit: true, adopt });
+      return { data: { profile: identity, relayChannel: channelView(r), created: false, scope: CHANNEL_SCOPE }, text: `relay channel of ${identity}: ${r.channel} (already saved; kept)` };
+    }
+    const source = adopt !== undefined ? "adopted" : "random";
+    const summary = {
+      effect: adopt !== undefined ? `save the relay channel ${adopt} (an earlier channel of this agent) for ${identity} in this state folder` : `save a new random relay channel for ${identity} in this state folder`,
+      profile: identity,
+      channel: adopt !== undefined ? adopt.toString() : "random, drawn when it is saved",
+      restored: st.restored,
+      permanent: "a saved channel is never replaced: every relayed call of this profile from this state folder uses it",
+      ...(st.restored
+        ? { note: "restored from a backup: a relayed action signed before the restore may still be pending on the earlier channel; check it first (up exec receipt <hash>) or wait until its validity window has passed. Continuing the earlier channel keeps such a call in order with new ones; a new random channel does not" }
+        : {}),
+    };
+    await ctx.consent({ verb: "nonce channel create", risk: st.restored ? "admin" : "write", summary });
+    if (ctx.flags.dryRun) {
+      return {
+        data: { dryRun: true, profile: identity, relayChannel: null, created: false, wouldCreate: { source, channel: adopt?.toString() ?? null }, restored: st.restored, scope: CHANNEL_SCOPE },
+        text: `DRY RUN: ${adopt !== undefined ? `the relay channel ${adopt}` : "a new random relay channel"} would be saved for ${identity} (nothing was written)`,
+      };
+    }
+    const r = await ensureRelayChannel(ctx.home, identity, { explicit: true, adopt });
+    return { data: { profile: identity, relayChannel: channelView(r), created: r.created, scope: CHANNEL_SCOPE }, text: `relay channel of ${identity}: ${r.channel}${r.created ? " (created now)" : " (already saved; kept)"}` };
   },
 });

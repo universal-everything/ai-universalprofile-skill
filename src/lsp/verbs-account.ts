@@ -16,7 +16,7 @@ import { PATH_PARAMS, chainAndProfile, controllerAddress, defaultControllerAddre
 import { DATA_KEYS, extensionKey, parseArrayLength } from "./constants.ts";
 import { decodePermissions, encodePermissions, getPreset, toBytes32 } from "./permissions.ts";
 import { candidateSalts, computeOnChain, deployFromManifest, loadManifest, manifestFromPlan, planDeployment, verifyManifest, DEFAULT_IMPL_VERSION, type Lsp23Inputs } from "./lsp23.ts";
-import { updateProfileRecord } from "../core/profile-record.ts";
+import { readProfileRecord, updateProfileRecord } from "../core/profile-record.ts";
 import { getData, getDataBatch, readControllerPermissions, readControllers, readProfileInfo, resolveKeyManager, type ControllerInfo } from "./profile.ts";
 import { allowedKeyFor, classifyDataKey, decodeDataValue, encodeDataValue, resolveDataKey } from "./schemas.ts";
 import { recommend, setDataPayload, buildAddController, requireLockApproval, type RecommendationOptions } from "./controllers.ts";
@@ -607,6 +607,7 @@ defineVerb({
   async run(ctx, a) {
     const cfg: UpConfig = { ...(await ctx.config()) };
     const profile = addressArg(a.address, "address");
+    await readProfileRecord(ctx.home, profile); // a damaged record stops here, before the config changes (its update below would refuse it)
     const me = await defaultControllerAddress(ctx);
     const chainIds: number[] = a.chains?.length ? (a.chains as string[]).map((c) => ctx.registry.chain(c).chainId) : a.chain ? [ctx.chainId(a.chain)] : cfg.chains?.length ? cfg.chains : cfg.defaultChain ? [cfg.defaultChain] : [];
     if (!chainIds.length) throw new UpError("BAD_ARGS", "no chain selected", { hint: "pass --chains 42,8453 or set: up config set chains 42" });

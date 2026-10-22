@@ -133,8 +133,12 @@ function establishedFor(chainId: number, manifest: DeploymentManifest | undefine
   return out;
 }
 
-/** Profiles recorded on this machine (plus the default profile), narrowed to `only` when given. */
-export async function collectProfiles(ctx: VerbContext, cfg: UpConfig, warnings: string[], opts: { only?: Address[]; refresh?: boolean } = {}): Promise<ProfileState[]> {
+/**
+ * Profiles recorded on this machine (plus the default profile), narrowed to `only` when given. A damaged profile
+ * record is an error (a backup must never silently lack that profile's data); with `damaged: "warn"` (the read-only
+ * `profile identity`) it is left out with a warning instead. Nothing is ever written here.
+ */
+export async function collectProfiles(ctx: VerbContext, cfg: UpConfig, warnings: string[], opts: { only?: Address[]; refresh?: boolean; damaged?: "warn" } = {}): Promise<ProfileState[]> {
   const dir = paths.profiles(ctx.home);
   const names = (await readdir(dir).catch(() => [] as string[])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
   const identities = new Map<string, Address>();
@@ -149,7 +153,14 @@ export async function collectProfiles(ctx: VerbContext, cfg: UpConfig, warnings:
   const ordered = [...identities.values()].sort((a, b) => (cfg.defaultProfile && sameAddress(a, cfg.defaultProfile) ? -1 : cfg.defaultProfile && sameAddress(b, cfg.defaultProfile) ? 1 : a.localeCompare(b)));
   for (const id of ordered) {
     if (opts.only && !opts.only.some((o) => sameAddress(o, id))) continue;
-    const record = await readProfileRecord(ctx.home, id);
+    let record: Record<string, any>;
+    try {
+      record = await readProfileRecord(ctx.home, id);
+    } catch (e) {
+      if (opts.damaged !== "warn") throw e;
+      warnings.push(`the saved record of ${id} is damaged, so its networks and controllers are not shown (${(e as Error).message}); ask the human to repair the file, never delete it`);
+      continue;
+    }
     const linked = chainAddressesOf(record);
     let manifest: DeploymentManifest | undefined = record.deployment;
     if (manifest && (manifest.kind !== "lsp23-erc1167-up" || !verifyManifest(manifest).ok)) {

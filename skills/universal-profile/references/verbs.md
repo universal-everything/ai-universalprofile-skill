@@ -12,7 +12,7 @@ Risk classes: **local** (no chain writes), **read** (chain/HTTP reads), **write*
 - **chains**: [`chains add`](#chains-add), [`chains list`](#chains-list), [`chains refresh`](#chains-refresh), [`chains rpc find`](#chains-rpc-find), [`chains rpc list`](#chains-rpc-list), [`chains rpc set`](#chains-rpc-set), [`chains rpc verify`](#chains-rpc-verify), [`chains verify`](#chains-verify), [`funding suggest`](#funding-suggest)
 - **display**: [`display address`](#display-address), [`identicon`](#identicon), [`qr`](#qr)
 - **erc4337**: [`account 4337 deploy-entrypoint`](#account-4337-deploy-entrypoint), [`account 4337 deploy-extension`](#account-4337-deploy-extension), [`account 4337 deposit`](#account-4337-deposit), [`account 4337 disable`](#account-4337-disable), [`account 4337 enable`](#account-4337-enable), [`account 4337 status`](#account-4337-status), [`account 4337 withdraw`](#account-4337-withdraw), [`bundler set`](#bundler-set)
-- **execute**: [`exec batch`](#exec-batch), [`exec call`](#exec-call), [`exec receipt`](#exec-receipt), [`exec relay`](#exec-relay), [`exec send`](#exec-send), [`exec simulate`](#exec-simulate), [`exec userop`](#exec-userop), [`nonce`](#nonce), [`nonce channel`](#nonce-channel)
+- **execute**: [`exec batch`](#exec-batch), [`exec call`](#exec-call), [`exec receipt`](#exec-receipt), [`exec relay`](#exec-relay), [`exec send`](#exec-send), [`exec simulate`](#exec-simulate), [`exec userop`](#exec-userop), [`nonce`](#nonce), [`nonce channel`](#nonce-channel), [`nonce channel create`](#nonce-channel-create)
 - **key**: [`init`](#init), [`key activate`](#key-activate), [`key address`](#key-address), [`key backend`](#key-backend), [`key backup`](#key-backup), [`key new-candidate`](#key-new-candidate)
 - **knowledge**: [`docs`](#docs), [`protocols list`](#protocols-list), [`protocols verify`](#protocols-verify), [`standards list`](#standards-list)
 - **permissions**: [`allowed-calls set`](#allowed-calls-set), [`allowed-calls show`](#allowed-calls-show), [`allowed-keys set`](#allowed-keys-set), [`allowed-keys show`](#allowed-keys-show), [`controller add`](#controller-add), [`controller edit`](#controller-edit), [`controller remove`](#controller-remove), [`ownership accept`](#ownership-accept), [`ownership renounce`](#ownership-renounce), [`ownership transfer`](#ownership-transfer), [`permissions decode`](#permissions-decode), [`permissions encode`](#permissions-encode), [`permissions list`](#permissions-list), [`permissions presets`](#permissions-presets), [`permissions recommend`](#permissions-recommend), [`permissions show`](#permissions-show)
@@ -1092,23 +1092,37 @@ Three separate counters: the relay (LSP25) nonce per chain, Key Manager, control
 
 ### nonce channel
 
-Show this agent's saved LSP25 relay channel for the profile (one random uint128 per profile in this state folder, used by every relayed call on every chain and relayer); --create creates it now.
+Show this agent's saved LSP25 relay channel for the profile (one random uint128 per profile in this state folder, used by every relayed call on every chain and relayer). Read-only: never creates one (up nonce channel create does).
 
-The channel is public (not a secret) and is never replaced: no new channel per chat, restart, upgrade, relayer or chain, and never one to get around a pending call. It is saved in this state folder's profile record, not in key backups. Without --create nothing is written. After a restore from a key backup it is not known here: first make sure no relayed action from before is still pending, then --create (new random channel) or --create --channel <earlier channel> to continue the one this agent used before. A missing channel is not a missing key: the key is never regenerated.
+The channel is public (not a secret) and is never replaced: no new channel per chat, restart, upgrade, relayer or chain, and never one to get around a pending call. It is saved in this state folder's profile record, not in key backups. A missing channel is not a missing key: the key is never regenerated. With --chain, a chain-specific (linked) address names the profile that links it.
 
 - CLI: `up nonce channel [options]`
 - MCP tool: `up_nonce_channel` · risk: **local**
-
-| option | type | required | description |
-| --- | --- | --- | --- |
-| `--create` | boolean |  | Create and save the channel now if this profile has none in this state folder (random, from the operating system's CSPRNG); an existing one is kept. |
-| `--channel` | string |  | With --create, only when none is saved yet: save this earlier channel of the same agent and profile instead of a new random one (decimal or 0x string, 4 to 2^128 - 1). |
 
 Examples:
 
 ```
 up nonce channel
-up nonce channel --create
+```
+
+### nonce channel create
+
+Save the profile's LSP25 relay channel now, when this state folder has none: a new random uint128 (operating system CSPRNG), or --channel to continue an earlier one. Permanent: a saved channel is never replaced.
+
+Needed after a restore from a key backup, where relayed sends stop with relay_channel_not_created (elsewhere the first relayed send creates the channel). First make sure no relayed action from before is still pending, then continue the earlier channel (--channel <earlier channel>: its calls and new ones stay in order) or save a new random one. It writes only this state folder (nothing is signed or sent), and it cannot be undone: it needs --yes inside the delegated policy or the human's --approval, and for a restored profile the human's --approval (unless policy.allowAdmin). --dry-run shows what would be saved and writes nothing. A channel that is already saved is kept and shown.
+
+- CLI: `up nonce channel create [options]`
+- MCP tool: `up_nonce_channel_create` · risk: **write**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--channel` | string |  | Save this earlier channel of the same agent and profile instead of a new random one (decimal or 0x string, 4 to 2^128 - 1); only while none is saved. |
+
+Examples:
+
+```
+up nonce channel create --dry-run
+up nonce channel create --channel <earlier channel> --approval "<human's words>"
 ```
 
 ## key

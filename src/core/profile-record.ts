@@ -5,12 +5,37 @@
 // One Universal Profile is one account on many chains. Normally it has the same address
 // everywhere (LSP23 replays the same inputs). When it exists at a different address on
 // some chain (another factory or salt), that address is linked in `chainAddresses`.
+//
+// A record that cannot be read, is not valid JSON or is not a JSON object is damage, never "no
+// record": reading it is an error, so nothing is written over it and nothing acts on a guess
+// (no link means the wrong address on a linked chain; a lost relay channel would be replaced).
+import { readFile } from "node:fs/promises";
 import { getAddress, isAddress, type Address } from "viem";
-import { paths, readJson, writeJson } from "./home.ts";
+import { UpError } from "./errors.ts";
+import { isJsonObject, paths, writeJson } from "./home.ts";
 import { withLock } from "./lock.ts";
 
+const REPAIR_HINT =
+  "repair it by hand or put back a copy (it is this profile's saved public state as one JSON object: relay channel, deployment manifest, linked addresses …; keep every field). Never delete it to start over: a new relay channel would let calls signed on the old one execute as well";
+
+/** The profile record ({} when there is none yet). Damage is an error that changes nothing (see above). */
 export async function readProfileRecord(home: string, profile: Address): Promise<Record<string, any>> {
-  return readJson<Record<string, any>>(paths.profile(home, profile), {});
+  const file = paths.profile(home, profile);
+  let text: string;
+  try {
+    text = await readFile(file, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw new UpError("INTERNAL", `cannot read the profile record ${file} (${(e as NodeJS.ErrnoException).code ?? "error"}); nothing was changed`, { hint: `fix its permissions; ${REPAIR_HINT}` });
+  }
+  let v: unknown;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    throw new UpError("INTERNAL", `${file} is not a valid profile record (not valid JSON); nothing was changed and it will not be overwritten`, { hint: REPAIR_HINT });
+  }
+  if (!isJsonObject(v)) throw new UpError("INTERNAL", `${file} is not a valid profile record (not a JSON object); nothing was changed and it will not be overwritten`, { hint: REPAIR_HINT });
+  return v;
 }
 
 /**

@@ -16,14 +16,13 @@
 // channel is astronomically unlikely, not impossible. It applies to LSP25 relay calls only: the key's own
 // transaction nonce and ERC-4337 nonces are separate counters and are never random.
 import { randomBytes } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { getAddress, type Address } from "viem";
 import type { VerbContext } from "../core/types.ts";
 import { UpError } from "../core/errors.ts";
 import { isJsonObject, paths, writeJson } from "../core/home.ts";
 import { withLock } from "../core/lock.ts";
-import { chainAddressesOf, profileAddressOn, readProfileRecord } from "../core/profile-record.ts";
+import { chainAddressesOf, readProfileRecord } from "../core/profile-record.ts";
 
 const U128 = (1n << 128n) - 1n;
 /** Channel 0 is the shared strictly ordered channel and 1..3 are values people pick by hand: never a saved channel. */
@@ -68,38 +67,22 @@ export function savedChannelOf(record: Record<string, any>, file: string): Relay
   return { channel, createdAt: typeof r.createdAt === "string" ? r.createdAt : undefined, source: typeof r.source === "string" ? r.source : undefined };
 }
 
-/** The profile record, read strictly: undefined when there is none; unreadable or invalid JSON is an error (nothing is written over it). */
-async function recordStrict(home: string, identity: Address): Promise<Record<string, any> | undefined> {
-  const file = paths.profile(home, identity);
-  let text: string;
-  try {
-    text = await readFile(file, "utf8");
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw new UpError("INTERNAL", `cannot read ${file} (${(e as NodeJS.ErrnoException).code ?? "error"}); nothing was signed`, { hint: "fix its permissions" });
-  }
-  let v: unknown;
-  try {
-    v = JSON.parse(text);
-  } catch {}
-  if (!isJsonObject(v)) {
-    throw new UpError("INTERNAL", `${file} is not a valid profile record; nothing was signed and no relay channel was made`, { hint: "repair the file (it holds this profile's saved public state, including its relay channel); never delete it to get a new channel" });
-  }
-  return v;
-}
-
-/** What this state folder knows about the profile's relay channel, without writing anything. */
+/** What this state folder knows about the profile's relay channel, without writing anything (a damaged record is an error). */
 export async function relayChannelState(home: string, identity: Address): Promise<{ saved?: RelayChannel; restored: boolean }> {
   const id = getAddress(identity);
-  const record = await recordStrict(home, id);
-  if (!record) return { restored: false };
+  const record = await readProfileRecord(home, id);
   return { saved: savedChannelOf(record, paths.profile(home, id)), restored: record.imported !== undefined };
+}
+
+/** A channel that may be saved: 4 to 2^128 - 1 (0..3 are shared, hand-picked values). */
+export function assertSavableChannel(channel: bigint): void {
+  if (channel < MIN_SAVED_CHANNEL || channel > U128) throw new UpError("BAD_ARGS", "a saved relay channel must be between 4 and 2^128 - 1 (0..3 are shared, hand-picked values)");
 }
 
 /** The error a relayed send gets for a profile restored from a backup whose channel is not known here. */
 export function restoredWithoutChannel(identity: Address): UpError {
   return new UpError("NOT_SUPPORTED", `the profile ${identity} was restored from a backup into this state folder, and its relay channel is not known here (a key backup does not carry it); nothing was signed`, {
-    hint: "a relayed action from before the restore may still be pending on the earlier channel: check it first (up exec receipt <hash>), or wait until its validity window has passed (10 minutes by default). Then create this profile's channel: up nonce channel --create (new random channel), or up nonce channel --create --channel <earlier channel> to continue the one used before. Never repeat an earlier action before you know it did not execute",
+    hint: "a relayed action from before the restore may still be pending on the earlier channel: check it first (up exec receipt <hash>), or wait until its validity window has passed (10 minutes by default). Then, with the human's approval, create this profile's channel: up nonce channel create --channel <earlier channel> to continue the one used before (its calls stay in order), or up nonce channel create for a new random channel (--dry-run shows what would be saved). Never repeat an earlier action before you know it did not execute",
     details: { code: "relay_channel_not_created", profile: identity, restored: true },
   });
 }
@@ -119,11 +102,11 @@ export async function ensureRelayChannel(home: string, identity: Address, opts: 
     }
     return { ...have, created: false };
   };
-  if (opts.adopt !== undefined && (opts.adopt < MIN_SAVED_CHANNEL || opts.adopt > U128)) throw new UpError("BAD_ARGS", "a saved relay channel must be between 4 and 2^128 - 1 (0..3 are shared, hand-picked values)");
+  if (opts.adopt !== undefined) assertSavableChannel(opts.adopt);
   const seen = await relayChannelState(home, id);
   if (seen.saved) return keep(seen.saved);
   return withLock(home, `profile-${id.toLowerCase()}`, async () => {
-    const latest = (await recordStrict(home, id)) ?? {};
+    const latest = await readProfileRecord(home, id);
     const have = savedChannelOf(latest, file);
     if (have) return keep(have);
     if (latest.imported !== undefined && !opts.explicit) throw restoredWithoutChannel(id);
@@ -135,23 +118,30 @@ export async function ensureRelayChannel(home: string, identity: Address, opts: 
 }
 
 /**
- * The profile identity a chain-specific profile address belongs to: the verb's profile when it is linked to
- * that address on `chainId`, else the address itself when it has its own record, else the one record that
- * links it on that chain, else the address.
+ * The profile identity a chain-specific profile address belongs to: the one profile whose record links it on
+ * `chainId`, else the address itself. It does not depend on who asks (--profile or the default profile), so every
+ * relayed call to one address on one chain uses one saved channel, also when the address has a record of its own
+ * (it relayed as itself before the link). Several linking profiles are refused, and so is any damaged record (it
+ * could be the one that links it): never a guess that picks another channel.
  */
 export async function profileIdentityFor(ctx: VerbContext, chainId: number, profile: Address): Promise<Address> {
   const p = getAddress(profile);
+  let names: string[] = [];
   try {
-    const id = getAddress(await ctx.identity());
-    if (id !== p && getAddress(await profileAddressOn(ctx.home, id, chainId)) === p) return id;
-  } catch {}
-  if (existsSync(paths.profile(ctx.home, p))) return p;
-  const names = (await readdir(paths.profiles(ctx.home)).catch(() => [] as string[])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
+    names = (await readdir(paths.profiles(ctx.home))).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw new UpError("INTERNAL", `cannot read the profile records in ${paths.profiles(ctx.home)} (${(e as NodeJS.ErrnoException).code ?? "error"}); nothing was changed`, { hint: "fix the folder's permissions" });
+  }
   const linking: Address[] = [];
   for (const n of names) {
     const id = getAddress(n.slice(0, 42));
-    if (chainAddressesOf(await readProfileRecord(ctx.home, id))[String(chainId)] === p) linking.push(id);
+    const linked = chainAddressesOf(await readProfileRecord(ctx.home, id))[String(chainId)];
+    if (id !== p && linked === p) linking.push(id);
   }
-  if (linking.length > 1) throw new UpError("BAD_ARGS", `${p} is linked on chain ${chainId} by several profiles (${linking.join(", ")})`, { hint: "pass --profile <profile address> to say which profile acts" });
+  if (linking.length > 1) {
+    throw new UpError("BAD_ARGS", `${p} is linked on chain ${chainId} by several profiles (${linking.join(", ")}); nothing was signed`, {
+      hint: `an address on a chain belongs to one profile: ask the human which link is wrong and remove it (up profile link --unlink --chain ${chainId} --profile <that profile> --approval "<human's words>")`,
+    });
+  }
   return linking[0] ?? p;
 }

@@ -9,6 +9,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getAddress, type Address } from "viem";
 import { ensureRelayChannel, MIN_SAVED_CHANNEL, profileIdentityFor, randomChannel, relayChannelState, setChannelEntropy } from "../../../src/lsp/relay-channel.ts";
+import "../../../src/verbs/index.ts";
+import { coerceArgs, getVerb } from "../../../src/core/verbs.ts";
+import { handleMcpMessage } from "../../../src/mcp/server.ts";
+import type { VerbContext } from "../../../src/core/types.ts";
 import { testContext } from "../../support/context.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
@@ -193,5 +197,111 @@ describe("profile identity of a chain-specific address", () => {
     writeRecord(h2, A, { address: A, chainAddresses: { "31338": B } });
     writeRecord(h2, C, { address: C, chainAddresses: { "31338": B } });
     await expect(profileIdentityFor(testContext(h2), 31338, B)).rejects.toMatchObject({ code: "BAD_ARGS", message: /linked on chain 31338 by several profiles/ });
+  });
+
+  it("a linked address that also has its own record (it relayed for itself before the link) belongs to the linking profile for every caller: one channel there", async () => {
+    const home = newHome();
+    writeRecord(home, A, { address: A, chainAddresses: { "31338": B } });
+    writeRecord(home, B, { address: B, relayChannel: { channel: "4242", source: "random" } });
+    writeFileSync(join(home, "config.json"), JSON.stringify({ version: 1, defaultProfile: A }));
+    const asB = await profileIdentityFor(testContext(home, undefined, { profile: B }), 31338, B);
+    const asA = await profileIdentityFor(testContext(home), 31338, B);
+    expect([asB, asA]).toEqual([A, A]);
+    // where nothing links it, the address is its own profile
+    expect(await profileIdentityFor(testContext(home, undefined, { profile: B }), 42, B)).toBe(B);
+  });
+
+  it("two profiles linking one address on a chain are refused whoever asks (no channel per caller)", async () => {
+    const home = newHome();
+    writeRecord(home, A, { address: A, chainAddresses: { "31338": B } });
+    writeRecord(home, C, { address: C, chainAddresses: { "31338": B } });
+    for (const profile of [A, C, undefined]) {
+      await expect(profileIdentityFor(testContext(home, undefined, profile ? { profile } : {}), 31338, B)).rejects.toMatchObject({ code: "BAD_ARGS", message: /linked on chain 31338 by several profiles/ });
+    }
+  });
+
+  it("a damaged record could link the address: the lookup stops (INTERNAL) instead of guessing, and no channel is made", async () => {
+    const home = newHome();
+    writeRecord(home, A, { address: A });
+    writeRecord(home, C, '{"address":"' + C + '","chainAddresses":{"31338":"' + A + '"}');
+    await expect(profileIdentityFor(testContext(home), 31338, A)).rejects.toMatchObject({ code: "INTERNAL", message: /not a valid profile record/ });
+    expect(readRecord(home, A)).toEqual({ address: A });
+  });
+});
+
+describe("nonce channel shows; nonce channel create is a controlled write of permanent state", () => {
+  const run = async (ctx: VerbContext, name: string, raw: Record<string, unknown> = {}) => {
+    const v = getVerb(name)!;
+    return (await v.run(ctx, coerceArgs(v, raw))) as { data: any; text?: string };
+  };
+  const auditLines = (home: string) => {
+    try {
+      return readFileSync(join(home, "audit.log"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    } catch {
+      return [];
+    }
+  };
+
+  it("nonce channel has no --create and never writes", async () => {
+    const home = newHome();
+    expect(() => coerceArgs(getVerb("nonce channel")!, { create: true })).toThrow(/unknown option --create/);
+    expect((await run(testContext(home), "nonce channel", { profile: A })).data).toMatchObject({ profile: A, relayChannel: null });
+    expect(() => readFileSync(recordFile(home, A))).toThrow();
+    expect(getVerb("nonce channel")!.risk).toBe("local");
+    expect(getVerb("nonce channel create")!.risk).toBe("write");
+  });
+
+  it("--dry-run reports what would be saved and writes nothing; the real run needs --yes (or the human's --approval) and is audited", async () => {
+    const home = newHome();
+    setChannelEntropy(fixture(0xabcdefn));
+    const dry = await run(testContext(home, undefined, { dryRun: true, yes: false }), "nonce channel create", { profile: A });
+    expect(dry.data).toMatchObject({ dryRun: true, profile: A, relayChannel: null, created: false, wouldCreate: { source: "random", channel: null }, restored: false });
+    expect(dry.text).toMatch(/^DRY RUN: a new random relay channel would be saved for/);
+    await expect(run(testContext(home, undefined, { yes: false }), "nonce channel create", { profile: A })).rejects.toMatchObject({ code: "CONSENT_REQUIRED" });
+    expect(() => readFileSync(recordFile(home, A))).toThrow();
+    expect(auditLines(home)).toEqual([]);
+
+    const made = await run(testContext(home, undefined, { yes: true }), "nonce channel create", { profile: A });
+    expect(made.data).toMatchObject({ profile: A, created: true, relayChannel: { channel: "11259375", source: "random" } });
+    expect(readRecord(home, A).relayChannel.channel).toBe("11259375");
+    expect(auditLines(home)).toEqual([expect.objectContaining({ action: "nonce channel create", decision: "policy", profile: A })]);
+    // once saved: nothing to create, so no consent is needed and nothing is written (also not by a dry run)
+    const before = readFileSync(recordFile(home, A), "utf8");
+    for (const flags of [{ yes: false }, { yes: false, dryRun: true }]) {
+      expect((await run(testContext(home, undefined, flags), "nonce channel create", { profile: A })).data).toMatchObject({ created: false, relayChannel: { channel: "11259375" } });
+    }
+    await expect(run(testContext(home, undefined, { approval: "human: yes" }), "nonce channel create", { profile: A, channel: "99" })).rejects.toMatchObject({ code: "BAD_ARGS", message: /never replaced/ });
+    expect(readFileSync(recordFile(home, A), "utf8")).toBe(before);
+    expect(auditLines(home)).toHaveLength(1);
+  });
+
+  it("a profile restored from a backup needs the human's own approval (--yes is not enough); the dry run shows the channel that would be continued", async () => {
+    const home = newHome();
+    writeRecord(home, A, { address: A, imported: { file: "backup.json", chains: [] } });
+    const before = readFileSync(recordFile(home, A), "utf8");
+    const yesOnly = await run(testContext(home, undefined, { yes: true }), "nonce channel create", { profile: A }).catch((e) => e);
+    expect(yesOnly).toMatchObject({ code: "CONSENT_REQUIRED", details: { confirmation: { action: "nonce channel create", restored: true } } });
+    expect(yesOnly.details.confirmation.note).toMatch(/still be pending on the earlier channel/);
+    const dry = await run(testContext(home, undefined, { dryRun: true, yes: false }), "nonce channel create", { profile: A, channel: "98765432109876543210" });
+    expect(dry.data).toMatchObject({ dryRun: true, created: false, wouldCreate: { source: "adopted", channel: "98765432109876543210" }, restored: true });
+    await expect(run(testContext(home, undefined, { dryRun: true }), "nonce channel create", { profile: A, channel: "3" })).rejects.toMatchObject({ code: "BAD_ARGS", message: /between 4 and 2\^128 - 1/ });
+    expect(readFileSync(recordFile(home, A), "utf8")).toBe(before);
+    const adopted = await run(testContext(home, undefined, { yes: false, approval: "human: continue the earlier channel" }), "nonce channel create", { profile: A, channel: "98765432109876543210" });
+    expect(adopted.data).toMatchObject({ created: true, relayChannel: { channel: "98765432109876543210", source: "adopted" } });
+    expect(auditLines(home)).toEqual([expect.objectContaining({ action: "nonce channel create", decision: "approval", restored: true })]);
+  });
+
+  it("MCP: up_nonce_channel is read-only, up_nonce_channel_create is not (and is not destructive); its dry run writes nothing", async () => {
+    const list: any = await handleMcpMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const tool = (n: string) => list.result.tools.find((t: any) => t.name === n);
+    expect(tool("up_nonce_channel").annotations).toMatchObject({ readOnlyHint: true });
+    expect(tool("up_nonce_channel_create").annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+    expect(Object.keys(tool("up_nonce_channel").inputSchema.properties)).not.toContain("create");
+    const home = newHome();
+    process.env.UP_HOME = home;
+    const r: any = await handleMcpMessage({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "up_nonce_channel_create", arguments: { profile: A, "dry-run": true } } });
+    expect(r.result.isError).toBe(false);
+    expect(r.result.structuredContent.data).toMatchObject({ dryRun: true, created: false });
+    expect(() => readFileSync(recordFile(home, A))).toThrow();
   });
 });

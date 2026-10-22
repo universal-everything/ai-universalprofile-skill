@@ -1,6 +1,6 @@
 // Universal Profile skill — backup verbs (loaded on demand by app.mjs)
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 6b0148a81890 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 141791651b33 (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { $s0, $s1, $s2, $s3, $s4, $s5, $s6, $s7, $s8, $s9, $s10, $s11, $s12, $s13, $s14, $s15, $s16, $s17, $s18 } from "./app.mjs";
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
@@ -12,6 +12,7 @@ import { basename as basename2 } from "node:path";
 const { UpError: UpError7 } = $s1;
 const { paths: paths3 } = $s2;
 const { releaseKeys } = $s3;
+const { readProfileRecord: readProfileRecord2 } = $s4;
 const { assertNoKeyMaterial: assertNoKeyMaterial3 } = $s5;
 const { safeFileText: safeFileText3 } = $s6;
 const { chooseBackend, internalBackend: internalBackend3 } = $s14;
@@ -688,7 +689,14 @@ async function collectProfiles(ctx, cfg, warnings, opts = {}) {
   const ordered = [...identities.values()].sort((a, b) => cfg.defaultProfile && sameAddress2(a, cfg.defaultProfile) ? -1 : cfg.defaultProfile && sameAddress2(b, cfg.defaultProfile) ? 1 : a.localeCompare(b));
   for (const id of ordered) {
     if (opts.only && !opts.only.some((o) => sameAddress2(o, id))) continue;
-    const record = await readProfileRecord(ctx.home, id);
+    let record;
+    try {
+      record = await readProfileRecord(ctx.home, id);
+    } catch (e) {
+      if (opts.damaged !== "warn") throw e;
+      warnings.push(`the saved record of ${id} is damaged, so its networks and controllers are not shown (${e.message}); ask the human to repair the file, never delete it`);
+      continue;
+    }
     const linked = chainAddressesOf(record);
     let manifest = record.deployment;
     if (manifest && (manifest.kind !== "lsp23-erc1167-up" || !verifyManifest2(manifest).ok)) {
@@ -1558,6 +1566,7 @@ async function runImport(ctx, a) {
       warnings: opened.issues.filter((i) => i.level === "warn").map((i) => i.message)
     };
   }
+  for (const x of chosen) await readProfileRecord2(ctx.home, x.account.address);
   const summary = {
     effect: "restore profiles and keys from a backup file into this agent's key store and records",
     ...plan,

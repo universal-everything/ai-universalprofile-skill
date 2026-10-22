@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 6b0148a81890 (sha256 of src/ and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 141791651b33 (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -4962,9 +4962,25 @@ __export(profile_record_exports, {
   updateProfileRecord: () => updateProfileRecord,
   writeProfileRecord: () => writeProfileRecord
 });
+import { readFile as readFile6 } from "node:fs/promises";
 import { getAddress as getAddress9, isAddress as isAddress6 } from "./vendor-viem.mjs";
 async function readProfileRecord(home, profile) {
-  return readJson(paths.profile(home, profile), {});
+  const file2 = paths.profile(home, profile);
+  let text;
+  try {
+    text = await readFile6(file2, "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT") return {};
+    throw new UpError("INTERNAL", `cannot read the profile record ${file2} (${e.code ?? "error"}); nothing was changed`, { hint: `fix its permissions; ${REPAIR_HINT}` });
+  }
+  let v;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    throw new UpError("INTERNAL", `${file2} is not a valid profile record (not valid JSON); nothing was changed and it will not be overwritten`, { hint: REPAIR_HINT });
+  }
+  if (!isJsonObject(v)) throw new UpError("INTERNAL", `${file2} is not a valid profile record (not a JSON object); nothing was changed and it will not be overwritten`, { hint: REPAIR_HINT });
+  return v;
 }
 async function updateProfileRecord(home, profile, fn) {
   return withLock(home, `profile-${getAddress9(profile).toLowerCase()}`, async () => {
@@ -4996,11 +5012,14 @@ function linkEvidenceOf(record, chainId) {
   if (!ev || !linked || typeof ev.address !== "string" || ev.address.toLowerCase() !== linked.toLowerCase() || !Array.isArray(ev.controllers)) return [];
   return ev.controllers.filter((a) => typeof a === "string" && isAddress6(a, { strict: false })).map((a) => getAddress9(a));
 }
+var REPAIR_HINT;
 var init_profile_record = __esm({
   "src/core/profile-record.ts"() {
     "use strict";
+    init_errors();
     init_home();
     init_lock();
+    REPAIR_HINT = "repair it by hand or put back a copy (it is this profile's saved public state as one JSON object: relay channel, deployment manifest, linked addresses …; keep every field). Never delete it to start over: a new relay channel would let calls signed on the old one execute as well";
   }
 });
 
@@ -5185,7 +5204,7 @@ __export(inventory_exports, {
   readInventory: () => readInventory,
   recordKey: () => recordKey
 });
-import { readFile as readFile6 } from "node:fs/promises";
+import { readFile as readFile7 } from "node:fs/promises";
 import { join as join8 } from "node:path";
 import { getAddress as getAddress11, isAddress as isAddress8 } from "./vendor-viem.mjs";
 function inventoryFile(home) {
@@ -5212,7 +5231,7 @@ function recordsIn(line) {
 async function readInventory(home) {
   let text = "";
   try {
-    text = await readFile6(inventoryFile(home), "utf8");
+    text = await readFile7(inventoryFile(home), "utf8");
   } catch (e) {
     if (e.code === "ENOENT") return [];
     throw e;
@@ -8874,7 +8893,14 @@ async function collectProfiles(ctx, cfg, warnings, opts = {}) {
   const ordered = [...identities.values()].sort((a, b) => cfg.defaultProfile && sameAddress3(a, cfg.defaultProfile) ? -1 : cfg.defaultProfile && sameAddress3(b, cfg.defaultProfile) ? 1 : a.localeCompare(b));
   for (const id of ordered) {
     if (opts.only && !opts.only.some((o) => sameAddress3(o, id))) continue;
-    const record = await readProfileRecord(ctx.home, id);
+    let record;
+    try {
+      record = await readProfileRecord(ctx.home, id);
+    } catch (e) {
+      if (opts.damaged !== "warn") throw e;
+      warnings.push(`the saved record of ${id} is damaged, so its networks and controllers are not shown (${e.message}); ask the human to repair the file, never delete it`);
+      continue;
+    }
     const linked = chainAddressesOf(record);
     let manifest = record.deployment;
     if (manifest && (manifest.kind !== "lsp23-erc1167-up" || !verifyManifest(manifest).ok)) {
@@ -9033,7 +9059,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.1.0" : "0.0.0-dev";
-var SOURCE = true ? "6b0148a81890" : "source";
+var SOURCE = true ? "141791651b33" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -10127,8 +10153,7 @@ init_home();
 init_lock();
 init_profile_record();
 import { randomBytes as randomBytes7 } from "node:crypto";
-import { readdir, readFile as readFile7 } from "node:fs/promises";
-import { existsSync as existsSync15 } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { getAddress as getAddress20 } from "./vendor-viem.mjs";
 var U1282 = (1n << 128n) - 1n;
 var MIN_SAVED_CHANNEL = 4n;
@@ -10153,34 +10178,17 @@ function savedChannelOf(record, file2) {
   if (channel < MIN_SAVED_CHANNEL || channel > U1282) throw damaged(file2);
   return { channel, createdAt: typeof r.createdAt === "string" ? r.createdAt : void 0, source: typeof r.source === "string" ? r.source : void 0 };
 }
-async function recordStrict(home, identity) {
-  const file2 = paths.profile(home, identity);
-  let text;
-  try {
-    text = await readFile7(file2, "utf8");
-  } catch (e) {
-    if (e.code === "ENOENT") return void 0;
-    throw new UpError("INTERNAL", `cannot read ${file2} (${e.code ?? "error"}); nothing was signed`, { hint: "fix its permissions" });
-  }
-  let v;
-  try {
-    v = JSON.parse(text);
-  } catch {
-  }
-  if (!isJsonObject(v)) {
-    throw new UpError("INTERNAL", `${file2} is not a valid profile record; nothing was signed and no relay channel was made`, { hint: "repair the file (it holds this profile's saved public state, including its relay channel); never delete it to get a new channel" });
-  }
-  return v;
-}
 async function relayChannelState(home, identity) {
   const id = getAddress20(identity);
-  const record = await recordStrict(home, id);
-  if (!record) return { restored: false };
+  const record = await readProfileRecord(home, id);
   return { saved: savedChannelOf(record, paths.profile(home, id)), restored: record.imported !== void 0 };
+}
+function assertSavableChannel(channel) {
+  if (channel < MIN_SAVED_CHANNEL || channel > U1282) throw new UpError("BAD_ARGS", "a saved relay channel must be between 4 and 2^128 - 1 (0..3 are shared, hand-picked values)");
 }
 function restoredWithoutChannel(identity) {
   return new UpError("NOT_SUPPORTED", `the profile ${identity} was restored from a backup into this state folder, and its relay channel is not known here (a key backup does not carry it); nothing was signed`, {
-    hint: "a relayed action from before the restore may still be pending on the earlier channel: check it first (up exec receipt <hash>), or wait until its validity window has passed (10 minutes by default). Then create this profile's channel: up nonce channel --create (new random channel), or up nonce channel --create --channel <earlier channel> to continue the one used before. Never repeat an earlier action before you know it did not execute",
+    hint: "a relayed action from before the restore may still be pending on the earlier channel: check it first (up exec receipt <hash>), or wait until its validity window has passed (10 minutes by default). Then, with the human's approval, create this profile's channel: up nonce channel create --channel <earlier channel> to continue the one used before (its calls stay in order), or up nonce channel create for a new random channel (--dry-run shows what would be saved). Never repeat an earlier action before you know it did not execute",
     details: { code: "relay_channel_not_created", profile: identity, restored: true }
   });
 }
@@ -10193,11 +10201,11 @@ async function ensureRelayChannel(home, identity, opts = {}) {
     }
     return { ...have, created: false };
   };
-  if (opts.adopt !== void 0 && (opts.adopt < MIN_SAVED_CHANNEL || opts.adopt > U1282)) throw new UpError("BAD_ARGS", "a saved relay channel must be between 4 and 2^128 - 1 (0..3 are shared, hand-picked values)");
+  if (opts.adopt !== void 0) assertSavableChannel(opts.adopt);
   const seen = await relayChannelState(home, id);
   if (seen.saved) return keep(seen.saved);
   return withLock(home, `profile-${id.toLowerCase()}`, async () => {
-    const latest = await recordStrict(home, id) ?? {};
+    const latest = await readProfileRecord(home, id);
     const have = savedChannelOf(latest, file2);
     if (have) return keep(have);
     if (latest.imported !== void 0 && !opts.explicit) throw restoredWithoutChannel(id);
@@ -10209,19 +10217,23 @@ async function ensureRelayChannel(home, identity, opts = {}) {
 }
 async function profileIdentityFor(ctx, chainId, profile) {
   const p = getAddress20(profile);
+  let names = [];
   try {
-    const id = getAddress20(await ctx.identity());
-    if (id !== p && getAddress20(await profileAddressOn(ctx.home, id, chainId)) === p) return id;
-  } catch {
+    names = (await readdir(paths.profiles(ctx.home))).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
+  } catch (e) {
+    if (e.code !== "ENOENT") throw new UpError("INTERNAL", `cannot read the profile records in ${paths.profiles(ctx.home)} (${e.code ?? "error"}); nothing was changed`, { hint: "fix the folder's permissions" });
   }
-  if (existsSync15(paths.profile(ctx.home, p))) return p;
-  const names = (await readdir(paths.profiles(ctx.home)).catch(() => [])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
   const linking = [];
   for (const n of names) {
     const id = getAddress20(n.slice(0, 42));
-    if (chainAddressesOf(await readProfileRecord(ctx.home, id))[String(chainId)] === p) linking.push(id);
+    const linked = chainAddressesOf(await readProfileRecord(ctx.home, id))[String(chainId)];
+    if (id !== p && linked === p) linking.push(id);
   }
-  if (linking.length > 1) throw new UpError("BAD_ARGS", `${p} is linked on chain ${chainId} by several profiles (${linking.join(", ")})`, { hint: "pass --profile <profile address> to say which profile acts" });
+  if (linking.length > 1) {
+    throw new UpError("BAD_ARGS", `${p} is linked on chain ${chainId} by several profiles (${linking.join(", ")}); nothing was signed`, {
+      hint: `an address on a chain belongs to one profile: ask the human which link is wrong and remove it (up profile link --unlink --chain ${chainId} --profile <that profile> --approval "<human's words>")`
+    });
+  }
   return linking[0] ?? p;
 }
 
@@ -10281,6 +10293,7 @@ var relayTransport = {
     const identity = await profileIdentityFor(ctx, chainId, req.profile);
     let channel = opts.channel;
     let channelSource;
+    let created = false;
     if (opts.channel !== void 0) {
       const saved = (await relayChannelState(ctx.home, identity).catch(() => void 0))?.saved;
       channelSource = `--channel for this call only; the saved channel (${saved ? saved.channel : "none yet"}) is unchanged`;
@@ -10293,14 +10306,20 @@ var relayTransport = {
     } else {
       const c = await ensureRelayChannel(ctx.home, identity);
       channel = c.channel;
+      created = c.created;
       channelSource = c.created ? "created now (random, saved)" : "saved";
-      if (c.created) {
-        const earlier = await earlierChannelsInUse(ctx, chainId, keyManager, signer.address);
-        if (earlier.length) warnings.push(`this profile's relay channel ${c.channel} was created now (random, saved in this state folder, used from now on on every chain and relayer). This key relayed before on ${earlier.map((e) => `channel ${e.channel} (sequence ${e.sequence})`).join(", ")}: those counters stay on chain (up nonce shows them); if a call signed there may still be pending, check it before repeating its action`);
-      }
     }
     const start = await latestBlock(ctx, chainId);
     const nonce = channel === void 0 ? void 0 : await getRelayNonce(ctx, chainId, keyManager, signer.address, channel);
+    if (opts.channel === void 0 && (nonce === void 0 || splitNonce(nonce).sequence === 0n)) {
+      const own = identity !== getAddress21(req.profile) ? (await relayChannelState(ctx.home, req.profile)).saved : void 0;
+      const earlier = (await earlierChannelsInUse(ctx, chainId, keyManager, signer.address, own ? [own.channel] : [])).filter((e) => e.channel !== channel);
+      if (earlier.length) {
+        const head = channel === void 0 ? "the first relayed send creates this profile's relay channel (random, saved in this state folder, used from then on on every chain and relayer)." : created ? `this profile's relay channel ${channel} was created now (random, saved in this state folder, used from now on on every chain and relayer).` : `no call of this key has executed on this profile's relay channel ${channel} on chain ${chainId} yet.`;
+        const ownNote = own && earlier.some((e) => e.channel === own.channel) ? ` (channel ${own.channel} is the saved channel of ${getAddress21(req.profile)} itself; ${identity} links that address here, so its channel is used)` : "";
+        warnings.push(`${head} This key relayed before on ${earlier.map((e) => `channel ${e.channel} (sequence ${e.sequence})`).join(", ")}${ownNote}: those counters stay on chain (up nonce shows them); if a call signed there may still be pending, check it before repeating its action`);
+      }
+    }
     const now = start.timestamp || BigInt(Math.floor(Date.now() / 1e3));
     const validityTimestamps = opts.validFrom !== void 0 || opts.validUntil !== void 0 ? encodeValidityTimestamps(opts.validFrom ?? 0n, opts.validUntil ?? 0n) : validityWindow(now, opts.validitySeconds ?? 600);
     const vstate = checkValidity(validityTimestamps, now);
@@ -10387,12 +10406,13 @@ var relayTransport = {
     };
   }
 };
-async function earlierChannelsInUse(ctx, chainId, keyManager, signer) {
+async function earlierChannelsInUse(ctx, chainId, keyManager, signer, also = []) {
   const channels = [0n];
   for (const r of await listRelayers(ctx, chainId)) {
     const c = r.profile === "lukso-live" ? 0n : defaultChannel(r.name, chainId);
     if (!channels.includes(c)) channels.push(c);
   }
+  for (const c of also) if (!channels.includes(c)) channels.push(c);
   const out = [];
   for (const channel of channels) {
     const sequence = splitNonce(await getRelayNonce(ctx, chainId, keyManager, signer, channel)).sequence;
@@ -10543,7 +10563,7 @@ init_errors();
 init_assets();
 init_transport();
 init_secret_guard();
-import { readFileSync as readFileSync9, existsSync as existsSync16 } from "node:fs";
+import { readFileSync as readFileSync9, existsSync as existsSync15 } from "node:fs";
 import { join as join10 } from "node:path";
 import { encodeFunctionData as encodeFunctionData10, formatEther as formatEther3, getAddress as getAddress22, isAddress as isAddress13, parseAbiItem as parseAbiItem2, parseUnits, toFunctionSignature, zeroAddress as zeroAddress4 } from "./vendor-viem.mjs";
 function parseValue(v) {
@@ -10583,7 +10603,7 @@ function loadAbi(spec) {
     const j = JSON.parse(s);
     return { abi: Array.isArray(j) ? j : j.abi, source: "inline" };
   }
-  if (existsSync16(s)) {
+  if (existsSync15(s)) {
     assertNotKeyMaterialPath(s, "an ABI");
     let j;
     try {
@@ -10596,7 +10616,7 @@ function loadAbi(spec) {
   const base = s.replace(/\.json$/i, "");
   for (const dir of ["lsp", "reference", "deployed"]) {
     const f = join10(assetsDir(), "abis", dir, `${base}.json`);
-    if (existsSync16(f)) {
+    if (existsSync15(f)) {
       const j = JSON.parse(readFileSync9(f, "utf8"));
       return { abi: Array.isArray(j) ? j : j.abi, source: `bundled:${dir}/${base}` };
     }
@@ -10913,8 +10933,19 @@ async function defaultControllerAddress(ctx) {
   if (cfg.controller?.address) return getAddress23(cfg.controller.address);
   return (await ctx.signer()).address;
 }
-var NOT_CREATED = "not created yet: the first relayed send creates one random channel for this profile and saves it (or create it now: up nonce channel --create)";
+var NOT_CREATED = "not created yet: the first relayed send creates one random channel for this profile and saves it (after a restore from a backup: up nonce channel create)";
+var CHANNEL_SCOPE = "this state folder (this agent) and this profile, on every chain and relayer; the counter is on chain per chain, Key Manager, key and channel (read with: up nonce)";
 var channelView = (c) => ({ channel: c.channel.toString(), hex: "0x" + c.channel.toString(16), createdAt: c.createdAt, source: c.source });
+async function channelIdentity(ctx, a) {
+  await ctx.config();
+  const identity = await ctx.identity(a.profile);
+  let chainId;
+  try {
+    chainId = ctx.chainId(a.chain);
+  } catch {
+  }
+  return chainId === void 0 ? identity : profileIdentityFor(ctx, chainId, identity);
+}
 defineVerb({
   name: "nonce",
   group: "execute",
@@ -10934,8 +10965,10 @@ defineVerb({
     if (!km.keyManager) throw new UpError("NOT_SUPPORTED", `profile owner ${km.owner} is not a Key Manager`);
     const identity = await profileIdentityFor(ctx, chainId, profile);
     const { saved } = await relayChannelState(ctx.home, identity);
+    const own = identity !== profile ? (await relayChannelState(ctx.home, profile)).saved : void 0;
     const channels = [];
     if (saved) channels.push({ channel: saved.channel, label: "saved relay channel of this profile (every relayed call uses it)" });
+    if (own && own.channel !== saved?.channel) channels.push({ channel: own.channel, label: `saved relay channel of ${profile} itself (not used on this chain: ${identity} links ${profile} here)` });
     channels.push({ channel: 0n, label: "channel 0 (strictly ordered; shared with tools that pick it by hand)" });
     for (const r of await listRelayers(ctx, chainId)) {
       const c = r.profile === "lukso-live" ? 0n : defaultChannel(r.name, chainId);
@@ -10957,32 +10990,55 @@ defineVerb({
 defineVerb({
   name: "nonce channel",
   group: "execute",
-  summary: "Show this agent's saved LSP25 relay channel for the profile (one random uint128 per profile in this state folder, used by every relayed call on every chain and relayer); --create creates it now.",
-  description: "The channel is public (not a secret) and is never replaced: no new channel per chat, restart, upgrade, relayer or chain, and never one to get around a pending call. It is saved in this state folder's profile record, not in key backups. Without --create nothing is written. After a restore from a key backup it is not known here: first make sure no relayed action from before is still pending, then --create (new random channel) or --create --channel <earlier channel> to continue the one this agent used before. A missing channel is not a missing key: the key is never regenerated.",
+  summary: "Show this agent's saved LSP25 relay channel for the profile (one random uint128 per profile in this state folder, used by every relayed call on every chain and relayer). Read-only: never creates one (up nonce channel create does).",
+  description: "The channel is public (not a secret) and is never replaced: no new channel per chat, restart, upgrade, relayer or chain, and never one to get around a pending call. It is saved in this state folder's profile record, not in key backups. A missing channel is not a missing key: the key is never regenerated. With --chain, a chain-specific (linked) address names the profile that links it.",
   risk: "local",
-  params: [
-    { name: "create", type: "boolean", description: "Create and save the channel now if this profile has none in this state folder (random, from the operating system's CSPRNG); an existing one is kept." },
-    { name: "channel", type: "string", description: "With --create, only when none is saved yet: save this earlier channel of the same agent and profile instead of a new random one (decimal or 0x string, 4 to 2^128 - 1)." }
-  ],
-  examples: ["up nonce channel", "up nonce channel --create"],
+  params: [],
+  examples: ["up nonce channel"],
   async run(ctx, a) {
-    await ctx.config();
-    const adopt = parseU(a.channel, "channel");
-    if (adopt !== void 0 && a.create !== true) throw new UpError("BAD_ARGS", "--channel needs --create: it only sets the channel of a profile that has none saved yet");
-    let identity = await ctx.identity(a.profile);
-    let chainId;
-    try {
-      chainId = ctx.chainId(a.chain);
-    } catch {
-    }
-    if (chainId !== void 0) identity = await profileIdentityFor(ctx, chainId, identity);
-    const r = a.create === true ? await ensureRelayChannel(ctx.home, identity, { explicit: true, adopt }) : (await relayChannelState(ctx.home, identity)).saved;
-    const created = !!(r && "created" in r && r.created);
-    const scope = "this state folder (this agent) and this profile, on every chain and relayer; the counter is on chain per chain, Key Manager, key and channel (read with: up nonce)";
+    const identity = await channelIdentity(ctx, a);
+    const r = (await relayChannelState(ctx.home, identity)).saved;
     return {
-      data: { profile: identity, relayChannel: r ? channelView(r) : null, created, scope, ...r ? {} : { note: NOT_CREATED } },
-      text: r ? `relay channel of ${identity}: ${r.channel}${created ? " (created now)" : ""}` : `relay channel of ${identity}: ${NOT_CREATED}`
+      data: { profile: identity, relayChannel: r ? channelView(r) : null, created: false, scope: CHANNEL_SCOPE, ...r ? {} : { note: NOT_CREATED } },
+      text: r ? `relay channel of ${identity}: ${r.channel}` : `relay channel of ${identity}: ${NOT_CREATED}`
     };
+  }
+});
+defineVerb({
+  name: "nonce channel create",
+  group: "execute",
+  summary: "Save the profile's LSP25 relay channel now, when this state folder has none: a new random uint128 (operating system CSPRNG), or --channel to continue an earlier one. Permanent: a saved channel is never replaced.",
+  description: "Needed after a restore from a key backup, where relayed sends stop with relay_channel_not_created (elsewhere the first relayed send creates the channel). First make sure no relayed action from before is still pending, then continue the earlier channel (--channel <earlier channel>: its calls and new ones stay in order) or save a new random one. It writes only this state folder (nothing is signed or sent), and it cannot be undone: it needs --yes inside the delegated policy or the human's --approval, and for a restored profile the human's --approval (unless policy.allowAdmin). --dry-run shows what would be saved and writes nothing. A channel that is already saved is kept and shown.",
+  risk: "write",
+  params: [{ name: "channel", type: "string", description: "Save this earlier channel of the same agent and profile instead of a new random one (decimal or 0x string, 4 to 2^128 - 1); only while none is saved." }],
+  examples: ["up nonce channel create --dry-run", `up nonce channel create --channel <earlier channel> --approval "<human's words>"`],
+  async run(ctx, a) {
+    const adopt = parseU(a.channel, "channel");
+    if (adopt !== void 0) assertSavableChannel(adopt);
+    const identity = await channelIdentity(ctx, a);
+    const st = await relayChannelState(ctx.home, identity);
+    if (st.saved) {
+      const r2 = await ensureRelayChannel(ctx.home, identity, { explicit: true, adopt });
+      return { data: { profile: identity, relayChannel: channelView(r2), created: false, scope: CHANNEL_SCOPE }, text: `relay channel of ${identity}: ${r2.channel} (already saved; kept)` };
+    }
+    const source = adopt !== void 0 ? "adopted" : "random";
+    const summary = {
+      effect: adopt !== void 0 ? `save the relay channel ${adopt} (an earlier channel of this agent) for ${identity} in this state folder` : `save a new random relay channel for ${identity} in this state folder`,
+      profile: identity,
+      channel: adopt !== void 0 ? adopt.toString() : "random, drawn when it is saved",
+      restored: st.restored,
+      permanent: "a saved channel is never replaced: every relayed call of this profile from this state folder uses it",
+      ...st.restored ? { note: "restored from a backup: a relayed action signed before the restore may still be pending on the earlier channel; check it first (up exec receipt <hash>) or wait until its validity window has passed. Continuing the earlier channel keeps such a call in order with new ones; a new random channel does not" } : {}
+    };
+    await ctx.consent({ verb: "nonce channel create", risk: st.restored ? "admin" : "write", summary });
+    if (ctx.flags.dryRun) {
+      return {
+        data: { dryRun: true, profile: identity, relayChannel: null, created: false, wouldCreate: { source, channel: adopt?.toString() ?? null }, restored: st.restored, scope: CHANNEL_SCOPE },
+        text: `DRY RUN: ${adopt !== void 0 ? `the relay channel ${adopt}` : "a new random relay channel"} would be saved for ${identity} (nothing was written)`
+      };
+    }
+    const r = await ensureRelayChannel(ctx.home, identity, { explicit: true, adopt });
+    return { data: { profile: identity, relayChannel: channelView(r), created: r.created, scope: CHANNEL_SCOPE }, text: `relay channel of ${identity}: ${r.channel}${r.created ? " (created now)" : " (already saved; kept)"}` };
   }
 });
 
@@ -12158,6 +12214,7 @@ defineVerb({
   async run(ctx, a) {
     const cfg = { ...await ctx.config() };
     const profile = addressArg2(a.address, "address");
+    await readProfileRecord(ctx.home, profile);
     const me = await defaultControllerAddress(ctx);
     const chainIds = a.chains?.length ? a.chains.map((c) => ctx.registry.chain(c).chainId) : a.chain ? [ctx.chainId(a.chain)] : cfg.chains?.length ? cfg.chains : cfg.defaultChain ? [cfg.defaultChain] : [];
     if (!chainIds.length) throw new UpError("BAD_ARGS", "no chain selected", { hint: "pass --chains 42,8453 or set: up config set chains 42" });
@@ -18407,7 +18464,7 @@ EIP-681: ${eip681.content}` : ""}`,
 init_verbs();
 init_errors();
 init_assets();
-import { existsSync as existsSync17, readdirSync as readdirSync2, readFileSync as readFileSync10 } from "node:fs";
+import { existsSync as existsSync16, readdirSync as readdirSync2, readFileSync as readFileSync10 } from "node:fs";
 import { join as join12 } from "node:path";
 
 // src/knowledge/standards.ts
@@ -18475,7 +18532,7 @@ function describe(text) {
 }
 function listDocTopics() {
   const dir = referencesDir();
-  if (!existsSync17(dir)) return [];
+  if (!existsSync16(dir)) return [];
   return readdirSync2(dir, { withFileTypes: true }).filter((d) => d.isFile() && d.name.endsWith(".md")).map((d) => {
     const text = readFileSync10(join12(dir, d.name), "utf8");
     return { topic: d.name.slice(0, -3), file: `references/${d.name}`, ...describe(text), lines: text.split(/\r?\n/).length };
@@ -18780,7 +18837,7 @@ defineVerb({
     const cfg = await ctx.config();
     const { collectProfiles: collectProfiles2 } = await Promise.resolve().then(() => (init_build(), build_exports));
     const warnings = [];
-    const states = await collectProfiles2(ctx, cfg, warnings);
+    const states = await collectProfiles2(ctx, cfg, warnings, { damaged: "warn" });
     const names = (await readdir3(paths.profiles(ctx.home)).catch(() => [])).filter((n) => /^0x[0-9a-fA-F]{40}\.json$/.test(n));
     const identities = /* @__PURE__ */ new Map();
     for (const n of names) identities.set(n.slice(0, 42).toLowerCase(), getAddress52(n.slice(0, 42)));
@@ -18790,7 +18847,13 @@ defineVerb({
     const ordered = [...identities.values()].sort((a, b) => defaultProfile && same(a, defaultProfile) ? -1 : defaultProfile && same(b, defaultProfile) ? 1 : a.localeCompare(b));
     const profiles = [];
     for (const id of ordered) {
-      const record = await readProfileRecord(ctx.home, id);
+      let record = {};
+      let damaged2 = false;
+      try {
+        record = await readProfileRecord(ctx.home, id);
+      } catch {
+        damaged2 = true;
+      }
       const linked = chainAddressesOf(record);
       const own = states.find((s) => same(s.address, id));
       const networks = [];
@@ -18816,7 +18879,7 @@ defineVerb({
       }
       networks.sort((a, b) => a.chainId - b.chainId);
       const alias = aliasOf(id);
-      profiles.push({ address: id, ...alias ? { alias: safeFileText(alias, 40) } : {}, isDefault: !!defaultProfile && same(id, defaultProfile), networks });
+      profiles.push({ address: id, ...alias ? { alias: safeFileText(alias, 40) } : {}, isDefault: !!defaultProfile && same(id, defaultProfile), networks, ...damaged2 ? { recordDamaged: true } : {} });
     }
     const agentControllers = controllerText(cfg);
     const configuredChains = (cfg.chains ?? []).map((c) => ({ chainId: c, network: chainLabel(ctx, c).name }));
@@ -18824,7 +18887,7 @@ defineVerb({
     const hasKeys = !!agentControllers.default || agentControllers.perChain.length > 0;
     const lines = (p) => {
       const nets = p.networks.map((n) => `${n.network}${n.linkedAddress ? ` (as ${n.address})` : ""}`);
-      return `${p.address}${p.alias ? ` ("${p.alias}")` : ""}${nets.length ? ` on ${listWords3(nets)}` : " (no network recorded yet)"}`;
+      return `${p.address}${p.alias ? ` ("${p.alias}")` : ""}${nets.length ? ` on ${listWords3(nets)}` : p.recordDamaged ? " (its saved details are damaged and need a repair)" : " (no network recorded yet)"}`;
     };
     const say = found ? profiles.length === 1 ? `My Universal Profile is ${lines(profiles[0])}.` : `I know these Universal Profiles: ${profiles.map((p) => `${lines(p)}${p.isDefault ? " (the one I use by default)" : ""}`).join("; ")}.` : "I don't have a Universal Profile saved in this place yet. That doesn't mean none exists: if you already have one, or a backup of mine, tell me and I'll connect it.";
     const shown = warnings.filter((w) => !/nothing to back up/.test(w));
@@ -18844,7 +18907,8 @@ defineVerb({
           "Answer from `profiles` (full address, network names, link): this is saved state shared by every chat using this UP_HOME. Never tell the human you have no profile or forgot it, and do not create a key or profile.",
           "Saved is not current: run `up profile status` for what is deployed and permitted on each network right now before acting or answering about permissions or balances; never quote old permissions or call a network deployed from the address alone.",
           "Tell the human the address, network names and link in plain words, not file names or commands. Keep the profile (the account), the agent's key address and a controller's recorded address apart.",
-          ...hasKeys ? [] : ["No agent key address is saved here: if signing is needed, `up doctor` says why; never regenerate a key to replace a missing one."]
+          ...hasKeys ? [] : ["No agent key address is saved here: if signing is needed, `up doctor` says why; never regenerate a key to replace a missing one."],
+          ...profiles.some((p) => p.recordDamaged) ? ["A saved profile record is damaged (see warnings): tell the human and ask them to repair the file; never delete it and never create a new profile, key or relay channel because of it. Commands that use or change that record stop until it is repaired."] : []
         ] : [
           "Nothing is saved here. Tell the human plainly, without claiming that no profile exists anywhere, and ask whether they already have a Universal Profile or a backup file before offering a new one.",
           "A fresh or isolated environment (a reset cloud VM, a new machine, a different user) does not see another environment's files. Persistent storage mounted at the same UP_HOME, an encrypted backup (`up backup import`) or the human's own authorised wallet is the way back; an address alone is not access.",
@@ -19024,7 +19088,7 @@ init_errors();
 init_json();
 init_assets();
 import { createInterface } from "node:readline";
-import { readdirSync as readdirSync3, readFileSync as readFileSync11, existsSync as existsSync18 } from "node:fs";
+import { readdirSync as readdirSync3, readFileSync as readFileSync11, existsSync as existsSync17 } from "node:fs";
 import { join as join13 } from "node:path";
 init_secret_guard();
 init_safe_text();
@@ -19043,7 +19107,7 @@ function send(msg) {
 }
 function referenceFiles() {
   const dir = join13(skillDir(), "references");
-  if (!existsSync18(dir)) return [];
+  if (!existsSync17(dir)) return [];
   const out = [];
   const walk = (d, prefix) => {
     for (const n of readdirSync3(d, { withFileTypes: true })) {
@@ -19053,7 +19117,7 @@ function referenceFiles() {
   };
   walk(dir, "");
   const skill = join13(skillDir(), "SKILL.md");
-  if (existsSync18(skill)) out.unshift({ uri: "up://SKILL.md", name: "SKILL.md", path: skill });
+  if (existsSync17(skill)) out.unshift({ uri: "up://SKILL.md", name: "SKILL.md", path: skill });
   return out;
 }
 async function handleMcpMessage(msg) {
@@ -19110,7 +19174,7 @@ risk: ${v.risk}`,
           const payload = redact({ ok: true, verb: v.name, data: r.data, media: r.media, warnings: r.warnings });
           const content = [{ type: "text", text: (r.text ? r.text + "\n\n" : "") + JSON.stringify(payload, replacer, 2) }];
           for (const m of r.media ?? []) {
-            if (m.mimeType.startsWith("image/") && existsSync18(m.path)) content.push({ type: "image", data: readFileSync11(m.path).toString("base64"), mimeType: m.mimeType });
+            if (m.mimeType.startsWith("image/") && existsSync17(m.path)) content.push({ type: "image", data: readFileSync11(m.path).toString("base64"), mimeType: m.mimeType });
           }
           return ok({ content, structuredContent: JSON.parse(JSON.stringify(payload, replacer)), isError: false });
         } catch (e) {
