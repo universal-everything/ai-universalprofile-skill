@@ -5,7 +5,7 @@
 // before it is committed. Installed packages (pinned by package-lock.json) and stdin modules are not repository files.
 import { describe, expect, it } from "vitest";
 import { build, type Metafile } from "esbuild";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -18,9 +18,13 @@ function put(root: string, file: string, text: string | Uint8Array) {
   mkdirSync(dirname(join(root, file)), { recursive: true });
   writeFileSync(join(root, file), text);
 }
-/** A small repository: src/ (an entry, a nested module, JSON), an installed package, a shim, the fixed inputs. */
+/**
+ * A small repository: src/ (an entry, a nested module, JSON), an installed package, a shim, the fixed inputs. Its root
+ * is a real path, as build.mjs has it (from import.meta.url, which Node resolves); the temp folder may be behind a
+ * symlink (macOS /var and /tmp).
+ */
 function project(): string {
-  const root = mkdtempSync(join(tmpdir(), "up-fingerprint-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "up-fingerprint-")));
   put(root, "src/app.ts", 'import { b } from "./sub/b.ts";\nimport data from "./data.json";\nimport dep from "dep";\nexport const a = b + data.x + dep;\n');
   put(root, "src/sub/b.ts", "export const b = 1;\n");
   put(root, "src/data.json", '{ "x": 2 }\n');
@@ -86,5 +90,21 @@ describe("source fingerprint", () => {
     expect(() => bundledInputs(root, metas)).toThrow(/build input vendor-x\.mjs is not a file of the repository/);
     expect(() => bundledInputs(root, [{ inputs: { "src/gone.ts": {} } } as unknown as Metafile])).toThrow(/build input src\/gone\.ts is not a file of the repository/);
     expect(() => bundledInputs(root, [{ inputs: { "../outside.ts": {} } } as unknown as Metafile])).toThrow(/is not a file of the repository/);
+  });
+
+  it("a root reached through a symlink: the real path gives the same inputs; the unresolved one is refused, never guessed (esbuild names stdin modules from its real working directory)", async () => {
+    const root = project();
+    const link = join(mkdtempSync(join(tmpdir(), "up-fingerprint-link-")), "repo");
+    symlinkSync(root, link, "junction");
+    const real = realpathSync(link);
+    const expected = bundledInputs(root, await metafiles(root), ["vendor-x.mjs"]);
+    expect(bundledInputs(real, await metafiles(real), ["vendor-x.mjs"])).toEqual(expected);
+    expect(await fingerprintOf(real)).toBe(await fingerprintOf(root));
+    // through the unresolved link (as on macOS CI, whose temp folder is under the /var symlink): exactly the same inputs, or refused
+    const viaLink = await metafiles(link)
+      .then((m) => bundledInputs(link, m, ["vendor-x.mjs"]))
+      .catch((e: Error) => e);
+    if (viaLink instanceof Error) expect(viaLink.message).toMatch(/build input .*vendor-x\.mjs is not a file of the repository/);
+    else expect(viaLink).toEqual(expected);
   });
 });
