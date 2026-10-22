@@ -12,7 +12,7 @@ Risk classes: **local** (no chain writes), **read** (chain/HTTP reads), **write*
 - **chains**: [`chains add`](#chains-add), [`chains list`](#chains-list), [`chains refresh`](#chains-refresh), [`chains rpc find`](#chains-rpc-find), [`chains rpc list`](#chains-rpc-list), [`chains rpc set`](#chains-rpc-set), [`chains rpc verify`](#chains-rpc-verify), [`chains verify`](#chains-verify), [`funding suggest`](#funding-suggest)
 - **display**: [`display address`](#display-address), [`identicon`](#identicon), [`qr`](#qr)
 - **erc4337**: [`account 4337 deploy-entrypoint`](#account-4337-deploy-entrypoint), [`account 4337 deploy-extension`](#account-4337-deploy-extension), [`account 4337 deposit`](#account-4337-deposit), [`account 4337 disable`](#account-4337-disable), [`account 4337 enable`](#account-4337-enable), [`account 4337 status`](#account-4337-status), [`account 4337 withdraw`](#account-4337-withdraw), [`bundler set`](#bundler-set)
-- **execute**: [`exec batch`](#exec-batch), [`exec call`](#exec-call), [`exec receipt`](#exec-receipt), [`exec relay`](#exec-relay), [`exec send`](#exec-send), [`exec simulate`](#exec-simulate), [`exec userop`](#exec-userop), [`nonce`](#nonce)
+- **execute**: [`exec batch`](#exec-batch), [`exec call`](#exec-call), [`exec receipt`](#exec-receipt), [`exec relay`](#exec-relay), [`exec send`](#exec-send), [`exec simulate`](#exec-simulate), [`exec userop`](#exec-userop), [`nonce`](#nonce), [`nonce channel`](#nonce-channel), [`nonce channel create`](#nonce-channel-create)
 - **key**: [`init`](#init), [`key activate`](#key-activate), [`key address`](#key-address), [`key backend`](#key-backend), [`key backup`](#key-backup), [`key new-candidate`](#key-new-candidate)
 - **knowledge**: [`docs`](#docs), [`protocols list`](#protocols-list), [`protocols verify`](#protocols-verify), [`standards list`](#standards-list)
 - **permissions**: [`allowed-calls set`](#allowed-calls-set), [`allowed-calls show`](#allowed-calls-show), [`allowed-keys set`](#allowed-keys-set), [`allowed-keys show`](#allowed-keys-show), [`controller add`](#controller-add), [`controller edit`](#controller-edit), [`controller remove`](#controller-remove), [`ownership accept`](#ownership-accept), [`ownership renounce`](#ownership-renounce), [`ownership transfer`](#ownership-transfer), [`permissions decode`](#permissions-decode), [`permissions encode`](#permissions-encode), [`permissions list`](#permissions-list), [`permissions presets`](#permissions-presets), [`permissions recommend`](#permissions-recommend), [`permissions show`](#permissions-show)
@@ -227,7 +227,7 @@ Permission routing (LSP6SetDataModule): AddressPermissions* keys → ADDCONTROLL
 | `--pairs` | json |  | Several writes at once: [{"key":"…","value":…,"parts":[…]}]. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -269,7 +269,7 @@ Register an LSP17 extension contract for a function selector on the profile (adm
 | `--forward-value` | boolean |  | Append 0x01 so the profile forwards msg.value to the extension. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -287,7 +287,7 @@ Remove the LSP17 extension registered for a selector (admin: CHANGEEXTENSIONS).
 | `--selector` | string | yes | bytes4 function selector. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -359,7 +359,7 @@ Set the profile's LSP1 Universal Receiver Delegate (admin: ADD/CHANGEUNIVERSALRE
 | `--grant` | boolean |  | Also add the URD as a controller with SUPER_SETDATA + REENTRANCY (needed to maintain LSP5/LSP10). Default: `true`. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -445,7 +445,7 @@ Merges with the current metadata by default (fields not given are kept; --replac
 | `--chain` | string |  | Chain id or slug. Default: LUKSO mainnet (42) for profile metadata, NOT the configured default chain; pass it only when the human explicitly asks for another chain. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -927,7 +927,7 @@ Execute several calls atomically AS THE PROFILE (KM.executeBatch on km, UP.execu
 | `--calls` | json | yes | JSON array of calls: [{"to":"0x…","value":"0.1ether"},{"to":"0x…","fn":"approve(address,uint256)","args":["0x…","1"]}] |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -978,7 +978,7 @@ Execute one call AS THE PROFILE through an LSP15 relayer (LSP25 executeRelayCall
 | `--abi` | string |  | ABI for --fn and for decoding: bundled name (LSP7DigitalAsset, ERC20, …), JSON file path or inline JSON. |
 | `--operation` | string (call\|staticcall\|create\|create2) |  | ERC725X operation. Default: `"call"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -1003,7 +1003,7 @@ Builds the ERC725X call, simulates it with the exact transport, shows the confir
 | `--operation` | string (call\|staticcall\|create\|create2) |  | ERC725X operation. Default: `"call"`. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -1035,7 +1035,7 @@ Build and simulate a call or batch with the exact transport, return the confirma
 | `--calls` | json |  | Optional JSON array of calls (batch) instead of --to/--data. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -1078,15 +1078,52 @@ up exec userop --chain 4201 --calls '[{"to":"0x…","value":"1000"},{"to":"0x…
 
 ### nonce
 
-Show the LSP25 relay nonces of a controller (channel 0, default relayer channels, --channel) and its EOA transaction nonce.
+Show the live LSP25 relay nonces of a controller (the profile's saved relay channel, channel 0, earlier default channels, --channel) and its EOA transaction nonce. Read-only: never creates a channel.
+
+Three separate counters: the relay (LSP25) nonce per chain, Key Manager, controller key and channel (value = channel × 2^128 + sequence, read live with getNonce), the key's own transaction nonce (pending count, direct paths only) and, only for --via userop, the EntryPoint nonce. The saved relay channel is one random channel per profile in this state folder; channel 0 and the earlier per-relayer default channels are listed so that calls signed on them before can be checked. A used nonce shows that some call with it executed, not which one.
 
 - CLI: `up nonce [options]`
 - MCP tool: `up_nonce` · risk: **read**
 
 | option | type | required | description |
 | --- | --- | --- | --- |
-| `--controller` | string |  | Controller address (default: this agent's controller). |
-| `--channel` | string |  | Extra nonce channel (uint128) to read. |
+| `--controller` | string |  | Controller address (default: this agent's key for the chain). |
+| `--channel` | string |  | Extra nonce channel to read (uint128, as a decimal or 0x string). |
+
+### nonce channel
+
+Show this agent's saved LSP25 relay channel for the profile (one random uint128 per profile in this state folder, used by every relayed call on every chain and relayer). Read-only: never creates one (up nonce channel create does).
+
+The channel is public (not a secret) and is never replaced: no new channel per chat, restart, upgrade, relayer or chain, and never one to get around a pending call. It is saved in this state folder's profile record, not in key backups. A missing channel is not a missing key: the key is never regenerated. With --chain, a chain-specific (linked) address names the profile that links it.
+
+- CLI: `up nonce channel [options]`
+- MCP tool: `up_nonce_channel` · risk: **local**
+
+Examples:
+
+```
+up nonce channel
+```
+
+### nonce channel create
+
+Save the profile's LSP25 relay channel now, when this state folder has none: a new random uint128 (operating system CSPRNG), or --channel to continue an earlier one. Permanent: a saved channel is never replaced.
+
+Needed after a restore from a key backup, where relayed sends stop with relay_channel_not_created (elsewhere the first relayed send creates the channel). First make sure no relayed action from before is still pending, then continue the earlier channel (--channel <earlier channel>: its calls and new ones stay in order) or save a new random one. It writes only this state folder (nothing is signed or sent), and it cannot be undone: it needs --yes inside the delegated policy or the human's --approval, and for a restored profile the human's --approval (unless policy.allowAdmin). --dry-run shows what would be saved and writes nothing. A channel that is already saved is kept and shown.
+
+- CLI: `up nonce channel create [options]`
+- MCP tool: `up_nonce_channel_create` · risk: **write**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--channel` | string |  | Save this earlier channel of the same agent and profile instead of a new random one (decimal or 0x string, 4 to 2^128 - 1); only while none is saved. |
+
+Examples:
+
+```
+up nonce channel create --dry-run
+up nonce channel create --channel <earlier channel> --approval "<human's words>"
+```
 
 ## key
 
@@ -1243,7 +1280,7 @@ Replace a controller's AllowedCalls (admin: EDITPERMISSIONS). Entries: callTypes
 | `--calls` | json | yes | JSON array: [{"callTypes":["CALL","VALUE"],"address":"0x…","standard":"*","selector":"0xa9059cbb"}]; [] clears. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -1273,7 +1310,7 @@ Replace a controller's AllowedERC725YDataKeys (admin: EDITPERMISSIONS). Accepts 
 | `--keys` | string[] | yes | Keys, names or prefixes; empty clears. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -1307,7 +1344,7 @@ Add a controller to the profile with a preset or explicit permissions (+ Allowed
 | `--allowed-keys` | string[] |  | AllowedERC725YDataKeys: names (LSP3Profile, LSP12IssuedAssets[]) or hex keys/prefixes. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -1332,7 +1369,7 @@ Change a controller's permissions (--preset/--permissions/--bits replace; --add/
 | `--remove` | string[] |  | Permission names to remove. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -1350,7 +1387,7 @@ Remove a controller (clears its permissions/allowed lists, swap-and-pop in Addre
 | `--address` | string | yes | Controller address. |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -1374,7 +1411,7 @@ Renounce ownership (LSP14 two calls: start, then confirm 200–400 blocks later)
 | --- | --- | --- | --- |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -1392,7 +1429,7 @@ Start an LSP14 two-step ownership transfer of the profile (e.g. to a new Key Man
 | `--new-owner` | string | yes | New owner (normally a new LSP6 Key Manager whose target() is this profile). |
 | `--via` | string (auto\|km\|lsp0\|relay\|userop) |  | Execution path: auto (default: relay if a relayer covers the chain with quota > 0, else km; never userop), km (controller → Key Manager), lsp0 (controller → profile, LSP20-verified), relay (LSP25 via an LSP15 relayer, gasless), userop (opt-in ERC-4337 module, explicit only). Default: `"auto"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
@@ -1487,6 +1524,8 @@ lsp15 relayers authorise /execute with the LSP25 signature and /quota with the L
 
 Send a call or a raw UP payload (e.g. setData calldata) through an LSP15 relayer as an LSP25 relay call.
 
+The skill reads the relay nonce live with getNonce (the profile's saved relay channel, or --channel, in the high 128 bits; its counter in the low 128 bits), signs exactly that full value and sends it to the relayer, LUKSO's live relayer included, as an exact 0x hex uint256, like validityTimestamps. There is no nonce option: never compute, split, pack or format a nonce yourself.
+
 - CLI: `up relayer execute [options]`
 - MCP tool: `up_relayer_execute` · risk: **write**
 
@@ -1501,7 +1540,7 @@ Send a call or a raw UP payload (e.g. setData calldata) through an LSP15 relayer
 | `--abi` | string |  | ABI for --fn and for decoding: bundled name (LSP7DigitalAsset, ERC20, …), JSON file path or inline JSON. |
 | `--operation` | string (call\|staticcall\|create\|create2) |  | ERC725X operation. Default: `"call"`. |
 | `--relayer` | string |  | Relayer name or base URL (relay path). Default: first relayer configured for the chain. |
-| `--channel` | string |  | LSP25 nonce channel (uint128). Default: per relayer×chain channel; 0 = strictly ordered. |
+| `--channel` | string |  | Advanced, this call only: LSP25 nonce channel (uint128, as a decimal or 0x string). Default: the profile's saved relay channel (one random channel per profile in this state folder, created on the first relayed send, the same on every chain and relayer). Never use it to get around a pending or conflicting call; the saved channel does not change. |
 | `--validity` | integer |  | Relay validity window in seconds from now (default 600; 0 = unlimited). |
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
