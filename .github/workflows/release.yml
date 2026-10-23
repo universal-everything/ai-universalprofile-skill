@@ -35,11 +35,14 @@ jobs:
           node build/gen-verb-docs.mjs
           git diff --exit-code -- skills/universal-profile
       - run: npm run verify:skill
+      # Outside the checkout: publish-main.mjs (next step) refuses a working tree with untracked files. SHA256SUMS
+      # lists the bare file name, so `sha256sum -c SHA256SUMS` works next to the downloaded archive.
       - name: tarball + checksums
         run: |
           V="${GITHUB_REF_NAME#v}"
-          tar -C skills -czf "universal-profile-$V.tar.gz" universal-profile
-          sha256sum "universal-profile-$V.tar.gz" > SHA256SUMS
+          mkdir -p "$RUNNER_TEMP/release"
+          tar -C skills -czf "$RUNNER_TEMP/release/universal-profile-$V.tar.gz" universal-profile
+          (cd "$RUNNER_TEMP/release" && sha256sum "universal-profile-$V.tar.gz" > SHA256SUMS)
       - name: publish the skill to main (SKILL.md at the repository root)
         run: |
           git config user.name "release-bot"
@@ -48,6 +51,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            universal-profile-*.tar.gz
-            SHA256SUMS
+            ${{ runner.temp }}/release/universal-profile-*.tar.gz
+            ${{ runner.temp }}/release/SHA256SUMS
           generate_release_notes: true
