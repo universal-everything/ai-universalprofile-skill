@@ -4,8 +4,8 @@
 // (agent-first, self-funded) and the generic "anything as the profile" surface,
 // plus the stdio MCP server. Requires `npm run build` first.
 import { describe, expect, it, beforeAll } from "vitest";
-import { spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { concat, encodeAbiParameters, encodeFunctionData, parseAbi, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -13,6 +13,7 @@ import { getHarness, fixture, type Harness } from "../chain/harness.ts";
 
 const root = join(import.meta.dirname, "..", "..");
 const scripts = join(root, "skills", "universal-profile", "scripts");
+const VERSION = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
 let h: Harness;
 let home: string;
@@ -48,6 +49,10 @@ describe("shipped bundle end-to-end (CLI + MCP processes)", () => {
 
   let profile: Address;
   let keyManager: Address;
+
+  it("reports the version of package.json (CLI --version and MCP serverInfo below)", () => {
+    expect(execFileSync(process.execPath, [join(scripts, "up.mjs"), "--version"], { env, encoding: "utf8" }).trim()).toBe(VERSION);
+  });
 
   it("doctor + init create the controller without revealing the key", async () => {
     const d = await up(["doctor", "--offline"]);
@@ -182,6 +187,7 @@ describe("shipped bundle end-to-end (CLI + MCP processes)", () => {
     child.stdin.end();
     const byId = Object.fromEntries(lines.map((l) => [l.id, l]));
     expect(byId[1].result.serverInfo.name).toBe("universal-profile");
+    expect(byId[1].result.serverInfo.version).toBe(VERSION);
     expect(byId[2].result.tools.length).toBeGreaterThanOrEqual(90);
     expect(byId[3].result.isError, JSON.stringify(byId[3])).toBe(false);
     expect(byId[4].result.contents[0].text).toContain("name: universal-profile");

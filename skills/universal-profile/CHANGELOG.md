@@ -17,6 +17,7 @@ All notable changes to the Universal Profile Agent Skill. Versions follow Semant
 
 ### Fixed
 - 0.1.0 is recorded as published (2026-10-10) instead of "Unreleased" / "not yet released".
+- `up --version` prints the version; without a command it printed the command overview instead.
 
 ## [0.1.0] — 2026-10-10
 

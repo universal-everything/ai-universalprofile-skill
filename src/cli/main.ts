@@ -37,15 +37,16 @@ function overview(): string {
 export async function runCli(argv: string[]): Promise<number> {
   const { words, options } = parseArgv(argv);
   const json = options.json === true || (!process.stdout.isTTY && options.json !== false);
+  // before the overview: `up --version` alone has no words
+  if (words[0] === "version" || options.version === true) {
+    process.stdout.write(`${VERSION}\n`);
+    return 0;
+  }
   if (words.length === 0 || words[0] === "help") {
     if (words[1]) {
       const m = matchVerb(words.slice(1));
       process.stdout.write((m ? helpFor(m.verb) : overview()) + "\n");
     } else process.stdout.write(overview() + "\n");
-    return 0;
-  }
-  if (words[0] === "version" || options.version === true) {
-    process.stdout.write(`${VERSION}\n`);
     return 0;
   }
   const m = matchVerb(words);

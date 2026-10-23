@@ -1,6 +1,6 @@
 // Universal Profile skill — application code
 // Universal Profile Agent Skill v0.2.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint 6bd6af81d417 (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 362e4d5b6525 (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -7629,7 +7629,7 @@ import { existsSync as existsSync12, accessSync, constants } from "node:fs";
 
 // src/version.ts
 var VERSION = true ? "0.2.0" : "0.0.0-dev";
-var SOURCE = true ? "6bd6af81d417" : "source";
+var SOURCE = true ? "362e4d5b6525" : "source";
 
 // src/chain/discovery.ts
 init_assets();
@@ -18774,16 +18774,16 @@ function overview() {
 async function runCli(argv) {
   const { words, options } = parseArgv(argv);
   const json2 = options.json === true || !process.stdout.isTTY && options.json !== false;
+  if (words[0] === "version" || options.version === true) {
+    process.stdout.write(`${VERSION}
+`);
+    return 0;
+  }
   if (words.length === 0 || words[0] === "help") {
     if (words[1]) {
       const m2 = matchVerb(words.slice(1));
       process.stdout.write((m2 ? helpFor(m2.verb) : overview()) + "\n");
     } else process.stdout.write(overview() + "\n");
-    return 0;
-  }
-  if (words[0] === "version" || options.version === true) {
-    process.stdout.write(`${VERSION}
-`);
     return 0;
   }
   const m = matchVerb(words);
