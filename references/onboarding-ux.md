@@ -149,15 +149,27 @@ Each step below has: **Goal** · **Message** (adapt the wording, keep the conten
 
 - **Message:** "Great! What's your new profile's address? You can paste it or send a screenshot of it." Then confirm it back short (`0xAbCd…1234`) and continue with J2 step 3.
 
-## J2 · Step 1: which profile
+## J2 · Step 1: what should I do for you
 
-- **Message:** "Which profile should I act for? Send its address." Confirm it back short, then check it on the networks.
+- **Goal:** the smallest set of permissions that fits what the human wants.
+- **Message:**
+  > What should I do for you with your profile? For example follow artists, update your profile picture, or send LYX to people you name. If you're not sure, I suggest just <your recommendation from what they said>.
+- **Expected reply:** a few words. Default: your recommendation. Their profile address is optional: the page uses the profile they connect.
+- **Never:** offer to create a new profile; ask for their key, seed phrase or password; ask for broad access "just in case".
 
-## J2 · Step 2: allow me to act
+## J2 · Step 2: open the link (LUKSO)
 
-- **Message:** what to add, where, in plain words: "In your Universal Profile app, add my address as a controller with these rights: … (one line each). I can't change owners or permissions. You can remove me any time."
-- **Attach:** one QR of the agent's address.
-- **Expected reply:** "done". Then check on each network yourself and report per network.
+- **Goal:** the human approves your address on their profile in their own wallet.
+- **Message:** `up permissions authorize-link` → `data.say`, sent unchanged. It reads like:
+  > To let me act for your Universal Profile, please open this link and connect your profile:
+  > https://authorize.universalprofile.cloud/authorize?…
+  > It opens the official Universal Profile authorization page. Connect with the Universal Profile browser extension, or on your phone with the Universal Profile app.
+  > Check that my address on the page ends in B3c1. I'm asking to follow and unfollow profiles for you. I can't change owners, controllers or permissions, and you can untick anything before you approve.
+  > Nothing happens until you approve it in your wallet. Tell me "done" when you have.
+- **Attach:** the one QR code from `media` (it opens the link on a phone; it is not a payment).
+- **Expected reply:** "done", and their profile address if the link did not have it. Then `up permissions check-grant` and tell them in one line what you can now do.
+- **Other networks:** no link; the list from `up permissions recommend --chain <id>` for their app ("add my address as a controller with these rights: …", one line each, with one QR of your address).
+- **Never:** shorten or rewrite the link; send a link to any other website; say it worked before check-grant confirms it; call their profile yours.
 
 ## J2 · Step 3: wrap-up
 
@@ -173,4 +185,5 @@ Each step below has: **Goal** · **Message** (adapt the wording, keep the conten
 - Suggesting a testnet, a MetaMask contract call, or that the human signs the deployment.
 - After a successful dry run: "You'll sign the deployment in your wallet. Which wallet app do you use?" Wrong: the agent's own key sends and pays the deployment; the human only sent gas. Use the dry run's `data.say`.
 - Calling the gas address "my wallet" or "my account".
+- Offering to create a new profile when the human asked to add the agent to the profile they already have, or calling their profile "my profile".
 - After a swap failed in simulation (`InsufficientETH`), offering the human an exchange website or wallet app instead of fixing the profile's call. A revert means the call needs fixing: check the value and its unit, the profile's balance and the recipient, and simulate again as the profile (SKILL.md, "Swaps and payments as the profile").

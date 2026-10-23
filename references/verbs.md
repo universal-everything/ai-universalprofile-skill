@@ -15,7 +15,7 @@ Risk classes: **local** (no chain writes), **read** (chain/HTTP reads), **write*
 - **execute**: [`exec batch`](#exec-batch), [`exec call`](#exec-call), [`exec receipt`](#exec-receipt), [`exec relay`](#exec-relay), [`exec send`](#exec-send), [`exec simulate`](#exec-simulate), [`exec userop`](#exec-userop), [`nonce`](#nonce), [`nonce channel`](#nonce-channel), [`nonce channel create`](#nonce-channel-create)
 - **key**: [`init`](#init), [`key activate`](#key-activate), [`key address`](#key-address), [`key backend`](#key-backend), [`key backup`](#key-backup), [`key new-candidate`](#key-new-candidate)
 - **knowledge**: [`docs`](#docs), [`protocols list`](#protocols-list), [`protocols verify`](#protocols-verify), [`standards list`](#standards-list)
-- **permissions**: [`allowed-calls set`](#allowed-calls-set), [`allowed-calls show`](#allowed-calls-show), [`allowed-keys set`](#allowed-keys-set), [`allowed-keys show`](#allowed-keys-show), [`controller add`](#controller-add), [`controller edit`](#controller-edit), [`controller remove`](#controller-remove), [`ownership accept`](#ownership-accept), [`ownership renounce`](#ownership-renounce), [`ownership transfer`](#ownership-transfer), [`permissions decode`](#permissions-decode), [`permissions encode`](#permissions-encode), [`permissions list`](#permissions-list), [`permissions presets`](#permissions-presets), [`permissions recommend`](#permissions-recommend), [`permissions show`](#permissions-show)
+- **permissions**: [`allowed-calls set`](#allowed-calls-set), [`allowed-calls show`](#allowed-calls-show), [`allowed-keys set`](#allowed-keys-set), [`allowed-keys show`](#allowed-keys-show), [`controller add`](#controller-add), [`controller edit`](#controller-edit), [`controller remove`](#controller-remove), [`ownership accept`](#ownership-accept), [`ownership renounce`](#ownership-renounce), [`ownership transfer`](#ownership-transfer), [`permissions authorize-link`](#permissions-authorize-link), [`permissions check-grant`](#permissions-check-grant), [`permissions decode`](#permissions-decode), [`permissions encode`](#permissions-encode), [`permissions list`](#permissions-list), [`permissions presets`](#permissions-presets), [`permissions recommend`](#permissions-recommend), [`permissions show`](#permissions-show)
 - **relayer**: [`relayer add`](#relayer-add), [`relayer execute`](#relayer-execute), [`relayer list`](#relayer-list), [`relayer quota`](#relayer-quota), [`relayer remove`](#relayer-remove)
 - **setup**: [`config get`](#config-get), [`config set`](#config-set), [`doctor`](#doctor), [`onboarding options`](#onboarding-options), [`policy set`](#policy-set), [`policy show`](#policy-show), [`start`](#start)
 - **sign**: [`sign message`](#sign-message), [`sign typed-data`](#sign-typed-data), [`verify-1271`](#verify-1271)
@@ -1434,6 +1434,55 @@ Start an LSP14 two-step ownership transfer of the profile (e.g. to a new Key Man
 | `--valid-from` | integer |  | Relay validity start (unix seconds); overrides --validity. |
 | `--valid-until` | integer |  | Relay validity end (unix seconds, 0 = no expiry); overrides --validity. |
 | `--fund-from-controller` | boolean |  | Direct paths only: the controller EOA sends the call value with the transaction instead of the profile paying from its balance. That spends the agent's gas money, so a call with value always needs the human's --approval; never a fallback when the profile lacks funds. |
+
+### permissions authorize-link
+
+Link for the human to add this agent to THEIR existing Universal Profile on LUKSO (https://authorize.universalprofile.cloud): prefilled agent address and the least permissions for what you will do. Grants nothing by itself.
+
+Local and offline: reads only the agent's public controller address from config (the key store is never opened; no key is created; without a key it stops with NO_SIGNER). Choose what the agent may do with --for (tokens, nfts, social, profile, pay with --pay-to, sign) and/or --allow-targets / --allowed-keys; there is no default. Only bits the lists use are requested (plus EXECUTE_RELAY_CALL for writes unless --no-relay); SUPER_* and DEPLOY only with --elevated when the human explicitly asked (shown unticked on the website); ownership, controller, permission, extension, delegate and DELEGATECALL powers are never requested. Send `data.say` with the QR from `media`. The human connects their profile with the UP browser extension or the UP mobile app, reviews and approves in their own wallet; then run `permissions check-grant` and `profile join`. LUKSO mainnet only (other chains: `permissions recommend --chain <id>`). --profile is included only when passed. --dry-run writes no QR and saves nothing. UP_AUTHORIZE_URL may point to a local development copy of the website (http://localhost only).
+
+- CLI: `up permissions authorize-link [options]`
+- MCP tool: `up_permissions_authorize_link` · risk: **local**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--for` | string[] |  | What the agent may do: tokens, nfts, social, profile, pay, sign (comma separated). |
+| `--pay-to` | string[] |  | Recipients the agent may send LYX to (pay capability; LSP6 limits recipients, not amounts). |
+| `--allow-targets` | json |  | Extra AllowedCalls entries: [{"address":"0x…","callTypes":["CALL"],"selector":"0x…","standard":"*"}] (VALUE, CALL, STATICCALL). |
+| `--allowed-keys` | string[] |  | Extra data keys the agent may write (names like LSP3Profile or hex keys/prefixes). |
+| `--elevated` | string[] |  | SUPER_CALL, SUPER_TRANSFERVALUE, SUPER_STATICCALL, SUPER_SETDATA or DEPLOY, only when the human explicitly asked for them. |
+| `--relay` | boolean |  | Add EXECUTE_RELAY_CALL to write permissions so the agent can act gaslessly (--no-relay to leave it out). Default: `true`. |
+| `--bot-name` | string |  | Your own display name as the human knows it (shown on the page as unverified); default UP_AGENT_NAME. |
+| `--purpose` | string |  | One short sentence on what you will do for the human (shown on the page as unverified, max 200 characters). |
+| `--qr` | boolean |  | Also write a QR code PNG of the link (to open it on a phone). Default: `true`. |
+
+Examples:
+
+```
+up permissions authorize-link --for social,profile --bot-name "Nova" --purpose "Follow artists for you and keep your profile picture fresh"
+up permissions authorize-link --for tokens,sign --profile 0x… 
+up permissions authorize-link --for pay --pay-to 0xFriend… --dry-run
+```
+
+### permissions check-grant
+
+After the human approved an authorization link: reads what their profile now allows this agent's key on-chain and compares it with the link (exact, narrower, broader, not-authorised). Read-only.
+
+Uses the newest saved link of `permissions authorize-link` (or --request <link>) and --profile (the human's profile; the page shows it after the approval). exact = everything requested and nothing more; narrower = the human unticked something (fine: never ask for more without a new need); broader = the profile allows more than requested (tell the human, recommend removing it); not-authorised = nothing granted yet. Then join with the existing flow: `profile join <profile> --chains 42` (never deploy a new profile). Without --chain it checks the link's network (LUKSO).
+
+- CLI: `up permissions check-grant [options]`
+- MCP tool: `up_permissions_check_grant` · risk: **read**
+
+| option | type | required | description |
+| --- | --- | --- | --- |
+| `--request` | string |  | The authorization link to compare with (default: the newest link this agent made for this profile). |
+
+Examples:
+
+```
+up permissions check-grant --profile 0x…
+up permissions check-grant --profile 0x… --request "https://authorize.universalprofile.cloud/authorize?…"
+```
 
 ### permissions decode
 
