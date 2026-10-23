@@ -31,6 +31,9 @@ import {
 } from "./restore.ts";
 import { agentLabel, appendIndex, readBackupFile, readIndex, resolveDestination, sha256Hex, writeBackup } from "./store.ts";
 
+// for `profile identity`, which reads the same local state (so the shipped bundle keeps one copy of build.ts)
+export { collectProfiles } from "./build.ts";
+
 const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 

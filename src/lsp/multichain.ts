@@ -18,6 +18,10 @@ import { selectRelayer } from "../relayer/registry.ts";
 import { ADMIN_PERMISSIONS, ALL_PERMISSIONS, INTERFACE_IDS, PERMISSIONS } from "./constants.ts";
 import { hasPermission } from "./permissions.ts";
 import { recommend } from "./controllers.ts";
+import { authorizeNetwork } from "./authorize-site.ts";
+
+/** On LUKSO the human can authorise the agent with one link instead of entering the permissions by hand. */
+const linkAlternative = (chainId: number) => (authorizeNetwork(chainId) ? "; on LUKSO one link is simpler: up permissions authorize-link --for <what the human wants you to do>" : "");
 import { readControllerPermissions, resolveKeyManager, supportsInterface, type ControllerInfo } from "./profile.ts";
 import { getBalance, hasCode, tryRead } from "./read.ts";
 import { UP_ABI } from "./abis.ts";
@@ -264,7 +268,7 @@ export function nextStepsFor(s: ChainProfileStatus): string[] {
   if (!s.controller) return ["create the agent's key first: up init"];
   const c = s.controller;
   if (!c.isController) {
-    const steps = [`ask the human to authorise this agent's key ${c.address} on ${where} (permissions are per chain; a grant on another chain does not count here): up permissions recommend --chain ${arg} prints the recommended set to hand over`];
+    const steps = [`ask the human to authorise this agent's key ${c.address} on ${where} (permissions are per chain; a grant on another chain does not count here): up permissions recommend --chain ${arg} prints the recommended set to hand over${linkAlternative(s.chainId)}`];
     if (s.otherLocalController) steps.push(`or use the agent's key ${s.otherLocalController.address}, which already is a controller on ${s.chain}: up key activate ${s.otherLocalController.address} --chain ${arg} (needs the human's approval)`);
     for (const m of s.missingLocalControllers ?? []) steps.push(`the agent's key ${m.address} is a controller on ${s.chain} but missing from ${m.backend}: restore it from its backup (it stays listed; never replaced)`);
     return steps;
@@ -389,7 +393,7 @@ async function notControllerError(ctx: VerbContext, l: ChainLabel, profile: Addr
   const other = await otherLocalController(ctx, cfg, l.chainId, profile, signer).catch(() => undefined);
   const rec = recommend(signer, profile, { preset: "agent-operator" });
   const hint = [
-    `ask the human to authorise this agent's key ${signer} on ${l.name} (permissions are per chain; recommended set ${rec.preset}: ${rec.permissions.names.join(", ")} — the full text: up permissions recommend --chain ${l.arg})`,
+    `ask the human to authorise this agent's key ${signer} on ${l.name} (permissions are per chain; recommended set ${rec.preset}: ${rec.permissions.names.join(", ")} — the full text: up permissions recommend --chain ${l.arg})${linkAlternative(l.chainId)}`,
     other ? `or use the agent's key ${other.address}, which already is a controller on ${l.name}: up key activate ${other.address} --chain ${l.arg} (needs the human's approval)` : "",
   ].filter(Boolean);
   return new UpError("NOT_AUTHORISED", `on ${where} this agent's key ${signer} is not a controller of your Universal Profile ${profile}`, {
@@ -415,7 +419,7 @@ export function withChainContext(ctx: Pick<VerbContext, "registry">, e: unknown,
   if (name && PERMISSION_ERRORS.has(name) && !d.chain) {
     const args: unknown[] = d.args ?? d.revert?.args ?? [];
     if (name === "NotAuthorised" && typeof args[1] === "string") extra = `on ${l.name} the agent's key ${signer} lacks ${args[1]} on your profile ${profile}: ask the human to grant exactly that there (up controller edit ${signer} --add ${args[1]} --chain ${l.arg}); permissions on other chains are unaffected`;
-    else if (name === "NoPermissionsSet") extra = `on ${l.name} the agent's key ${signer} is not a controller of your profile ${profile}: ask the human to authorise it there (up permissions recommend --chain ${l.arg})`;
+    else if (name === "NoPermissionsSet") extra = `on ${l.name} the agent's key ${signer} is not a controller of your profile ${profile}: ask the human to authorise it there (up permissions recommend --chain ${l.arg})${linkAlternative(l.chainId)}`;
     else if (name === "NotAllowedCall" || name === "NoCallsAllowed") extra = `on ${l.name} this target/function is outside the AllowedCalls of the agent's key ${signer}: ask the human to add an entry there (up allowed-calls show --chain ${l.arg})`;
     else extra = `on ${l.name} this data key is outside the allowed data keys of the agent's key ${signer}: ask the human to add it there (up allowed-keys show --chain ${l.arg})`;
   } else if (e.code === "TX_FAILED" && /insufficient native balance/.test(e.message)) {

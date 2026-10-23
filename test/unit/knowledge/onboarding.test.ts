@@ -46,6 +46,13 @@ describe("onboarding options", () => {
     expect(onboardingText(onboardingPaths(ctx))).toContain("The website link is coming soon.");
   });
 
+  it("existing profile path starts with the authorization link on LUKSO and keeps the manual hand-over elsewhere", () => {
+    const existing = onboardingPaths(ctx)[2];
+    expect(existing.next[0]).toMatch(/^up permissions authorize-link --for /);
+    expect(existing.next).toEqual(expect.arrayContaining(["up permissions check-grant --profile <profileAddress>", "up profile join <profileAddress>", "up permissions recommend --chain <id>"]));
+    expect(existing.subtitle).not.toMatch(/deploy|new profile/i);
+  });
+
   it("shows the website once it is set", () => {
     const paths = onboardingPaths(ctx, "https://relayer.example/start");
     expect(paths[1]).toMatchObject({ url: "https://relayer.example/start" });

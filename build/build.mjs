@@ -5,8 +5,9 @@
 //   scripts/up.mjs          CLI entry          (node scripts/up.mjs <verb> ...)
 //   scripts/up-mcp.mjs      stdio MCP server   (node scripts/up-mcp.mjs)
 //   scripts/up-doctor.mjs   environment check  (node scripts/up-doctor.mjs)
-//   scripts/lib/app.mjs     shared application code (chunk)
-//   scripts/lib/backup.mjs  the backup verbs' code, loaded on demand by app.mjs (see step 2)
+//   scripts/lib/app.mjs        shared application code (chunk)
+//   scripts/lib/backup.mjs     the backup verbs' code, loaded on demand by app.mjs (see step 2)
+//   scripts/lib/authorize.mjs  the authorization-link verbs' code, loaded on demand by app.mjs (see step 2)
 //   scripts/lib/vendor-viem.mjs, vendor-erc725.mjs, vendor-qrcode.mjs
 //
 // Third-party packages are bundled into separate vendor files so that every
@@ -18,6 +19,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync, statSync, 
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundledInputs, sourceFingerprint } from "./fingerprint.mjs";
+import { checkVersion } from "./version.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const skillDir = join(root, "skills", "universal-profile");
@@ -25,13 +27,21 @@ const outDir = join(skillDir, "scripts");
 const libDir = join(outDir, "lib");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
+// Every copy of the version must agree before anything is built (build/version.mjs; package.json is canonical).
+const versionProblems = checkVersion(root, { built: false });
+if (versionProblems.length) {
+  for (const p of versionProblems) console.error(`✗ ${p}`);
+  console.error("✗ the version copies disagree; fix them with: node build/version.mjs set <version> (see README.md, Versioning and releases)");
+  process.exit(1);
+}
+
 // Source fingerprint (build/fingerprint.mjs): sha256 over the repository files this build reads, i.e. every module
 // the bundles below contain (esbuild's metafiles), plus the build scripts and package manifests, with LF line
 // endings. Local files that nothing imports (.DS_Store …) cannot change it. Unlike a git commit id, it is stable
 // when the built bundles are committed alongside the sources, so CI can check that committed bundles match a fresh
 // build. It is known only after bundling, so the bundles carry a one-off placeholder until they are written.
 const STAMP = `__UP_SOURCE_${randomBytes(8).toString("hex")}__`;
-const FIXED_INPUTS = ["build/build.mjs", "build/fingerprint.mjs", "package.json", "package-lock.json"];
+const FIXED_INPUTS = ["build/build.mjs", "build/fingerprint.mjs", "build/version.mjs", "package.json", "package-lock.json"];
 
 const REQUIRE_SHIM = `import { createRequire as __upCreateRequire } from "node:module";\nconst require = __upCreateRequire(import.meta.url);\n`;
 const banner = (what) =>
@@ -118,63 +128,100 @@ keep(await bundle({
   banner: { js: banner("Vendored qrcode (MIT) — https://github.com/soldair/node-qrcode") },
 }));
 
-// 2) Application: one shared chunk + three thin entry points, and the code of the backup verbs as a
-//    second chunk that app.mjs loads on demand (dynamic import in src/backup/verbs.ts). Together they
-//    would pass the 1 MiB file limit, and they must share one copy of every app module (the registry
-//    of secrets, the error classes ...), so backup.mjs imports those from app.mjs instead of bundling them:
-//    a) bundle src/backup/run.ts with every module outside src/backup left as an import "shared:<path>",
-//    b) bundle app.mjs with a namespace export of each such module,
-//    c) rewrite the "shared:" imports of backup.mjs into reads from those namespaces.
+// 2) Application: one shared chunk + three thin entry points, and the code behind some verb groups as
+//    separate chunks that app.mjs loads on demand (LAZY: the group's verbs file only declares its verbs and
+//    loads this run module with import() when one of them runs). Together they would pass the 1 MiB file
+//    limit, and they must share one copy of every app module (the registry of secrets, the error classes ...),
+//    so a chunk bundles only the modules app.mjs does not contain and imports the others from app.mjs:
+//    a) find the modules app.mjs contains (everything src/app.ts reaches, the chunks left out),
+//    b) bundle each chunk with each of those modules left as an import "shared:<path>",
+//    c) bundle app.mjs with a namespace export of each such module,
+//    d) rewrite the "shared:" imports of the chunks into reads from those namespaces.
+const LAZY = [
+  { entry: "src/backup/run.ts", file: "backup.mjs", what: "backup verbs" },
+  { entry: "src/lsp/authorize-run.ts", file: "authorize.mjs", what: "authorization-link verbs" },
+];
 const srcDir = join(root, "src") + sep;
-const backupDir = join(root, "src", "backup") + sep;
-const shared = new Set();
 const defines = { __UP_VERSION__: JSON.stringify(pkg.version), __UP_SOURCE__: JSON.stringify(STAMP) };
-const lazy = await bundle({
-  ...common,
-  entryPoints: [join(root, "src", "backup", "run.ts")],
-  outfile: join(libDir, "backup.mjs"),
-  plugins: [
-    vendorRewrite(true),
-    {
-      name: "shared-with-app",
-      setup(b) {
-        b.onResolve({ filter: /^\.\.?\// }, async (args) => {
-          if (args.pluginData?.skip) return undefined;
-          const r = await b.resolve(args.path, { resolveDir: args.resolveDir, kind: args.kind, importer: args.importer, pluginData: { skip: true } });
-          if (r.errors.length || !r.path.startsWith(srcDir) || r.path.startsWith(backupDir)) return r;
-          const rel = relative(root, r.path).split(sep).join("/");
-          shared.add(rel);
-          return { path: `shared:${rel}`, external: true };
-        });
+const relOf = (path) => relative(root, path).split(sep).join("/");
+const srcInputs = (r) => Object.keys(r.metafile.inputs).map((k) => k.split("\\").join("/")).filter((f) => f.startsWith("src/"));
+const lazyByPath = new Map(LAZY.map((c) => [join(root, ...c.entry.split("/")), c]));
+/** In app.mjs, an import() of a chunk's run module loads the chunk; a static import would put its code back. */
+const onDemand = {
+  name: "on-demand-chunks",
+  setup(b) {
+    b.onResolve({ filter: /^\.\.?\// }, async (args) => {
+      if (args.pluginData?.skip) return undefined;
+      const r = await b.resolve(args.path, { resolveDir: args.resolveDir, kind: args.kind, importer: args.importer, pluginData: { skip: true } });
+      const chunk = r.errors.length ? undefined : lazyByPath.get(r.path);
+      if (!chunk) return r;
+      if (args.kind !== "dynamic-import") return { errors: [{ text: `${chunk.entry} is loaded on demand (lib/${chunk.file}): load it with import(), not a static import` }] };
+      return { path: `./${chunk.file}`, external: true };
+    });
+  },
+};
+const appStdin = (namespaces) => ({ contents: [`export * from "./src/app.ts";`, ...namespaces].join("\n"), resolveDir: root, sourcefile: "app.ts" });
+
+// a)
+const probe = await build({ ...common, stdin: appStdin([]), outfile: join(libDir, "app.mjs"), plugins: [vendorRewrite(true), onDemand], define: defines });
+const inApp = new Set(srcInputs(probe));
+
+// b)
+const shared = new Set();
+const chunkOf = new Map(); // module -> the chunk that bundles it
+const chunks = [];
+for (const chunk of LAZY) {
+  const r = await bundle({
+    ...common,
+    entryPoints: [join(root, ...chunk.entry.split("/"))],
+    outfile: join(libDir, chunk.file),
+    plugins: [
+      vendorRewrite(true),
+      {
+        name: "shared-with-app",
+        setup(b) {
+          b.onResolve({ filter: /^\.\.?\// }, async (args) => {
+            if (args.pluginData?.skip) return undefined;
+            const r = await b.resolve(args.path, { resolveDir: args.resolveDir, kind: args.kind, importer: args.importer, pluginData: { skip: true } });
+            if (r.errors.length || !r.path.startsWith(srcDir) || !inApp.has(relOf(r.path))) return r;
+            shared.add(relOf(r.path));
+            return { path: `shared:${relOf(r.path)}`, external: true };
+          });
+        },
       },
-    },
-  ],
-  define: defines,
-  banner: { js: banner("Universal Profile skill — backup verbs (loaded on demand by app.mjs)") },
-});
+    ],
+    define: defines,
+    banner: { js: banner(`Universal Profile skill — ${chunk.what} (loaded on demand by app.mjs)`) },
+  });
+  for (const f of srcInputs(r)) {
+    if (chunkOf.has(f)) throw new Error(`${f} would be bundled into both lib/${chunkOf.get(f)} and lib/${chunk.file}`);
+    chunkOf.set(f, chunk.file);
+  }
+  chunks.push({ chunk, text: r.outputFiles[0].text });
+}
+
+// c)
 const sharedList = [...shared].sort();
 const ns = (rel) => `$s${sharedList.indexOf(rel)}`;
-let lazyCode = lazy.outputFiles[0].text.replace(/^import\s*\{([^}]*)\}\s*from\s*"shared:([^"]+)";?$/gm, (_m, names, rel) => `const {${names.replace(/\s+as\s+/g, ": ")}} = ${ns(rel)};`);
-if (lazyCode.includes("shared:")) throw new Error("backup.mjs: an import of an app module was not bridged (only named imports are supported)");
-lazyCode = lazyCode.replace(/^(\/\/[^\n]*\n)+/, (header) => `${header}import { ${sharedList.map(ns).join(", ")} } from "./app.mjs";\n`);
-outputs.set(join(libDir, "backup.mjs"), lazyCode);
-
-keep(await bundle({
+const app = await bundle({
   ...common,
-  stdin: { contents: [`export * from "./src/app.ts";`, ...sharedList.map((rel) => `export * as ${ns(rel)} from "./${rel}";`)].join("\n"), resolveDir: root, sourcefile: "app.ts" },
+  stdin: appStdin(sharedList.map((rel) => `export * as ${ns(rel)} from "./${rel}";`)),
   outfile: join(libDir, "app.mjs"),
-  plugins: [
-    vendorRewrite(true),
-    {
-      name: "backup-on-demand",
-      setup(b) {
-        b.onResolve({ filter: /^\.\/run\.ts$/ }, (args) => (args.importer.endsWith(join("src", "backup", "verbs.ts")) ? { path: "./backup.mjs", external: true } : undefined));
-      },
-    },
-  ],
+  plugins: [vendorRewrite(true), onDemand],
   define: defines,
   banner: { js: banner("Universal Profile skill — application code") },
-}));
+});
+for (const f of srcInputs(app)) if (chunkOf.has(f)) throw new Error(`${f} would be bundled into both lib/app.mjs and lib/${chunkOf.get(f)}`);
+keep(app);
+
+// d)
+for (const { chunk, text } of chunks) {
+  const used = sharedList.filter((rel) => text.includes(`"shared:${rel}"`));
+  let code = text.replace(/^import\s*\{([^}]*)\}\s*from\s*"shared:([^"]+)";?$/gm, (_m, names, rel) => `const {${names.replace(/\s+as\s+/g, ": ")}} = ${ns(rel)};`);
+  if (code.includes("shared:")) throw new Error(`lib/${chunk.file}: an import of an app module was not bridged (only named imports are supported)`);
+  code = code.replace(/^(\/\/[^\n]*\n)+/, (header) => `${header}import { ${used.map(ns).join(", ")} } from "./app.mjs";\n`);
+  outputs.set(join(libDir, chunk.file), code);
+}
 
 const entries = {
   "up.mjs": `import { runCli } from "./lib/app.mjs";\nprocess.exitCode = await runCli(process.argv.slice(2));\n`,

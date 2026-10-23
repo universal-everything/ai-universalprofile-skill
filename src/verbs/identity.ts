@@ -47,7 +47,7 @@ defineVerb({
   examples: ["up profile identity"],
   async run(ctx: VerbContext) {
     const cfg = await ctx.config();
-    const { collectProfiles } = await import("../backup/build.ts");
+    const { collectProfiles } = await import("../backup/run.ts");
     const warnings: string[] = [];
     const states = await collectProfiles(ctx, cfg, warnings, { damaged: "warn" });
 
@@ -64,6 +64,8 @@ defineVerb({
       address: Address;
       alias?: string;
       isDefault: boolean;
+      /** own: this agent created it (deployment manifest); joined: the human's profile this agent was authorised on; known: saved without either. */
+      role: "own" | "joined" | "known";
       networks: Record<string, any>[];
       recordDamaged?: true;
     }
@@ -102,7 +104,8 @@ defineVerb({
       }
       networks.sort((a, b) => a.chainId - b.chainId);
       const alias = aliasOf(id);
-      profiles.push({ address: id, ...(alias ? { alias: safeFileText(alias, 40) } : {}), isDefault: !!defaultProfile && same(id, defaultProfile), networks, ...(damaged ? { recordDamaged: true as const } : {}) });
+      const role: Entry["role"] = record.deployment ? "own" : record.joined ? "joined" : "known";
+      profiles.push({ address: id, ...(alias ? { alias: safeFileText(alias, 40) } : {}), isDefault: !!defaultProfile && same(id, defaultProfile), role, networks, ...(damaged ? { recordDamaged: true as const } : {}) });
     }
 
     const agentControllers = controllerText(cfg);
@@ -114,13 +117,22 @@ defineVerb({
       const nets = p.networks.map((n) => `${n.network}${n.linkedAddress ? ` (as ${n.address})` : ""}`);
       return `${p.address}${p.alias ? ` ("${p.alias}")` : ""}${nets.length ? ` on ${listWords(nets)}` : p.recordDamaged ? " (its saved details are damaged and need a repair)" : " (no network recorded yet)"}`;
     };
-    const say = found
-      ? profiles.length === 1
-        ? `My Universal Profile is ${lines(profiles[0])}.`
-        : `I know these Universal Profiles: ${profiles.map((p) => `${lines(p)}${p.isDefault ? " (the one I use by default)" : ""}`).join("; ")}.`
-      : "I don't have a Universal Profile saved in this place yet. That doesn't mean none exists: if you already have one, or a backup of mine, tell me and I'll connect it.";
+    // the human's own profile (joined) is never called "my profile": it is theirs, the agent is authorised on it
+    const joined = profiles.filter((p) => p.role === "joined");
+    const mine = profiles.filter((p) => p.role !== "joined");
+    const withDefault = (p: Entry) => `${lines(p)}${p.isDefault && profiles.length > 1 ? " (the one I use by default)" : ""}`;
+    const yours = joined.length === 1 ? `your Universal Profile ${withDefault(joined[0])} (it's yours; you authorised me on it)` : `your Universal Profiles ${joined.map(withDefault).join("; ")} (they're yours; you authorised me on them)`;
+    const say = !found
+      ? "I don't have a Universal Profile saved in this place yet. That doesn't mean none exists: if you already have one, or a backup of mine, tell me and I'll connect it."
+      : !joined.length
+        ? profiles.length === 1
+          ? `My Universal Profile is ${lines(profiles[0])}.`
+          : `I know these Universal Profiles: ${profiles.map((p) => `${lines(p)}${p.isDefault ? " (the one I use by default)" : ""}`).join("; ")}.`
+        : !mine.length
+          ? `I act for ${yours}.`
+          : `My own Universal Profile${mine.length > 1 ? "s are" : " is"} ${mine.map(withDefault).join("; ")}. I also act for ${yours}.`;
     const shown = warnings.filter((w) => !/nothing to back up/.test(w));
-    const profileText = profiles.map((p) => `${p.isDefault ? "* " : "  "}${lines(p)}`);
+    const profileText = profiles.map((p) => `${p.isDefault ? "* " : "  "}${lines(p)}${p.role === "joined" ? " (the human's profile; this agent is authorised on it)" : ""}`);
 
     return {
       data: {
@@ -139,6 +151,9 @@ defineVerb({
               "Saved is not current: run `up profile status` for what is deployed and permitted on each network right now before acting or answering about permissions or balances; never quote old permissions or call a network deployed from the address alone.",
               "Tell the human the address, network names and link in plain words, not file names or commands. Keep the profile (the account), the agent's key address and a controller's recorded address apart.",
               ...(hasKeys ? [] : ["No agent key address is saved here: if signing is needed, `up doctor` says why; never regenerate a key to replace a missing one."]),
+              ...(joined.length
+                ? ["A profile with role \"joined\" belongs to the human: call it their profile, never deploy it again or treat it as your own, and act for it only within the permissions `up profile status` (or `up permissions check-grant`) shows."]
+                : []),
               ...(profiles.some((p) => p.recordDamaged)
                 ? ["A saved profile record is damaged (see warnings): tell the human and ask them to repair the file; never delete it and never create a new profile, key or relay channel because of it. Commands that use or change that record stop until it is repaired."]
                 : []),

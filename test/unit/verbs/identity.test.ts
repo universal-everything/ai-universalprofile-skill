@@ -69,6 +69,29 @@ afterEach(() => {
 });
 
 describe("profile identity", () => {
+  it("keeps the human's profile it was authorised on apart from its own profile", async () => {
+    const humans = getAddress("0x6666666666666666666666666666666666666666");
+    await updateProfileRecord(home, humans, () => ({ joined: { at: "2026-10-23T00:00:00.000Z", checkedAt: "2026-10-23T00:00:00.000Z", controller: k1, chains: [{ chainId: 42, authorised: true, deployed: true, controller: k1 }] } }));
+    const r = await identity();
+    expect(r.data.profiles.find((p: any) => p.address === m1.profile).role).toBe("own");
+    expect(r.data.profiles.find((p: any) => p.address === humans).role).toBe("joined");
+    expect(r.data.say).toMatch(new RegExp(`My own Universal Profiles? (is|are) ${m1.profile}`));
+    expect(r.data.say).toMatch(new RegExp(`I also act for your Universal Profile ${humans}`));
+    expect(r.data.say).not.toMatch(new RegExp(`My [^.]*${humans}`));
+    expect(r.data.next.join(" ")).toMatch(/belongs to the human/);
+  });
+
+  it("with only the human's profile it says it acts for their profile, not that it owns one", async () => {
+    const solo = mkdtempSync(join(tmpdir(), "up-identity-joined-"));
+    const humans = getAddress("0x7777777777777777777777777777777777777777");
+    writeFileSync(join(solo, "config.json"), JSON.stringify({ version: 1, controller: { address: k1, backend: "macos-keychain", createdAt: "2026-10-01T00:00:00.000Z" }, defaultProfile: humans, chains: [42] }));
+    await updateProfileRecord(solo, humans, () => ({ joined: { at: "2026-10-23T00:00:00.000Z", controller: k1, chains: [{ chainId: 42, authorised: true, deployed: true, controller: k1 }] } }));
+    const r = await identity(solo);
+    expect(r.data.profiles).toEqual([expect.objectContaining({ address: humans, role: "joined" })]);
+    expect(r.data.say).toMatch(new RegExp(`^I act for your Universal Profile ${humans}`));
+    expect(r.data.say).not.toMatch(/My (own )?Universal Profile/);
+  });
+
   it("a fresh context on the same UP_HOME finds the default profile, every profile and the per-chain addresses", async () => {
     const r = await identity();
     expect(r.data.found).toBe(true);

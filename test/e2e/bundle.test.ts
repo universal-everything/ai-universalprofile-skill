@@ -141,6 +141,25 @@ describe("shipped bundle end-to-end (CLI + MCP processes)", () => {
     expect(JSON.stringify(v.data)).toMatch(/0x1626ba7e|"valid":\s*true/);
   });
 
+  it("profile identity reads the local state with the backup code (lib/backup.mjs, loaded on demand)", async () => {
+    const id = await up(["profile", "identity"]);
+    expect(id.ok, id.raw).toBe(true);
+    expect(id.data.profiles.find((p: any) => p.address === profile)).toMatchObject({ role: "own" });
+  });
+
+  it("authorization links (lib/authorize.mjs, loaded on demand): made from the public address only, own profile refused, grant checked", async () => {
+    const link = await up(["permissions", "authorize-link", "--for", "social,profile", "--bot-name", "Nova", "--dry-run"]);
+    expect(link.ok, link.raw).toBe(true);
+    expect(link.data).toMatchObject({ status: "link-ready", granted: false, chainId: 42, controller: { address: controller }, qr: null, saved: null });
+    expect(link.data.url).toMatch(/^https:\/\/authorize\.universalprofile\.cloud\/authorize\?controller=/);
+    const own = await up(["permissions", "authorize-link", "--for", "social", "--profile", profile, "--dry-run"]);
+    expect(own.error.code, own.raw).toBe("BAD_ARGS");
+    // the agent's own key on its own profile holds far more than the link asks for
+    const check = await up(["permissions", "check-grant", "--request", link.data.url, "--profile", profile, "--chain", String(h.chainId)]);
+    expect(check.ok, check.raw).toBe(true);
+    expect(check.data).toMatchObject({ source: "request", status: "broader", authorised: true, withinRequest: false });
+  });
+
   it("MCP stdio: initialize, list tools, call a read tool against the same state", async () => {
     const child = spawn(process.execPath, [join(scripts, "up-mcp.mjs")], { env, stdio: ["pipe", "pipe", "pipe"] });
     const lines: any[] = [];

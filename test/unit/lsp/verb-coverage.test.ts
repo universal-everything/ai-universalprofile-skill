@@ -9,7 +9,7 @@ import "../../../src/relayer/verbs.ts";
 import { allVerbs, inputSchema, mcpToolName } from "../../../src/core/verbs.ts";
 
 const chainDir = join(import.meta.dirname, "..", "..", "chain");
-const sources = ["account.test.ts", "permissions.test.ts", "relay.test.ts", "exec.test.ts", "multichain.test.ts", "metadata.test.ts"].map((f) => readFileSync(join(chainDir, f), "utf8")).join("\n");
+const sources = ["account.test.ts", "permissions.test.ts", "relay.test.ts", "exec.test.ts", "multichain.test.ts", "metadata.test.ts", "authorize-link.test.ts"].map((f) => readFileSync(join(chainDir, f), "utf8")).join("\n");
 const ours = allVerbs();
 
 describe("account-core verb surface", () => {
@@ -25,6 +25,7 @@ describe("account-core verb surface", () => {
       "exec call", "exec send", "exec relay", "exec batch", "exec simulate", "exec receipt", "nonce",
       "sign message", "sign typed-data", "verify-1271",
       "relayer add", "relayer list", "relayer remove", "relayer quota", "relayer execute",
+      "permissions authorize-link", "permissions check-grant",
     ]) expect(names, n).toContain(n);
   });
 

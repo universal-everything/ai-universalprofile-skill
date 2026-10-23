@@ -20,6 +20,7 @@ import { readProfileRecord, updateProfileRecord } from "../core/profile-record.t
 import { getData, getDataBatch, readControllerPermissions, readControllers, readProfileInfo, resolveKeyManager, type ControllerInfo } from "./profile.ts";
 import { allowedKeyFor, classifyDataKey, decodeDataValue, encodeDataValue, resolveDataKey } from "./schemas.ts";
 import { recommend, setDataPayload, buildAddController, requireLockApproval, type RecommendationOptions } from "./controllers.ts";
+import { latestAuthorizeRequest } from "./authorize-store.ts";
 import { ADMIN_PERMISSIONS } from "./constants.ts";
 import { hasCode } from "./read.ts";
 import { chainLabel, onChain } from "./multichain.ts";
@@ -613,8 +614,13 @@ defineVerb({
     if (!chainIds.length) throw new UpError("BAD_ARGS", "no chain selected", { hint: "pass --chains 42,8453 or set: up config set chains 42" });
     const opts = recommendationOptions(a);
     const rec = recommend(me, profile, opts);
+    // after an authorization link (permissions authorize-link) the human approved exactly that request:
+    // compare with it on its network instead of the general recommendation (unless options were given)
+    const explicit = a.preset !== undefined || a["allowed-calls"] !== undefined || a["allow-targets"] !== undefined || a["allowed-keys"] !== undefined || a["with-4337"] === true;
+    const link = explicit ? undefined : await latestAuthorizeRequest(ctx.home, me, profile);
+    const baseline = (c: number) => (link && link.chainId === c ? BigInt(link.permissions) : BigInt(rec.permissions.hex));
     // one account, many chains: each chain is checked on its own (in parallel; one failing RPC does not hide the others)
-    const statuses = await Promise.all(chainIds.map((c) => joinStatus(ctx, c, profile, BigInt(rec.permissions.hex))));
+    const statuses = await Promise.all(chainIds.map((c) => joinStatus(ctx, c, profile, baseline(c))));
     if (a["set-default"]) cfg.defaultProfile = profile;
     if (a.alias) {
       if (isAddress(a.alias, { strict: false })) throw new UpError("BAD_ARGS", "alias must not look like an address");
@@ -631,12 +637,14 @@ defineVerb({
     const metadata = { ...md, askHuman: md.deployed === true && md.hasMetadata === false };
     const lines = [
       `Your Universal Profile ${profile} — this agent's key: ${me}`,
-      ...statuses.map((s) => `  ${label(s.chainId)}: ${!s.deployed ? `not deployed${s.error ? ` (${s.error})` : ""}` : s.authorised ? `AUTHORISED (${s.permissions!.join(", ")})${s.missing!.length ? `; missing recommended: ${s.missing!.join(", ")}` : ""}` : "NOT AUTHORISED yet"}${s.controller && s.controller !== me ? ` [key ${s.controller}]` : ""}${s.deployed && s.otherControllers?.length ? `; other controllers: ${s.otherControllers.length}` : ""}`),
+      ...statuses.map((s) => `  ${label(s.chainId)}: ${!s.deployed ? `not deployed${s.error ? ` (${s.error})` : ""}` : s.authorised ? `AUTHORISED (${s.permissions!.join(", ")})${s.missing!.length ? `; ${link && link.chainId === s.chainId ? "not granted from your authorization link" : "missing recommended"}: ${s.missing!.join(", ")}` : ""}` : "NOT AUTHORISED yet"}${s.controller && s.controller !== me ? ` [key ${s.controller}]` : ""}${s.deployed && s.otherControllers?.length ? `; other controllers: ${s.otherControllers.length}` : ""}`),
+      ...(link ? [`Compared on ${label(link.chainId)} with the authorization link you made on ${link.createdAt.slice(0, 10)} (${decodePermissions(link.permissions).names.join(", ")}); permissions check-grant compares the allowed calls and data keys too.`] : []),
       ...(pending.some((s) => !s.controller || s.controller === me) ? ["", `Hand this to the human (for ${pending.filter((s) => !s.controller || s.controller === me).map((s) => label(s.chainId)).join(", ")}):`, rec.text] : []),
       ...otherKeys.flatMap((k) => ["", `On ${pending.filter((s) => s.controller === k).map((s) => label(s.chainId)).join(", ")} the agent uses its key ${k}; hand this to the human for those chains:`, recommend(k, profile, opts).text]),
       ...(metadata.askHuman ? ["", `The profile has no profile metadata on ${md.chain} yet (no name, description or pictures). Ask the human whether they want to add a name, description, profile picture and background image (optional, can be done later): up profile metadata set --dry-run first.`] : []),
     ];
-    return { data: { profile, controller: me, chains: statuses, recommendation: rec, defaultProfile: a["set-default"] ? profile : cfg.defaultProfile, metadata }, text: lines.join("\n") };
+    const authorizeRequest = link ? { id: link.id, chainId: link.chainId, createdAt: link.createdAt, permissions: decodePermissions(link.permissions).names } : undefined;
+    return { data: { profile, controller: me, chains: statuses, recommendation: rec, ...(authorizeRequest ? { authorizeRequest } : {}), defaultProfile: a["set-default"] ? profile : cfg.defaultProfile, metadata }, text: lines.join("\n") };
   },
 });
 

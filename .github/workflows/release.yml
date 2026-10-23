@@ -26,6 +26,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: the tag is the version in package.json and its CHANGELOG entry is dated
+        run: node build/version.mjs check --release --tag "$GITHUB_REF_NAME"
       - run: npm run typecheck && npm test
       - name: reproducible build
         run: |

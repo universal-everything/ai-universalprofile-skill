@@ -9,6 +9,7 @@ import { readFileSync, readdirSync, lstatSync, existsSync } from "node:fs";
 import { dirname, join, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { checkVersion } from "./version.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const skill = join(root, "skills", "universal-profile");
@@ -94,6 +95,9 @@ if (existsSync(buildJson)) {
     else if (createHash("sha256").update(readFileSync(p)).digest("hex") !== m.sha256) problems.push(`BUILD.json hash mismatch for ${rel}`);
   }
 } else problems.push("scripts/BUILD.json missing (run npm run build)");
+
+// version: every copy agrees with package.json (lockfile root, SKILL.md, plugin.json, CHANGELOG, READMEs, BUILD.json, bundles)
+for (const p of checkVersion(root)) problems.push(`version: ${p}`);
 
 console.log(`skill files: ${files.length}, total ${(total / 1024).toFixed(0)} KiB`);
 for (const w of warn) console.log(`⚠️  ${w}`);

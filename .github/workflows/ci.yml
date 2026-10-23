@@ -50,7 +50,9 @@ jobs:
           npm run build
           node build/gen-verb-docs.mjs
           git diff --exit-code -- skills/universal-profile/scripts skills/universal-profile/references/verbs.md
-      - name: skill package gate (spec, sizes, text-only, no local paths/secrets)
+      - name: version consistency (package.json is canonical; build/version.mjs)
+        run: node build/version.mjs check
+      - name: skill package gate (spec, sizes, text-only, no local paths/secrets, version)
         run: npm run verify:skill
       - name: dependency audit (runtime deps are bundled)
         run: npm audit --omit=dev --audit-level=high

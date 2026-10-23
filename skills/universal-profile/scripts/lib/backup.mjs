@@ -1,7 +1,7 @@
 // Universal Profile skill — backup verbs (loaded on demand by app.mjs)
-// Universal Profile Agent Skill v0.1.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint d0360c6ba6ce (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
-import { $s0, $s1, $s2, $s3, $s4, $s5, $s6, $s7, $s8, $s9, $s10, $s11, $s12, $s13, $s14, $s15, $s16, $s17, $s18 } from "./app.mjs";
+// Universal Profile Agent Skill v0.2.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
+// Built from source fingerprint 6bd6af81d417 (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+import { $s0, $s1, $s2, $s3, $s4, $s5, $s6, $s7, $s10, $s14, $s15, $s16, $s17, $s18, $s20, $s21, $s22, $s23, $s24 } from "./app.mjs";
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
 
@@ -9,39 +9,69 @@ const require = __upCreateRequire(import.meta.url);
 // src/backup/run.ts
 import { lstat as lstat2, readFile as readFile2, stat as stat2 } from "node:fs/promises";
 import { basename as basename2 } from "node:path";
-const { UpError: UpError7 } = $s1;
-const { paths: paths3 } = $s2;
-const { releaseKeys } = $s3;
-const { readProfileRecord: readProfileRecord2 } = $s4;
-const { assertNoKeyMaterial: assertNoKeyMaterial3 } = $s5;
+const { UpError: UpError7 } = $s2;
+const { paths: paths3 } = $s3;
+const { releaseKeys } = $s4;
+const { readProfileRecord: readProfileRecord2 } = $s5;
+
+// src/core/public-record.ts
+const { UpError } = $s2;
+const { looksLikeKey } = $s6;
+const { containsSecret } = $s7;
+var TEXT_FIELDS = /* @__PURE__ */ new Set(["name", "type", "hint", "passwordHint", "encryptionType", "backupDate", "file", "path", "destination", "alias", "label", "note", "effect", "say", "message", "chain", "network"]);
+var PURE_HEX = /^(0x)?[0-9a-f]*$/i;
+var MAX_DEPTH = 24;
+function textHoldsKey(text) {
+  return containsSecret(text) || containsSecret(text.replace(/[^0-9a-z]/gi, "")) || looksLikeKey(text);
+}
+function holdsKeyMaterial(value) {
+  const seen = /* @__PURE__ */ new Set();
+  const walk = (v, field, depth) => {
+    if (typeof v === "string") {
+      if (PURE_HEX.test(v) && !TEXT_FIELDS.has(field)) return containsSecret(v);
+      return textHoldsKey(v);
+    }
+    if (v === null || typeof v !== "object") return false;
+    if (seen.has(v) || depth > MAX_DEPTH) return false;
+    seen.add(v);
+    if (Array.isArray(v)) return v.some((x) => walk(x, field, depth + 1));
+    return Object.entries(v).some(([k, x]) => textHoldsKey(k) || walk(x, k, depth + 1));
+  };
+  return walk(value, "", 0);
+}
+function assertNoKeyMaterial(what, value) {
+  if (holdsKeyMaterial(value)) throw new UpError("BAD_ARGS", `${what} holds private key material (or text shaped like it); nothing was changed`, { hint: "rename or replace it" });
+}
+
+// src/backup/run.ts
 const { safeFileText: safeFileText3 } = $s6;
-const { chooseBackend, internalBackend: internalBackend3 } = $s14;
+const { chooseBackend, internalBackend: internalBackend3 } = $s20;
 
 // src/backup/build.ts
 import { readdir } from "node:fs/promises";
 import { getAddress as getAddress4, isAddress as isAddress2 } from "./vendor-viem.mjs";
-const { UpError: UpError4 } = $s1;
-const { paths: paths2 } = $s2;
-const { chainAddressesOf, linkEvidenceOf, readProfileRecord } = $s4;
-const { hasCode } = $s13;
-const { verifyManifest: verifyManifest2 } = $s10;
-const { readControllers } = $s12;
-const { internalBackend } = $s14;
-const { chainControllerList, controllerFor } = $s17;
-const { keptKeys } = $s18;
+const { UpError: UpError5 } = $s2;
+const { paths: paths2 } = $s3;
+const { chainAddressesOf, linkEvidenceOf, readProfileRecord } = $s5;
+const { hasCode } = $s18;
+const { verifyManifest: verifyManifest2 } = $s15;
+const { readControllers } = $s17;
+const { internalBackend } = $s20;
+const { chainControllerList, controllerFor } = $s23;
+const { keptKeys } = $s24;
 
 // src/backup/lsp30-format.ts
 import { getAddress as getAddress2 } from "./vendor-viem.mjs";
-const { UpError: UpError2 } = $s1;
-const { PERMISSION_NAMES } = $s9;
+const { UpError: UpError3 } = $s2;
+const { PERMISSION_NAMES } = $s14;
 const { canonicalDateTime, KEY_WITHHELD, safeFileText } = $s6;
 
 // src/backup/lsp30-crypto.ts
 import { createCipheriv, createDecipheriv, pbkdf2, randomBytes } from "node:crypto";
 import { getAddress } from "./vendor-viem.mjs";
-const { UpError } = $s1;
+const { UpError: UpError2 } = $s2;
 const { registerSecret } = $s7;
-const { addressOf, isValidPrivateKey, normalizePrivateKey } = $s16;
+const { addressOf, isValidPrivateKey, normalizePrivateKey } = $s22;
 var ENCRYPTION_TYPE = "Key from PBKDF2. Encrypted with AES-GCM.";
 var DEFAULT_ITERATIONS = 6e5;
 var LEGACY_ITERATIONS = 1e4;
@@ -66,10 +96,10 @@ function payloadText(keys) {
   return JSON.stringify(inner);
 }
 async function encryptSecrets(keys, password, iterations, fixed = {}) {
-  if (!isValidIterations(iterations)) throw new UpError("INTERNAL", `the iteration count for a backup must be ${ITERATIONS_RULE}`);
+  if (!isValidIterations(iterations)) throw new UpError2("INTERNAL", `the iteration count for a backup must be ${ITERATIONS_RULE}`);
   const salt = fixed.salt ?? randomBytes(SALT_BYTES);
   const iv = fixed.iv ?? randomBytes(IV_BYTES);
-  if (salt.length !== SALT_BYTES || iv.length !== IV_BYTES) throw new UpError("INTERNAL", "salt or IV has the wrong length");
+  if (salt.length !== SALT_BYTES || iv.length !== IV_BYTES) throw new UpError2("INTERNAL", "salt or IV has the wrong length");
   const key = await derive(password, salt, iterations);
   const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: TAG_BYTES });
   const ct = Buffer.concat([cipher.update(payloadText(keys), "utf8"), cipher.final()]);
@@ -77,14 +107,14 @@ async function encryptSecrets(keys, password, iterations, fixed = {}) {
 }
 var B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 function decodeField(value, name, min, max) {
-  if (typeof value !== "string" || !B64.test(value) || value.length % 4 !== 0) throw new UpError("BAD_ARGS", `the backup's ${name} is not valid Base64`);
+  if (typeof value !== "string" || !B64.test(value) || value.length % 4 !== 0) throw new UpError2("BAD_ARGS", `the backup's ${name} is not valid Base64`);
   const b = Buffer.from(value, "base64");
-  if (b.length < min || b.length > max) throw new UpError("BAD_ARGS", `the backup's ${name} has an unexpected length`);
+  if (b.length < min || b.length > max) throw new UpError2("BAD_ARGS", `the backup's ${name} has an unexpected length`);
   return b;
 }
 function openKey(rawKey, index, claimed) {
   const privateKey = typeof rawKey === "string" ? normalizePrivateKey(rawKey) : void 0;
-  if (!privateKey || !isValidPrivateKey(privateKey)) throw new UpError("BAD_ARGS", `key number ${index} in the backup is not a valid private key`);
+  if (!privateKey || !isValidPrivateKey(privateKey)) throw new UpError2("BAD_ARGS", `key number ${index} in the backup is not a valid private key`);
   registerSecret(privateKey);
   const address = addressOf(privateKey);
   const claimedAddress = typeof claimed === "string" && claimed.toLowerCase() !== address.toLowerCase() ? "different" : void 0;
@@ -92,7 +122,7 @@ function openKey(rawKey, index, claimed) {
 }
 var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 function readPayload(plain) {
-  const unsupported2 = () => new UpError("BAD_ARGS", "the decrypted backup has an unsupported payload (expected the app's key list)");
+  const unsupported2 = () => new UpError2("BAD_ARGS", "the decrypted backup has an unsupported payload (expected the app's key list)");
   let v;
   let shape = "object";
   try {
@@ -114,9 +144,9 @@ function readPayload(plain) {
         seedPhraseEntries++;
         return;
       }
-      if (e.type !== "privateKey") throw new UpError("BAD_ARGS", `entry ${position} of the decrypted backup is not a private key or a seed phrase`);
+      if (e.type !== "privateKey") throw new UpError2("BAD_ARGS", `entry ${position} of the decrypted backup is not a private key or a seed phrase`);
       const index = Number.isInteger(e.index) && e.index >= 0 ? e.index : position;
-      if (keys.some((k) => k.index === index)) throw new UpError("BAD_ARGS", `key number ${index} appears twice in the decrypted backup`);
+      if (keys.some((k) => k.index === index)) throw new UpError2("BAD_ARGS", `key number ${index} appears twice in the decrypted backup`);
       keys.push(openKey(e.secret ?? e.privateKey, index, e.address));
     });
   } else if (isObj(v) && Array.isArray(v.privateKeys)) {
@@ -139,7 +169,7 @@ function passwordForms(password) {
   return forms;
 }
 async function decryptSecrets(data, password, iterations) {
-  if (!isValidIterations(iterations)) throw new UpError("BAD_ARGS", `the backup's iterations is not ${ITERATIONS_RULE}`, { hint: "check the file with: up backup inspect <file>" });
+  if (!isValidIterations(iterations)) throw new UpError2("BAD_ARGS", `the backup's iterations is not ${ITERATIONS_RULE}`, { hint: "check the file with: up backup inspect <file>" });
   const salt = decodeField(data.salt, "salt", 8, 128);
   const iv = decodeField(data.iv, "iv", 12, 16);
   const sealed = decodeField(data.secret, "secret", TAG_BYTES + 1, 5 * 1024 * 1024);
@@ -157,7 +187,7 @@ async function decryptSecrets(data, password, iterations) {
     }
     return { ...readPayload(plain.toString("utf8")), iterations, passwordForm: form };
   }
-  throw new UpError("BAD_ARGS", WRONG_PASSWORD, { hint: "check the password; if it is right, the file is damaged or was not made by the Universal Profile app or this skill", details: { reason: "wrong-password-or-damaged-file", iterations } });
+  throw new UpError2("BAD_ARGS", WRONG_PASSWORD, { hint: "check the password; if it is right, the file is damaged or was not made by the Universal Profile app or this skill", details: { reason: "wrong-password-or-damaged-file", iterations } });
 }
 
 // src/backup/lsp30-format.ts
@@ -223,7 +253,7 @@ var isObj2 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var HEX_BYTES = /^0x([0-9a-fA-F]{2})*$/;
 var isNonNegInt = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
 function backupText(bytes) {
-  const bad = (message) => new UpError2("BAD_ARGS", message, { hint: "pass a backup file made by the Universal Profile app or by this skill (up backup export)" });
+  const bad = (message) => new UpError3("BAD_ARGS", message, { hint: "pass a backup file made by the Universal Profile app or by this skill (up backup export)" });
   if (bytes.length > MAX_BACKUP_BYTES) throw bad(`the backup file is larger than ${MAX_BACKUP_BYTES / 1024 / 1024} MiB`);
   try {
     return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes).replace(/^\uFEFF/, "");
@@ -353,7 +383,7 @@ function parseBackup(text) {
       secrets = { kind: "encrypted", ...typeof s.passwordHint === "string" && s.passwordHint ? { hint: free(s.passwordHint, "secrets.passwordHint", 255) } : {}, ...typeof s.encryptionType === "string" ? { encryptionType: s.encryptionType === ENCRYPTION_TYPE ? ENCRYPTION_TYPE : UNRECOGNIZED_ENCRYPTION_TYPE } : {}, iterations: iterationsInFile ? s.iterations : LEGACY_ITERATIONS, iterationsInFile, data: { secret: d.secret, iv: d.iv, salt: d.salt } };
       if (s.encryptionType !== ENCRYPTION_TYPE) warn("encryption-type", "encryptionType is not the one this skill and the app write; it is opened as PBKDF2-HMAC-SHA256 with AES-256-GCM all the same");
     } catch (e) {
-      error("bad-secrets", e instanceof UpError2 ? e.message : "secrets.data needs Base64 secret, iv and salt");
+      error("bad-secrets", e instanceof UpError3 ? e.message : "secrets.data needs Base64 secret, iv and salt");
     }
   } else {
     const entries = [];
@@ -380,11 +410,11 @@ function parseBackup(text) {
 
 // src/backup/lsp23-decode.ts
 import { decodeAbiParameters, decodeFunctionData, getAddress as getAddress3, isAddress } from "./vendor-viem.mjs";
-const { LSP } = $s0;
-const { LSP23_ABI } = $s8;
-const { DATA_KEYS, PERMISSION_NAMES: PERMISSION_NAMES2, PERMISSIONS } = $s9;
-const { computeERC1167Addresses, manifestFromPlan, verifyManifest } = $s10;
-const { decodePermissions } = $s11;
+const { LSP } = $s1;
+const { LSP23_ABI } = $s10;
+const { DATA_KEYS, PERMISSION_NAMES: PERMISSION_NAMES2, PERMISSIONS } = $s14;
+const { computeERC1167Addresses, manifestFromPlan, verifyManifest } = $s15;
+const { decodePermissions } = $s16;
 var DEPLOY_ERC1167_PROXIES = "0x6a66a753";
 var DEPLOY_CONTRACTS = "0x17ad46a8";
 var unsupported = (reason) => ({ supported: false, reason, rederives: false, canonicalFactory: false, initialControllers: [] });
@@ -521,12 +551,11 @@ function manifestFromBackup(item, dec, heldKeys) {
 import { createHash } from "node:crypto";
 import { lstat, readFile, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-const { UpError: UpError3 } = $s1;
-const { assertNoKeyMaterial } = $s5;
-const { appendLine, ensureDir, paths } = $s2;
+const { UpError: UpError4 } = $s2;
+const { appendLine, ensureDir, paths } = $s3;
 const { assertNotKeyMaterialPath } = $s7;
-const { looksLikeKey } = $s6;
-const { writeNewFileExclusive } = $s18;
+const { looksLikeKey: looksLikeKey2 } = $s6;
+const { writeNewFileExclusive } = $s24;
 var sha256Hex = (data) => createHash("sha256").update(data).digest("hex");
 function backupsDir(home) {
   return paths.backups(home);
@@ -563,7 +592,7 @@ async function readIndex(home) {
 var MAX_LABEL = 40;
 var WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 function sanitizeAgentLabel(raw) {
-  if (typeof raw !== "string" || looksLikeKey(raw)) return void 0;
+  if (typeof raw !== "string" || looksLikeKey2(raw)) return void 0;
   let t = raw.normalize("NFKC").replace(/[\p{C}\u2028\u2029]/gu, "").replace(/[^\p{L}\p{M}\p{N} ._-]/gu, " ");
   t = t.replace(/\s+/g, " ").replace(/\.{2,}/g, ".").replace(/(^| )[._-]+(?= |$)/g, "$1").replace(/ {2,}/g, " ").trim();
   t = [...t].slice(0, MAX_LABEL).join("").replace(/^[ .\-_]+|[ .\-_]+$/g, "");
@@ -573,7 +602,7 @@ function sanitizeAgentLabel(raw) {
 function agentLabel(given, env = process.env) {
   if (typeof given === "string" && given.trim()) {
     const label = sanitizeAgentLabel(given);
-    if (!label) throw new UpError3("BAD_ARGS", "--bot-name has no usable letters or digits left after removing characters that are not allowed in a file name", { hint: `pass the agent's display name, e.g. --bot-name "Alice"` });
+    if (!label) throw new UpError4("BAD_ARGS", "--bot-name has no usable letters or digits left after removing characters that are not allowed in a file name", { hint: `pass the agent's display name, e.g. --bot-name "Alice"` });
     return label;
   }
   return sanitizeAgentLabel(env.UP_AGENT_NAME);
@@ -586,7 +615,7 @@ async function defaultBackupPath(home, now = /* @__PURE__ */ new Date(), label) 
     const file = join(dir, `${prefix}universal-profiles-backup-${day}${n === 1 ? "" : `-${n}`}.json`);
     if (!await lstat(file).then(() => true, () => false)) return file;
   }
-  throw new UpError3("INTERNAL", "too many backups for today in the backups folder");
+  throw new UpError4("INTERNAL", "too many backups for today in the backups folder");
 }
 async function resolveDestination(home, given, label) {
   if (!given?.trim()) {
@@ -595,9 +624,9 @@ async function resolveDestination(home, given, label) {
   }
   const file = isAbsolute(given.trim()) ? given.trim() : resolve(given.trim());
   const parent = await stat(dirname(file)).catch(() => null);
-  if (!parent?.isDirectory()) throw new UpError3("BAD_ARGS", `the folder ${dirname(file)} does not exist`);
+  if (!parent?.isDirectory()) throw new UpError4("BAD_ARGS", `the folder ${dirname(file)} does not exist`);
   assertNotKeyMaterialPath(dirname(file), "backup destination", { allowBackups: true });
-  if (await lstat(file).then(() => true, () => false)) throw new UpError3("BAD_ARGS", `${file} already exists; a backup is never overwritten`, { hint: "pass another --path, or omit it" });
+  if (await lstat(file).then(() => true, () => false)) throw new UpError4("BAD_ARGS", `${file} already exists; a backup is never overwritten`, { hint: "pass another --path, or omit it" });
   return file;
 }
 async function writeBackup(file, content) {
@@ -605,12 +634,12 @@ async function writeBackup(file, content) {
   return { sha256: sha256Hex(content), size: Buffer.byteLength(content), ...warning ? { warning } : {} };
 }
 async function readBackupFile(given) {
-  if (!given?.trim()) throw new UpError3("BAD_ARGS", "give the path of a backup file");
+  if (!given?.trim()) throw new UpError4("BAD_ARGS", "give the path of a backup file");
   const file = resolve(given.trim());
   assertNotKeyMaterialPath(file, "backup file", { allowBackups: true });
   const st = await stat(file).catch(() => null);
-  if (!st?.isFile()) throw new UpError3("BAD_ARGS", `no backup file at ${file}`, { hint: "pass the path the file was saved to (a chat attachment is saved by the host; use that path)" });
-  if (st.size > MAX_BACKUP_BYTES) throw new UpError3("BAD_ARGS", `the backup file is larger than ${MAX_BACKUP_BYTES / 1024 / 1024} MiB`);
+  if (!st?.isFile()) throw new UpError4("BAD_ARGS", `no backup file at ${file}`, { hint: "pass the path the file was saved to (a chat attachment is saved by the host; use that path)" });
+  if (st.size > MAX_BACKUP_BYTES) throw new UpError4("BAD_ARGS", `the backup file is larger than ${MAX_BACKUP_BYTES / 1024 / 1024} MiB`);
   const bytes = await readFile(file);
   return { file, text: backupText(bytes), sha256: sha256Hex(bytes), size: bytes.length };
 }
@@ -682,7 +711,7 @@ async function collectProfiles(ctx, cfg, warnings, opts = {}) {
   for (const n of names) identities.set(n.slice(0, 42).toLowerCase(), getAddress4(n.slice(0, 42)));
   if (cfg.defaultProfile) identities.set(cfg.defaultProfile.toLowerCase(), getAddress4(cfg.defaultProfile));
   if (opts.only) {
-    for (const o of opts.only) if (!identities.has(o.toLowerCase())) throw new UpError4("BAD_ARGS", `no profile ${o} is known on this machine`, { hint: "the profiles known here are listed by: up profile status" });
+    for (const o of opts.only) if (!identities.has(o.toLowerCase())) throw new UpError5("BAD_ARGS", `no profile ${o} is known on this machine`, { hint: "the profiles known here are listed by: up profile status" });
   }
   const out = [];
   const aliasOf = (a) => Object.entries(cfg.aliases ?? {}).find(([, v]) => sameAddress2(v, a))?.[0] ?? "";
@@ -825,105 +854,23 @@ function buildBackup(ctx, cfg, state, mode, now = /* @__PURE__ */ new Date()) {
   return { file, keys: withKeys ? state.keys : [], chains: [...new Set(accounts.flatMap((a) => a.networks.map((n) => n.chainID)))].sort((a, b) => a - b), appIncompatible };
 }
 
-// src/backup/password.ts
-import { randomInt } from "node:crypto";
-const { UpError: UpError5 } = $s1;
-var PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-var MIN_PASSWORD_LENGTH = 6;
-var MAX_STDIN_BYTES = 4096;
-function passwordProblems(password) {
-  const missing = [];
-  if ([...password].length < MIN_PASSWORD_LENGTH) missing.push(`at least ${MIN_PASSWORD_LENGTH} characters`);
-  if (!new RegExp("\\p{Ll}", "u").test(password)) missing.push("a lowercase letter");
-  if (!new RegExp("\\p{Lu}", "u").test(password)) missing.push("an uppercase letter");
-  if (!new RegExp("\\p{Nd}", "u").test(password)) missing.push("a number");
-  if (!/[^\p{L}\p{N}\s]/u.test(password)) missing.push("a symbol (like ! ? # - _ .)");
-  return missing;
-}
-function generatePassword() {
-  for (; ; ) {
-    const pw = drawPassword();
-    if (!passwordProblems(pw).length) return pw;
-  }
-}
-function drawPassword() {
-  const groups = [];
-  for (let g = 0; g < 4; g++) {
-    let part = "";
-    for (let i = 0; i < 5; i++) part += PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)];
-    groups.push(part);
-  }
-  return groups.join("-");
-}
-async function readStdin() {
-  if (process.env.UP_MCP_SERVER === "1") throw new UpError5("BAD_ARGS", "--password-stdin is not available over MCP (standard input carries the protocol)", { hint: "pass --password or --password-env" });
-  const chunks = [];
-  let size = 0;
-  for await (const c of process.stdin) {
-    size += c.length;
-    if (size > MAX_STDIN_BYTES) throw new UpError5("BAD_ARGS", "the password on standard input is too long");
-    chunks.push(Buffer.from(c));
-  }
-  return Buffer.concat(chunks).toString("utf8").replace(/\r?\n$/, "");
-}
-async function choosePassword(args, forExport) {
-  const given = [args.password !== void 0, args["password-env"] !== void 0, args["password-stdin"] === true, args["generate-password"] === true].filter(Boolean).length;
-  if (given > 1) throw new UpError5("BAD_ARGS", "give only one of --password, --password-env, --password-stdin, --generate-password");
-  if (args["generate-password"] === true && !forExport) throw new UpError5("BAD_ARGS", "--generate-password only applies when making a backup");
-  let password;
-  let source;
-  if (args.password !== void 0) {
-    password = args.password;
-    source = "argument";
-  } else if (args["password-env"] !== void 0) {
-    const name = args["password-env"];
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new UpError5("BAD_ARGS", "--password-env must be the name of an environment variable");
-    const v = process.env[name];
-    if (!v) throw new UpError5("BAD_ARGS", `the environment variable ${name} is not set or empty`);
-    delete process.env[name];
-    password = v;
-    source = "env";
-  } else if (args["password-stdin"] === true) {
-    password = await readStdin();
-    source = "stdin";
-  } else if (forExport) {
-    return { password: generatePassword(), source: "generated", generated: true, warnings: [] };
-  } else return void 0;
-  if (!password) throw new UpError5("BAD_ARGS", "the password is empty");
-  const warnings = [];
-  if (forExport) {
-    const missing = passwordProblems(password);
-    if (missing.length) {
-      throw new UpError5("BAD_ARGS", `the backup password needs ${missing.join(", ")}`, {
-        hint: `ask the human for a password they will remember, with at least ${MIN_PASSWORD_LENGTH} characters, a lowercase and an uppercase letter, a number and a symbol; or omit it to have one generated`
-      });
-    }
-  }
-  return { password, source, generated: false, warnings };
-}
-function checkHint(hint, password) {
-  const h = hint?.trim();
-  if (!h) return void 0;
-  if ([...h].length > 255) throw new UpError5("BAD_ARGS", "the password hint is longer than 255 characters");
-  if (h.includes(password) || h.replace(/[-\s]/g, "").includes(password.replace(/[-\s]/g, ""))) throw new UpError5("BAD_ARGS", "the password hint contains the password; the hint is stored unencrypted in the file");
-  return h;
-}
+// src/backup/run.ts
+const { checkHint, choosePassword } = $s0;
 
 // src/backup/restore.ts
 import { basename } from "node:path";
 import { getAddress as getAddress5, isAddress as isAddress3 } from "./vendor-viem.mjs";
-const { UpError: UpError6 } = $s1;
-const { updateProfileRecord } = $s4;
-const { assertNoKeyMaterial: assertNoKeyMaterial2, textHoldsKey } = $s5;
-const { containsSecret } = $s7;
+const { UpError: UpError6 } = $s2;
+const { updateProfileRecord } = $s5;
+const { containsSecret: containsSecret2 } = $s7;
 const { KEY_WITHHELD: KEY_WITHHELD2, safeFileText: safeFileText2 } = $s6;
-const { verifyManifest: verifyManifest3 } = $s10;
-const { readControllerPermissions } = $s12;
-const { hasCode: hasCode2 } = $s13;
-const { internalBackend: internalBackend2 } = $s14;
-const { readCandidates, importRecorded, updateCandidates, withKeyLock } = $s18;
-const { readInventory } = $s15;
-const { chainControllerList: chainControllerList2 } = $s17;
+const { verifyManifest: verifyManifest3 } = $s15;
+const { readControllerPermissions } = $s17;
+const { hasCode: hasCode2 } = $s18;
+const { internalBackend: internalBackend2 } = $s20;
+const { readCandidates, importRecorded, updateCandidates, withKeyLock } = $s24;
+const { readInventory } = $s21;
+const { chainControllerList: chainControllerList2 } = $s23;
 function issueSummary(issues) {
   return issues.filter((i) => i.level === "error").map((i) => `${i.code}: ${i.message}`).join("; ");
 }
@@ -984,7 +931,7 @@ function scrubPublicText(backup) {
   return n;
 }
 function assertNoKeyIn(what, ...texts) {
-  for (const t of texts) if (t && (containsSecret(t) || containsSecret(t.replace(/[^0-9a-z]/gi, "")))) throw new UpError6("BAD_ARGS", `${what} holds private key material; nothing was changed`, { hint: "rename or replace it" });
+  for (const t of texts) if (t && (containsSecret2(t) || containsSecret2(t.replace(/[^0-9a-z]/gi, "")))) throw new UpError6("BAD_ARGS", `${what} holds private key material; nothing was changed`, { hint: "rename or replace it" });
 }
 var sameAddress3 = (a, b) => a.toLowerCase() === b.toLowerCase();
 function analyseAccounts(opened, localKeys) {
@@ -1016,7 +963,7 @@ function analyseAccounts(opened, localKeys) {
   });
 }
 function assertProfileRecordClean(x) {
-  assertNoKeyMaterial2(`the backup's data for the profile ${x.account.address}`, { account: x.account, items: x.items.map((i) => ({ item: i.item, manifest: i.manifest })) });
+  assertNoKeyMaterial(`the backup's data for the profile ${x.account.address}`, { account: x.account, items: x.items.map((i) => ({ item: i.item, manifest: i.manifest })) });
 }
 async function decideChain(ctx, a, chainId) {
   const candidates = a.heldByChain.get(chainId) ?? [];
@@ -1164,7 +1111,7 @@ async function writeProfileRecords(ctx, profiles, info) {
           status = "restored";
         }
       } else if (manifest && cur) status = cur.deployCalldata?.toLowerCase() === manifest.deployCalldata.toLowerCase() ? "kept-existing" : "conflict";
-      assertNoKeyMaterial2(`the record of the profile ${analysis.account.address}`, patch);
+      assertNoKeyMaterial(`the record of the profile ${analysis.account.address}`, patch);
       return patch;
     });
     out.push({ address: analysis.account.address, manifest: status, chains: analysis.chains });
@@ -1172,7 +1119,7 @@ async function writeProfileRecords(ctx, profiles, info) {
   return out;
 }
 async function applyImportConfig(ctx, change) {
-  assertNoKeyMaterial2("the configuration change", change);
+  assertNoKeyMaterial("the configuration change", change);
   const known = [];
   const unknownChains = [];
   for (const c of change.chains) {
@@ -1261,7 +1208,7 @@ async function runExport(ctx, a) {
   if (mode === "unencrypted" && a["explicit-consent"] !== true) {
     throw new UpError7("BAD_ARGS", "an unencrypted backup needs --explicit-consent: it puts the keys in a file anyone can use", { hint: "recommend the encrypted backup; only if the human insists, add --explicit-consent and their --approval" });
   }
-  assertNoKeyMaterial3("the backup destination or hint", { path: a.path, hint: a.hint, botName: a["bot-name"] });
+  assertNoKeyMaterial("the backup destination or hint", { path: a.path, hint: a.hint, botName: a["bot-name"] });
   const label = agentLabel(a["bot-name"]);
   const cfg = await ctx.config();
   const only = a.profiles?.length ? await Promise.all(a.profiles.map((p) => ctx.resolveAddress(p))) : void 0;
@@ -1270,9 +1217,9 @@ async function runExport(ctx, a) {
   if (mode !== "public" && !state.keys.length) throw new UpError7("NO_SIGNER", "none of the agent's keys is in a key store here, so there are no keys to back up", { hint: "a backup without keys is --mode public" });
   const built = buildBackup(ctx, cfg, state, mode);
   const appCompatible = built.appIncompatible.length === 0 && (iterations === void 0 || iterations === LEGACY_ITERATIONS);
-  assertNoKeyMaterial3("an account name, alias or label of the backup", built.file);
+  assertNoKeyMaterial("an account name, alias or label of the backup", built.file);
   const dest = await resolveDestination(ctx.home, a.path, label);
-  assertNoKeyMaterial3("the backup destination", { path: dest });
+  assertNoKeyMaterial("the backup destination", { path: dest });
   const profiles = state.profiles.map((p) => p.address);
   const warnings = [...state.warnings];
   if (!state.profiles.length) warnings.push("the agent has no deployed profile yet: the file holds only its keys");
@@ -1294,7 +1241,7 @@ async function runExport(ctx, a) {
       note: mode === "encrypted" ? "anyone with the file AND the password controls these keys" : "anyone with the file controls these keys",
       warnings
     };
-    assertNoKeyMaterial3("the export confirmation", summary);
+    assertNoKeyMaterial("the export confirmation", summary);
     await ctx.consent({ verb: "backup export", risk: "secret", summary });
   }
   if (ctx.flags.dryRun) {
@@ -1313,7 +1260,7 @@ async function runExport(ctx, a) {
   const file = { ...built.file, secrets };
   const text = serializeBackup(file);
   await verifyRoundTrip(text, built, secretKeys, choice?.password, iterations);
-  assertNoKeyMaterial3("an account name, alias, hint or the destination of the backup", { file: built.file, hint, path: dest });
+  assertNoKeyMaterial("an account name, alias, hint or the destination of the backup", { file: built.file, hint, path: dest });
   await appendIndex(ctx.home, { at: (/* @__PURE__ */ new Date()).toISOString(), event: "reserved", file: dest }).catch(() => {
     throw new UpError7("INTERNAL", "the backups index cannot be written, so no backup was made; nothing was written", { hint: `check that ${paths3.backups(ctx.home)} is writable and not full` });
   });
@@ -1573,7 +1520,7 @@ async function runImport(ctx, a) {
     keyStoreNote: "keys are only ever added; none is overwritten or deleted. A key already here is skipped",
     ...offline ? { warning: "the check on the networks is skipped: whether the backup's keys control the profiles is not confirmed" } : {}
   };
-  assertNoKeyMaterial3("the import confirmation", summary);
+  assertNoKeyMaterial("the import confirmation", summary);
   await ctx.consent({ verb: "backup import", risk: "secret", summary });
   if (ctx.flags.dryRun) return { data: { dryRun: true, ...plan }, text: `Dry run: ${plural(chosen.length, "profile", "profiles")} and ${plural(keysToRestore.length, "key", "keys")} would be restored from ${plan.file}.` };
   const keyResults = keysToRestore.length ? await restoreKeys(ctx, keysToRestore, backend, opened.parsed.backupDate, known, activeAddress) : [];
@@ -1621,6 +1568,7 @@ async function runImport(ctx, a) {
   };
 }
 export {
+  collectProfiles,
   runExport,
   runImport,
   runInspect,

@@ -7,7 +7,7 @@ import { parseArgv } from "../../../src/core/args.ts";
 import { defineVerb, coerceArgs, matchVerb, mcpToolName, inputSchema } from "../../../src/core/verbs.ts";
 import { requireConsent, policyAllows, DEFAULT_POLICY, savePolicy } from "../../../src/core/policy.ts";
 import { UpError } from "../../../src/core/errors.ts";
-import { redact, toJson } from "../../../src/core/json.ts";
+import { redact, releaseKeys, toJson } from "../../../src/core/json.ts";
 import { writeFileAtomic, paths } from "../../../src/core/home.ts";
 import { createRegistry } from "../../../src/chain/registry.ts";
 import { createRpcManager } from "../../../src/chain/rpc.ts";
@@ -94,6 +94,15 @@ describe("consent policy", () => {
 describe("json + home helpers", () => {
   it("redacts secret-shaped keys and serialises bigint", () => {
     expect(JSON.parse(toJson(redact({ privateKey: "0xdead", nested: { apiKey: "k", ok: 1n } })))).toEqual({ privateKey: "[redacted]", nested: { apiKey: "[redacted]", ok: "1" } });
+  });
+  it("masks credential-looking URL parameters, but prints a string released for output exactly as it is", () => {
+    // an authorization link: allowedDataKeys looks like a credential parameter to the URL mask
+    const link =
+      "https://authorize.universalprofile.cloud/authorize?controller=0x5e1c0de0f9B12c2C3aB5a9c1f1B7D0D2A6e4B3c1&network=mainnet&permissions=CALL,SETDATA" +
+      "&allowedDataKeys=0x00205ef83ad9559033e6e941db7d7c495acdce616347d28e90c7ce47cbfcfcad3bc5";
+    expect((redact({ url: link }) as any).url).toContain("allowedDataKeys=%5Bredacted%5D"); // not released: masked as before
+    expect(redact({ ok: true, data: releaseKeys({ url: link, copy: link }, "url") })).toEqual({ ok: true, data: { url: link, copy: expect.stringContaining("allowedDataKeys=%5Bredacted%5D") } });
+    expect(redact({ data: releaseKeys({ url: { apiKey: "k" } }, "url") })).toEqual({ data: { url: { apiKey: "[redacted]" } } }); // objects are still searched
   });
   it("writes files atomically with 0600 in a 0700 dir", async () => {
     const home = tmp();

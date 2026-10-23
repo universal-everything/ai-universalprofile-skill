@@ -7,3 +7,4 @@ import "./verbs-multichain.ts";
 import "./verbs-metadata.ts";
 import "./verbs-permissions.ts";
 import "./verbs-sign.ts";
+import "./verbs-authorize.ts";

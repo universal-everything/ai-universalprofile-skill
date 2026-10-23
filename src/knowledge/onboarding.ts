@@ -79,7 +79,13 @@ export function onboardingPaths(ctx: VerbContext, website: string | undefined = 
       subtitle: "You give me the profile's address and allow me to act for it, with the permissions you choose. You stay in control.",
       gas: "a relayer, or you fund the agent's controller address",
       journey: "J2",
-      next: ["up profile join <profileAddress>", "up permissions recommend"],
+      // LUKSO: one link the human opens with their UP extension or app; other networks: the manual hand-over
+      next: [
+        "up permissions authorize-link --for <what the human wants you to do> [--profile <profileAddress>]",
+        "up permissions check-grant --profile <profileAddress>",
+        "up profile join <profileAddress>",
+        "up permissions recommend --chain <id>",
+      ],
     },
   ];
 }

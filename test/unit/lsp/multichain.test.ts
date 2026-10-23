@@ -69,6 +69,12 @@ describe("nextStepsFor: one concrete fix per chain state", () => {
     expect(s[1]).toBe(`or use the agent's key ${K2}, which already is a controller on Base: up key activate ${K2} --chain base (needs the human's approval)`);
   });
 
+  it("on LUKSO the not-a-controller step also offers the one-link hand-over", () => {
+    const s = nextStepsFor(base({ chainId: 42, chain: "LUKSO", chainArg: "lukso", deployed: true, isUniversalProfile: true, keyManager: K2, controller: ctl({ isController: false }) }));
+    expect(s[0]).toContain("up permissions recommend --chain lukso");
+    expect(s[0]).toContain("up permissions authorize-link --for");
+  });
+
   it("controller without gas and without relay → funding request (and the relay alternative when a relayer exists)", () => {
     const s = nextStepsFor(base({ deployed: true, isUniversalProfile: true, keyManager: K2, controller: ctl({ lowGas: true, canRelay: false }), relayer: { name: "universal", baseUrl: "https://r.example" } }));
     expect(s[0]).toMatch(/^fund the agent's key .* on Base \(8453\) for gas/);
@@ -179,6 +185,9 @@ describe("withChainContext: per-chain hints on chain errors", () => {
   it("NoPermissionsSet / NotAllowedCall / data keys, also inside ERC-4337 revert details", () => {
     const np = withChainContext(ctx, new UpError("SIMULATION_REVERTED", "x", { details: { errorName: "NoPermissionsSet" } }), 42, P, S) as UpError;
     expect(np.hint).toContain("up permissions recommend --chain lukso");
+    expect(np.hint).toContain("up permissions authorize-link --for");
+    const npBase = withChainContext(ctx, new UpError("SIMULATION_REVERTED", "x", { details: { errorName: "NoPermissionsSet" } }), 8453, P, S) as UpError;
+    expect(npBase.hint).not.toContain("authorize-link");
     const nc = withChainContext(ctx, new UpError("NOT_AUTHORISED", "x", { hint: "the signing controller …", details: { revert: { errorName: "NotAllowedCall" } } }), 42, P, S) as UpError;
     expect(nc.hint).toContain("outside the AllowedCalls");
     expect(nc.hint).toMatch(/; the signing controller …$/); // ERC-4337 explanations are kept

@@ -87,6 +87,24 @@ The Key Manager enforces the `Permissions:<controller>` key; the array is the li
 | `human-admin` | `ALL_PERMISSIONS` | the human's own wallet as co-controller | Recommended right after a J1 deployment as the recovery path. |
 | `entrypoint-4337` | `CALL`, `TRANSFERVALUE`, `STATICCALL`, `SETDATA` (+ allow-lists mirroring the agent's scope) | the ERC-4337 EntryPoint, only when ERC-4337 is enabled | Never give the EntryPoint `CHANGEOWNER`, `ADDCONTROLLER`, `EDITPERMISSIONS` or extension bits. `SUPER_*` only on explicit request. |
 
+### Authorization link capabilities
+
+`up permissions authorize-link --for …` turns what the agent will do into the smallest LSP6 grant and one link to https://authorize.universalprofile.cloud (LUKSO mainnet). There is no default: choose from what the human asked for. Only the bits the lists use are requested; any write power also gets `EXECUTE_RELAY_CALL` (gasless path) unless `--no-relay`.
+
+| Capability | Permission bits | AllowedCalls / AllowedERC725YDataKeys | What it really allows |
+| --- | --- | --- | --- |
+| `social` | `CALL` | LSP26 registry `0xf01103E5a9909Fc0DBe8166dA7085e0285daDDcA`: `follow` `0x4dbf27cc`, `unfollow` `0x015a4ead`, `followBatch` `0xcf8711c8`, `unfollowBatch` `0x8dd1e47e` | following and unfollowing as the profile, nothing else |
+| `profile` | `SETDATA` | data key `LSP3Profile` | rewriting the public profile (name, description, pictures, links, tags) |
+| `tokens` | `CALL` | any address reporting LSP7 `0xc52d6008` / `0xb3c4928f` / `0xdaa746b7`, any function | moving and approving every LSP7 token the profile holds |
+| `nfts` | `CALL` | any address reporting LSP8 `0x3a271706` / `0xecad9f75` / `0x30dc5278`, any function | moving and approving every LSP8 NFT the profile holds |
+| `pay` + `--pay-to` | `TRANSFERVALUE` | VALUE to each listed address | sending any amount of LYX to those addresses only |
+| `sign` | `SIGN` | — | signatures that count as the profile's (logins, off-chain orders, payment approvals) |
+| `--allow-targets` | `CALL` / `STATICCALL` / `TRANSFERVALUE` as the entries use them | the given entries (no all-wildcard, no DELEGATECALL) | exactly those contracts and functions |
+| `--allowed-keys` | `SETDATA` | the given keys or prefixes (never permission, controller-list, delegate or extension keys) | exactly those data keys |
+| `--elevated` | `SUPER_CALL`, `SUPER_TRANSFERVALUE`, `SUPER_STATICCALL`, `SUPER_SETDATA`, `DEPLOY` | — | no limits for that kind of action; only on the human's explicit request (the page shows them unticked) |
+
+Never through a link (the website refuses the whole link): `CHANGEOWNER`, `ADDCONTROLLER`, `EDITPERMISSIONS`, `ADDEXTENSIONS`, `CHANGEEXTENSIONS`, `ADDUNIVERSALRECEIVERDELEGATE`, `CHANGEUNIVERSALRECEIVERDELEGATE`, `REENTRANCY`, `DELEGATECALL`, `SUPER_DELEGATECALL`. The website writes exactly the reviewed state for this one key (the human can untick bits, never add), reads it back, and `up permissions check-grant` compares it with the link: `exact`, `narrower` (fine), `broader` (tell the human), `not-authorised`.
+
 What LSP6 cannot enforce: spending amounts, time limits, counts. The skill's delegated policy (`up policy show`) adds client-side limits only: a native-value cap per transaction per chain, a daily count of autonomous actions, allowed chains/targets/selectors, and whether token moves (`allowTokenMoves`, optionally limited to `tokenTargets`) and admin actions (`allowAdmin`) may run with `--yes`. There is no token amount cap and no daily value cap. Say so whenever a human asks for a "limit"; the hard limit is what LSP6 AllowedCalls permit.
 
 ## Controller lifecycle

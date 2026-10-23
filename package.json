@@ -1,6 +1,6 @@
 {
   "name": "@universal-everything/universal-profile-skill",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Universal Profile Agent Skill: gives any AI agent its own LUKSO Universal Profile (ERC725 account + LSP6 Key Manager) on any EVM chain. Source branch: builds the skill in skills/universal-profile, which is published to the main branch with SKILL.md at the repository root.",
   "license": "MIT-0",
@@ -22,6 +22,9 @@
     "gen:registry": "node build/gen-registry.mjs",
     "gen:abis": "node build/gen-abis.mjs",
     "verify:skill": "node build/verify-skill.mjs",
+    "version:check": "node build/version.mjs check",
+    "version:set": "node build/version.mjs set",
+    "version:release": "node build/version.mjs release",
     "publish:main": "node build/publish-main.mjs"
   },
   "dependencies": {
