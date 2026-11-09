@@ -1,6 +1,6 @@
 // Universal Profile skill — authorization-link verbs (loaded on demand by app.mjs)
 // Universal Profile Agent Skill v0.2.1 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint b6095689e4e0 (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Built from source fingerprint 5a1611dca42b (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { $s2, $s4, $s5, $s8, $s9, $s11, $s12, $s13, $s14, $s16, $s17, $s18, $s19, $s23, $s25 } from "./app.mjs";
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);

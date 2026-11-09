@@ -1,42 +1,42 @@
 {
   "version": "0.2.1",
-  "source": "b6095689e4e0",
+  "source": "5a1611dca42b",
   "files": {
     "scripts/lib/app.mjs": {
       "bytes": 1030834,
-      "sha256": "e8db438ed87d49017b9a855a0659b83418ae8f56a35b7e27b26958b2863afc2e"
+      "sha256": "1175b49355deb876542d0bd81daef54dfe26f7af5a12cb58106818d39d1e992f"
     },
     "scripts/lib/authorize.mjs": {
       "bytes": 34338,
-      "sha256": "d8b33ca4619c45b4c937d90ae31c68f992299a2f51329f5b0063ee20f516231c"
+      "sha256": "b0cde8ffa4c28d843e292cd8ac6d34bf8190414c0ec888ecba9ed8dc5e4513b8"
     },
     "scripts/lib/backup.mjs": {
       "bytes": 97934,
-      "sha256": "bf4c9dcfdba90937b949020d9f95418732fd1d3576154f0b652ea51769125dba"
+      "sha256": "b315b1154e94a96364539a9b1c1f8065843481d341f777e8b06d9296b2ac75f3"
     },
     "scripts/lib/vendor-erc725.mjs": {
       "bytes": 123261,
-      "sha256": "4345477342ecab5df23db1e9b7360215c6037b2fe6a0cfc70e77eba067c2888e"
+      "sha256": "8b426c567eef953eafc41a7075967d748208ab7425490ad86825f84c5f6665e3"
     },
     "scripts/lib/vendor-qrcode.mjs": {
       "bytes": 145622,
-      "sha256": "53f2ddf1a20c6da3cc40c37dd796b4b9ecad21c274c2a8d099c9467287fa1b5a"
+      "sha256": "79e629de5e28d190c21096258945f6a1c97f3ae337609661b5505be6015a4a2d"
     },
     "scripts/lib/vendor-viem.mjs": {
       "bytes": 943626,
-      "sha256": "817f986bfe59c270206f8f34a1a393eceefa718bc90e7e3751f312e5448e7033"
+      "sha256": "ece16b28c94b69238bd21153357da44faa68d1bbeb0ea73279ea4a3b4e90a0ba"
     },
     "scripts/up-doctor.mjs": {
       "bytes": 585,
-      "sha256": "74740386e68575105e4ae9437939196011313d70fdc8e9878049f78786bd7693"
+      "sha256": "63b10ba5fee3ed093e63181f84de7f6e03cd388b141fe212b867651d39a6157f"
     },
     "scripts/up-mcp.mjs": {
       "bytes": 539,
-      "sha256": "a15b955ad68112630b1cdf338bfc029de8a90448a8823d6cdbc906904787a5a3"
+      "sha256": "8ba9ab10817582843c21e9cd12ba217c9090d46ea900cf91e937b457ba2f2cc9"
     },
     "scripts/up.mjs": {
       "bytes": 563,
-      "sha256": "34d0aea94579a1c992ccd37aa16d7eb3150e5730e28f556029697ea23a56981d"
+      "sha256": "de92ac07051d88d192d86bed8bd59ddeeebf63c032f9130381d573f1df98827b"
     }
   }
 }

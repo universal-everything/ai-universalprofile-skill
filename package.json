@@ -31,7 +31,8 @@
     "@erc725/erc725.js": "0.28.2",
     "@modelcontextprotocol/sdk": "1.32.1",
     "qrcode": "1.5.4",
-    "viem": "2.57.4"
+    "viem": "2.57.4",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "26.6.5",
