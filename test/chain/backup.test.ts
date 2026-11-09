@@ -306,8 +306,9 @@ describe("unencrypted and public files", () => {
     resetMemoryBackend();
     await getBackend("memory").importKey!(pk1); // the agent's key survived, the records did not
     const h = multiChainHome([hA, hB]);
-    const mctx = testContext(h, undefined, { approval: OFFLINE_APPROVAL });
+    // before the context: createContext() starts reading config.json at once and keeps what it read
     writeFileSync(paths.config(h), JSON.stringify({ version: 1, defaultChain: A, chains: [A], controller: { address: key1, backend: "memory", createdAt: "x" } }));
+    const mctx = testContext(h, undefined, { approval: OFFLINE_APPROVAL });
     const r = await clone(mctx, "backup import", { path: made.data.path });
     expect(r.data.keysResult).toEqual([]);
     // profiles 1 and 3 were created by key1: restored; profile 2 was created by key2, which this machine does not hold (key1 is not listed for it: no key here controls it)
