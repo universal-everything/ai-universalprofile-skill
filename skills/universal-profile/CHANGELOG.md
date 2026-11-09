@@ -2,10 +2,13 @@
 
 All notable changes to the Universal Profile Agent Skill. Versions follow Semantic Versioning, also before 1.0: compatible fixes bump the patch version, additive features (new verbs, options, output fields) the minor version, and breaking changes to verb names, arguments, JSON output, error codes or the state folder the major version (README "Versions"). The bundled data (ABIs, chain and contract registry) carries its own `data-version` in the `SKILL.md` metadata.
 
-## [0.2.1] — Unreleased
+## [0.3.0] — Unreleased
 
 ### Added
 - `references/ap2.md`, an optional AP2 (Agent Payments Protocol) compatibility note: ordinary Web3 actions (transfers, contract calls, follows, profile and data updates, direct crypto payments and x402 payments without a mandate) never go through AP2; it matters only when a counterparty explicitly requires an AP2 mandate. It explains how a mandate would relate to a profile (the profile as payer and identity with ERC-1271 signatures, LSP6 permissions and LSP7 operator allowances as the limits that are really enforced, the human's approval for every mandate and never the agent's own signature in its place, the transaction hash as receipt) and the limits today: the skill has no AP2 verb, so the agent explains this to the human and does not improvise a payment. SKILL.md ("Reference documents") and the README ("Files") point to it. Documentation only: no new verbs, options, permissions or error codes.
+
+### Changed
+- Security update of the npm dependencies, so the CI dependency audit (`npm audit --omit=dev --audit-level=high`) passes again: zod 4.6.7 (GHSA-mrhx-c7xc-m3w5, high) is now a direct dependency and is used by the MCP SDK, zod-to-json-schema and abitype, while the test toolchain (hardhat 3, which still requires zod 3) keeps its own copy as a development dependency; `npm audit fix` (without `--force`) updates body-parser to 2.4.0 (GHSA-27r3-jxmh-p828, high), fast-uri to 3.1.9, ip-address to 10.7.6 and qs to 6.17.1 (moderate), and the development tools undici and hardhat-zod-utils. None of these packages is part of the shipped scripts, so nothing changes in what the skill does: the scripts differ only in their version and source fingerprint, and the MCP tool list is unchanged.
 
 ## [0.2.0] — 2026-10-23
 
