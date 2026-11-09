@@ -4,7 +4,7 @@ description: Give an AI agent its own LUKSO Universal Profile, an ERC725 smart-c
 license: MIT-0
 compatibility: Node.js >= 22 only (bundled scripts, no npm install, no native modules). macOS, Linux, Windows, WSL2 or a cloud agent VM. Outbound HTTPS to chain RPCs; optional explorers, relayers, indexers. Controller key in macOS Keychain, systemd-creds, a desktop keyring, Windows DPAPI, or a protected file inside an agent VM. Any Agent Skills host (OpenClaw, Claude Code, Codex, Cursor, Gemini CLI); stdio MCP server included.
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
   data-version: "2026.10"
   homepage: "https://universalprofile.ai"
   repository: "https://github.com/universal-everything/ai-universalprofile-skill"
@@ -336,6 +336,7 @@ Read only what the task needs (`up docs <topic>` prints the same files):
 - `references/chains.md` — one profile on many chains (per-chain state, status overview, chain checks before acting, per-chain keys and addresses), the 73-network registry, RPC health and discovery, explorers, bridging.
 - `references/discovery.md` — ABI trust ladder on any EVM chain, proxies, selector guesses, how to explain an unknown contract.
 - `references/protocols.md` — swaps (step-by-step checklist, what to check when one reverts), bridges, LSP26 follower system, indexers, x402; addresses and verification rules.
+- `references/ap2.md` — AP2 (Agent Payments Protocol), optional: never for ordinary Web3 actions, only when a counterparty explicitly requires an AP2 mandate; the skill has no AP2 verb yet.
 - `references/tokens.md` — LSP7/LSP8 versus ERC-20/721/1155: force flag, receiver hooks, operators, decimals, metadata, received and unsolicited assets.
 - `references/security.md` — key handling, storage per OS and VM, consent and delegated policy, prompt-injection posture, threat model, refusals.
 - `references/platforms.md` — install and use on OpenClaw, OpenAI dots, Meta Muse, other Agent Skills hosts and over MCP; Node remedies.

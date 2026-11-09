@@ -2,6 +2,11 @@
 
 All notable changes to the Universal Profile Agent Skill. Versions follow Semantic Versioning, also before 1.0: compatible fixes bump the patch version, additive features (new verbs, options, output fields) the minor version, and breaking changes to verb names, arguments, JSON output, error codes or the state folder the major version (README "Versions"). The bundled data (ABIs, chain and contract registry) carries its own `data-version` in the `SKILL.md` metadata.
 
+## [0.2.1] — Unreleased
+
+### Added
+- `references/ap2.md`, an optional AP2 (Agent Payments Protocol) compatibility note: ordinary Web3 actions (transfers, contract calls, follows, profile and data updates, direct crypto payments and x402 payments without a mandate) never go through AP2; it matters only when a counterparty explicitly requires an AP2 mandate. It explains how a mandate would relate to a profile (the profile as payer and identity with ERC-1271 signatures, LSP6 permissions and LSP7 operator allowances as the limits that are really enforced, the human's approval for every mandate and never the agent's own signature in its place, the transaction hash as receipt) and the limits today: the skill has no AP2 verb, so the agent explains this to the human and does not improvise a payment. SKILL.md ("Reference documents") and the README ("Files") point to it. Documentation only: no new verbs, options, permissions or error codes.
+
 ## [0.2.0] — 2026-10-23
 
 ### Added
