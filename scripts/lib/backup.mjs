@@ -1,6 +1,6 @@
 // Universal Profile skill — backup verbs (loaded on demand by app.mjs)
-// Universal Profile Agent Skill v0.3.0 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
-// Built from source fingerprint edfb35576e68 (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
+// Universal Profile Agent Skill v0.3.1 — MIT-0 — https://github.com/universal-everything/ai-universalprofile-skill
+// Built from source fingerprint 7232dd9b76f1 (sha256 of the bundled src/ modules and build inputs) with `npm ci && npm run build` (esbuild, unminified). Do not edit; edit src/ instead.
 import { $s0, $s1, $s2, $s3, $s4, $s5, $s6, $s7, $s10, $s14, $s15, $s16, $s17, $s18, $s20, $s21, $s22, $s23, $s24 } from "./app.mjs";
 import { createRequire as __upCreateRequire } from "node:module";
 const require = __upCreateRequire(import.meta.url);
