@@ -2,6 +2,11 @@
 
 All notable changes to the Universal Profile Agent Skill. Versions follow Semantic Versioning, also before 1.0: compatible fixes bump the patch version, additive features (new verbs, options, output fields) the minor version, and breaking changes to verb names, arguments, JSON output, error codes or the state folder the major version (README "Versions"). The bundled data (ABIs, chain and contract registry) carries its own `data-version` in the `SKILL.md` metadata.
 
+## [0.3.1] — Unreleased
+
+### Changed
+- Removed two npm dependencies of the source repository that nothing used: `@modelcontextprotocol/sdk` (the skill's MCP server, `scripts/up-mcp.mjs`, is its own small JSON-RPC server and never used the SDK) and `zod`, which 0.3.0 added only so that the SDK and zod-to-json-schema loaded a patched copy. The runtime dependency tree loses 95 packages (the SDK with its HTTP server stack, zod-to-json-schema and zod); nothing was added or upgraded. The test toolchain (hardhat 3) keeps its own zod 3 as a development dependency. None of the removed packages was part of the shipped scripts, so nothing changes in what the skill does: the scripts differ only in their version and source fingerprint, the skill still works as an MCP server, and its tool and resource lists are unchanged.
+
 ## [0.3.0] — 2026-11-09
 
 ### Added

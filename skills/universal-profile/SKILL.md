@@ -4,7 +4,7 @@ description: Give an AI agent its own LUKSO Universal Profile, an ERC725 smart-c
 license: MIT-0
 compatibility: Node.js >= 22 only (bundled scripts, no npm install, no native modules). macOS, Linux, Windows, WSL2 or a cloud agent VM. Outbound HTTPS to chain RPCs; optional explorers, relayers, indexers. Controller key in macOS Keychain, systemd-creds, a desktop keyring, Windows DPAPI, or a protected file inside an agent VM. Any Agent Skills host (OpenClaw, Claude Code, Codex, Cursor, Gemini CLI); stdio MCP server included.
 metadata:
-  version: "0.3.0"
+  version: "0.3.1"
   data-version: "2026.10"
   homepage: "https://universalprofile.ai"
   repository: "https://github.com/universal-everything/ai-universalprofile-skill"
